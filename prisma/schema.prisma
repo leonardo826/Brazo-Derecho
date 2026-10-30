@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+}
+
+model Organization {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String          @unique
+  rut           String?
+  createdAt     DateTime        @default(now())
+  memberships   Membership[]
+  subscriptions Subscription[]
+  knowledge     KnowledgeItem[]
+  priceItems    PriceItem[]
+  conversations Conversation[]
+  quotes        Quote[]
+  brandProfile  BrandProfile?
+  posts         MarketingPost[]
+  usageEvents   UsageEvent[]
+}
+
+enum MemberRole {
+  OWNER
+  STAFF
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MemberRole   @default(OWNER)
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+enum AgentKind {
+  WHATSAPP
+  QUOTES
+  MARKETING
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELED
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  organizationId String
+  agent          AgentKind
+  status         SubscriptionStatus
+  periodStart    DateTime
+  periodEnd      DateTime
+  createdAt      DateTime           @default(now())
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, agent])
+  @@index([organizationId])
+}
+
+enum UsageMetric {
+  RESPONSES
+  QUOTES
+  TEXTS
+  IMAGES
+}
+
+model UsageEvent {
+  id             String       @id @default(cuid())
+  organizationId String
+  agent          AgentKind
+  metric         UsageMetric
+  quantity       Int
+  inputTokens    Int          @default(0)
+  cachedTokens   Int          @default(0)
+  outputTokens   Int          @default(0)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, agent, metric, createdAt])
+}
+
+model KnowledgeItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model PriceItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  sku            String
+  name           String
+  unit           String
+  priceClp       Int
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quoteLines     QuoteLine[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId])
+}
+
+model Conversation {
+  id             String       @id @default(cuid())
+  organizationId String
+  customerLabel  String
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages       Message[]
+
+  @@index([organizationId, createdAt])
+}
+
+enum MessageRole {
+  CUSTOMER
+  AGENT
+  HUMAN
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  body           String
+  escalated      Boolean      @default(false)
+  refused        Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+enum QuoteStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+model Quote {
+  id             String       @id @default(cuid())
+  organizationId String
+  number         Int
+  customerName   String
+  notes          String       @default("")
+  agentNote      String       @default("")
+  unmatchedNote  String       @default("")
+  status         QuoteStatus  @default(PENDING_APPROVAL)
+  totalClp       Int
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines          QuoteLine[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, createdAt])
+}
+
+model QuoteLine {
+  id           String    @id @default(cuid())
+  quoteId      String
+  priceItemId  String
+  description  String
+  unit         String
+  quantity     Int
+  unitPriceClp Int
+  quote        Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  priceItem    PriceItem @relation(fields: [priceItemId], references: [id], onDelete: Restrict)
+
+  @@index([quoteId])
+}
+
+model BrandProfile {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  voice          String
+  audience       String
+  summary        String
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+enum PostStatus {
+  DRAFT
+}
+
+model MarketingPost {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  channel        String
+  copy           String
+  imagePrompt    String       @default("")
+  imageSvg       String       @default("")
+  status         PostStatus   @default(DRAFT)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}

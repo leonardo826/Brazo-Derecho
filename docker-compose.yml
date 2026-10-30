@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: brazo
+      POSTGRES_PASSWORD: brazo
+      POSTGRES_DB: brazo_derecho
+    ports:
+      - "5432:5432"
+    volumes:
+      - brazo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brazo -d brazo_derecho"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  brazo_pg:
