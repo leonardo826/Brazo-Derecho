@@ -26,7 +26,7 @@ function applyCsrf(response: NextResponse, request: NextRequest, token: string) 
   return response;
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (request.headers.has("next-action")) {
     return NextResponse.next();
   }

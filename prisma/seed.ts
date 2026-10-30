@@ -1,4 +1,6 @@
-import { PrismaClient, type AgentKind } from "@prisma/client";
+import "dotenv/config";
+import type { AgentKind } from "../src/generated/prisma/client";
+import { createPrismaClient } from "../src/lib/prisma";
 import { channelFor, draftImageSvg, toMarketingRecord } from "../src/lib/agents/marketing";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "../src/lib/agents/quotes";
 import { decideWhatsappReply, withAssistantDisclosure } from "../src/lib/agents/whatsapp";
@@ -8,7 +10,7 @@ import { USAGE_PRESETS } from "../src/lib/pricing";
 import { trialEnd } from "../src/lib/subscription";
 import { MockXaiClient } from "../src/lib/xai/mock";
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 const DEMO_PASSWORD = "Clave-demo-2026";
 const AGENTS = ["WHATSAPP", "QUOTES", "MARKETING"] as const satisfies readonly AgentKind[];
 

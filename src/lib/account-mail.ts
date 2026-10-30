@@ -1,4 +1,4 @@
-import type { AuthTokenKind } from "@prisma/client";
+import type { AuthTokenKind } from "@/generated/prisma/client";
 import { hashPassword } from "@/lib/password";
 import { createAuthTokenValue, hashAuthToken, RESET_TTL_MS, VERIFY_TTL_MS } from "@/lib/auth-token";
 import { sendEmail } from "@/lib/email/send";

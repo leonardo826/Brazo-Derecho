@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { passwordError } from "@/lib/password";
-import { panelReturnPath, safePanelPath } from "@/lib/paths";
+import { panelReturnPath, paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { formatRut, isValidRut } from "@/lib/rut";
 import { slugify } from "@/lib/slug";
 
@@ -24,6 +24,9 @@ describe("rutas internas", () => {
     expect(safePanelPath("//evil.test")).toBe("/panel");
     expect(safePanelPath("/panel/../cuenta")).toBe("/panel");
     expect(safePanelPath("/ingresar")).toBe("/panel");
+    expect(paymentReturnPath("/panel/whatsapp")).toBe("/panel/whatsapp");
+    expect(paymentReturnPath("/panel/pago")).toBe("/panel");
+    expect(paymentReturnPath("https://evil.test/panel")).toBe("/panel");
   });
 
   test("al reenviar el correo vuelve al paso del asistente", () => {

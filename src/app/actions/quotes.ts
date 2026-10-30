@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";

@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { consumeEmailVerification, consumePasswordReset, issueEmailVerification, issuePasswordReset } from "@/lib/account-mail";

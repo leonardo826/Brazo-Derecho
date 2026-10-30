@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import type { MemberRole } from "@prisma/client";
+import type { MemberRole } from "@/generated/prisma/client";
 
 export type Session = {
   userId: string;

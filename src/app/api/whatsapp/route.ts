@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { withAssistantDisclosure } from "@/lib/agents/whatsapp";
 import { runWhatsappTurn } from "@/lib/agents/run-whatsapp";
 import { whatsappEnv } from "@/lib/env";

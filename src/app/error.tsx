@@ -1,6 +1,23 @@
 "use client";
 
-export default function GlobalError({ reset }: { error: Error; reset: () => void }) {
+import { useEffect } from "react";
+import { clientErrorBody } from "@/lib/client-error";
+
+function reportClientError(error: Error) {
+  const body = JSON.stringify(clientErrorBody(error.name || "Error", error.message || "error"));
+  void fetch("/api/observabilidad", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+export default function SegmentError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    reportClientError(error);
+  }, [error]);
+
   return (
     <main className="auth-screen">
       <div className="narrow card stack">

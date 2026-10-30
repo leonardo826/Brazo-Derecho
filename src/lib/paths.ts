@@ -6,6 +6,12 @@ export function safePanelPath(value: string | null | undefined) {
   return value;
 }
 
+export function paymentReturnPath(value: string | null | undefined) {
+  const path = safePanelPath(value);
+  if (path === "/panel/pago") return "/panel";
+  return path;
+}
+
 export function panelReturnPath(referer: string | null | undefined) {
   if (!referer) return "/panel";
   let url: URL;

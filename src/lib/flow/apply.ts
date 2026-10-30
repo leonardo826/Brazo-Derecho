@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import type { AgentId } from "@/lib/catalog";
 import { flowCall } from "@/lib/flow/client";
 import { flowTargetFromPayment, nextSubscriptionState, type FlowPaymentView, type SubStatus } from "@/lib/flow/state";

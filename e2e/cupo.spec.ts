@@ -1,11 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import pg from "pg";
 import { clickHydrated, DEMO_PASSWORD } from "./helpers";
 
-const prisma = new PrismaClient();
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL ?? "postgresql://brazo:brazo@127.0.0.1:5432/brazo_derecho",
+});
 
 test.afterAll(async () => {
-  await prisma.$disconnect();
+  await pool.end();
 });
 
 test("avisa en el panel al llegar al 80% del cupo del plan", async ({ page }) => {
@@ -20,19 +23,21 @@ test("avisa en el panel al llegar al 80% del cupo del plan", async ({ page }) =>
     await expect(page.getByRole("heading", { name: "Deja listo tu primer agente" })).toBeVisible({ timeout: 3_000 });
   });
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: { memberships: true },
-  });
-  if (!user?.memberships[0]) throw new Error("No quedó la cuenta de prueba");
-  await prisma.usageEvent.create({
-    data: {
-      organizationId: user.memberships[0].organizationId,
-      agent: "WHATSAPP",
-      metric: "RESPONSES",
-      quantity: 800,
-    },
-  });
+  const found = await pool.query<{ organizationId: string }>(
+    `SELECT m."organizationId"
+     FROM "User" u
+     JOIN "Membership" m ON m."userId" = u.id
+     WHERE u.email = $1
+     LIMIT 1`,
+    [email],
+  );
+  const organizationId = found.rows[0]?.organizationId;
+  if (!organizationId) throw new Error("No quedó la cuenta de prueba");
+  await pool.query(
+    `INSERT INTO "UsageEvent" (id, "organizationId", agent, metric, quantity)
+     VALUES ($1, $2, 'WHATSAPP', 'RESPONSES', 800)`,
+    [randomBytes(12).toString("hex"), organizationId],
+  );
 
   await page.goto("/panel");
   await expect(

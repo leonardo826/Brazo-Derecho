@@ -48,13 +48,13 @@ RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 | --- | --- |
 | `DATABASE_URL`, `DIRECT_URL`, `SESSION_SECRET` | La app no parte o la sesión no se firma. |
 | `XAI_API_KEY` o `XAI_MODE=mock` | Simulador. No hay red hacia xAI. |
-| `FLOW_API_KEY` o `FLOW_SECRET_KEY` | La prueba de 14 días se activa en el panel y no hay cobro. |
+| `FLOW_API_KEY` o `FLOW_SECRET_KEY` | La prueba de 14 días se activa en el panel. «Activar plan» abre el checkout simulado «Pago de prueba» y no hay cobro. |
 | `FLOW_API_URL` | Sandbox: `https://sandbox.flow.cl/api`. En real tiene que ser `https://www.flow.cl/api`. |
 | `WHATSAPP_TOKEN` | El hilo queda en el panel y no sale al teléfono. |
 | `WHATSAPP_APP_SECRET` | `POST /api/whatsapp` responde 503. |
 | `WHATSAPP_VERIFY_TOKEN` | `GET /api/whatsapp` responde 503 y Meta no verifica el webhook. |
 | `RESEND_API_KEY` | El correo se anota en Administración y no se envía. |
-| `SENTRY_DSN` | No se reporta nada fuera del log. |
+| `SENTRY_DSN` | No se reporta nada fuera del log. Con DSN, el servidor y el navegador (vía `/api/observabilidad`) envían el error a Sentry. |
 | `SEED_DEMO` | En producción el seed se niega. No lo pongas en `1` en el servidor público. |
 | `ADMIN_EMAILS` | Nadie ve el costo por empresa ni puede suspender. |
 
@@ -63,5 +63,5 @@ RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 - Un pago de sandbox llega a `/api/flow/confirmacion`, la firma inválida responde 401 y un token real deja el agente activo.
 - Un POST a `/api/whatsapp` sin `X-Hub-Signature-256` válida responde 401.
 - El cupo del plan corta la llamada a xAI y el panel avisa desde el 80%.
-- `GET /api/health` responde `{ "ok": true }`.
+- `GET /api/health` responde `{ "ok": true, "base": "ok" }`. El chequeo de uptime está en `docs/MONITOREO.md`.
 - Las cuentas `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` no están cargadas, o `SEED_DEMO` no está en `1`.

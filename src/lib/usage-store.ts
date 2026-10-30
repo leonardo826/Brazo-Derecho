@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 import { limitFor, type AgentId, type MetricId } from "@/lib/catalog";
 import type { TokenUsage } from "@/lib/pricing";
 import { prisma } from "@/lib/prisma";

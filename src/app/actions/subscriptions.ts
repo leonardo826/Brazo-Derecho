@@ -2,10 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { isAgentId } from "@/lib/catalog";
-import { assertOwnOrganizationActive, guardMutation } from "@/lib/guard";
+import { assertOwnOrganizationActive, guardMutation, withNotice } from "@/lib/guard";
 import { cancelFlowSubscription, startFlowSubscription } from "@/lib/flow/checkout";
 import { flowIsConfigured } from "@/lib/flow/client";
-import { safePanelPath } from "@/lib/paths";
+import { activateMockPlan } from "@/lib/flow/mock-checkout";
+import { paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { trialEnd } from "@/lib/subscription";
@@ -89,4 +90,20 @@ export async function cancelSubscriptionAction(formData: FormData) {
     data: { status: "CANCELED", periodEnd: now },
   });
   redirect(`${back}?ok=cancelada`);
+}
+
+export async function confirmMockPaymentAction(formData: FormData) {
+  const back = paymentReturnPath(String(formData.get("back") ?? "/panel"));
+  const agentRaw = String(formData.get("agent") ?? "");
+  const checkout = isAgentId(agentRaw)
+    ? `/panel/pago?agente=${encodeURIComponent(agentRaw)}&volver=${encodeURIComponent(back)}`
+    : "/panel/pago";
+  await guardMutation(formData, checkout);
+  if (flowIsConfigured()) redirect(`${back}?error=flow`);
+  const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, back);
+  if (!isAgentId(agentRaw)) redirect(withNotice(checkout, "error", "datos"));
+  const activated = await activateMockPlan(session.organizationId, agentRaw);
+  if (!activated.ok) redirect(withNotice(checkout, "error", "suscripcion"));
+  redirect(withNotice(back, "ok", "plan"));
 }

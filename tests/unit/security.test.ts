@@ -2,11 +2,14 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { sameOrigin, tokensMatch, validCsrfToken } from "@/lib/csrf-token";
 import { consumeRateLimit, resetRateLimits } from "@/lib/rate-limit";
 import { contentSecurityPolicy, securityHeaders } from "@/lib/security-headers";
-import { captureException, parseSentryDsn } from "@/lib/sentry";
+import { POST as reportClientError } from "@/app/api/observabilidad/route";
+import { clientErrorBody } from "@/lib/client-error";
+import { captureException, parseSentryDsn, sentryEvent } from "@/lib/sentry";
 
 afterEach(() => {
   resetRateLimits();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("origen y CSRF", () => {
@@ -74,5 +77,64 @@ describe("Sentry opcional", () => {
     const url = String(fetchImpl.mock.calls[0]?.[0]);
     expect(url.startsWith("https://o123.ingest.sentry.io/api/99/store/")).toBe(true);
     expect(url).toContain("sentry_key=llave");
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.event_id).toMatch(/^[0-9a-f]{32}$/);
+    expect(body.platform).toBe("node");
+    expect(body.exception.values[0]).toEqual({ type: "Error", value: "falló" });
+    expect(JSON.stringify(body)).not.toContain("FLOW_SECRET");
+  });
+
+  test("un DSN válido con respuesta de error no se da por enviado", async () => {
+    vi.stubEnv("SENTRY_DSN", "https://llave@o123.ingest.sentry.io/99");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("no", { status: 400 }));
+    const result = await captureException(new Error("falló"), { source: "whatsapp.webhook" }, fetchImpl);
+    expect(result.sent).toBe(false);
+  });
+
+  test("el aviso del cliente usa la plataforma javascript y no sale si falta el DSN", async () => {
+    const event = sentryEvent(new Error("falló el panel"), { source: "cliente" });
+    expect(event.platform).toBe("javascript");
+    expect(event.exception.values[0]?.value).toBe("falló el panel");
+
+    vi.stubEnv("SENTRY_DSN", "");
+    const fetchImpl = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchImpl);
+    const silent = await reportClientError(
+      new Request("http://localhost/api/observabilidad", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(clientErrorBody("TypeError", "falló el panel")),
+      }),
+    );
+    expect(silent.status).toBe(200);
+    expect(await silent.json()).toEqual({ ok: true, sent: false });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    vi.stubEnv("SENTRY_DSN", "https://llave@o123.ingest.sentry.io/99");
+    fetchImpl.mockResolvedValue(new Response("ok"));
+    const sent = await reportClientError(
+      new Request("http://localhost/api/observabilidad", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.8" },
+        body: JSON.stringify({ source: "cliente", name: "TypeError", message: "falló\nel panel" }),
+      }),
+    );
+    expect(sent.status).toBe(200);
+    expect((await sent.json()).sent).toBe(true);
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.platform).toBe("javascript");
+    expect(body.exception.values[0]).toEqual({ type: "TypeError", value: "falló el panel" });
+    expect(body.extra).toEqual({ source: "cliente" });
+  });
+
+  test("rechaza un aviso del cliente mal formado", async () => {
+    const response = await reportClientError(
+      new Request("http://localhost/api/observabilidad", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: "otro", name: "Error", message: "x" }),
+      }),
+    );
+    expect(response.status).toBe(400);
   });
 });

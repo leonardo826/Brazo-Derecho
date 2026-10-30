@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { flowCall } from "@/lib/flow/client";
 import { agentForAmount, flowRedirectUrl, planFor, priceWithIva, trialDaysToAsk } from "@/lib/flow/plans";
 import { signFlowParams, verifyFlowWebhook } from "@/lib/flow/sign";
+import { canActivateMockPlan } from "@/lib/flow/mock-plan";
 import { FLOW_PAYMENT, FLOW_SUBSCRIPTION, flowTargetFromPayment, nextSubscriptionState } from "@/lib/flow/state";
 import { TRIAL_DAYS } from "@/lib/subscription";
 
@@ -98,6 +99,18 @@ describe("planes y prueba", () => {
       trialDaysToAsk({ flowSubscriptionId: null, periodEnd: new Date(now.getTime() + 3 * 86_400_000) }, now),
     ).toBe(3);
     expect(trialDaysToAsk({ flowSubscriptionId: "sus_1", periodEnd: new Date(now.getTime() + 86_400_000) }, now)).toBe(0);
+  });
+
+  test("el pago de prueba solo sigue desde una prueba o un plan vigente", () => {
+    const now = new Date("2026-10-30T12:00:00.000Z");
+    const later = new Date(now.getTime() + 86_400_000);
+    const past = new Date(now.getTime() - 86_400_000);
+    expect(canActivateMockPlan(null, now)).toBe(false);
+    expect(canActivateMockPlan({ status: "TRIAL", periodEnd: later }, now)).toBe(true);
+    expect(canActivateMockPlan({ status: "ACTIVE", periodEnd: later }, now)).toBe(true);
+    expect(canActivateMockPlan({ status: "TRIAL", periodEnd: past }, now)).toBe(false);
+    expect(canActivateMockPlan({ status: "CANCELED", periodEnd: later }, now)).toBe(false);
+    expect(canActivateMockPlan({ status: "EXPIRED", periodEnd: later }, now)).toBe(false);
   });
 
   test("arma la url de la tarjeta aunque Flow mande un espacio", () => {

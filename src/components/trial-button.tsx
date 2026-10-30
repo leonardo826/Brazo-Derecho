@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { activateTrialAction, cancelSubscriptionAction } from "@/app/actions/subscriptions";
 import { CsrfField } from "@/components/csrf-field";
 import { SubscriptionBadge } from "@/components/subscription-status";
@@ -30,7 +31,13 @@ export function SubscribeActions({
   return (
     <div className="stack">
       <SubscriptionBadge subscription={subscription} />
-      {open && !needsCard ? null : (
+      {open && !needsCard ? (
+        !flow && subscription?.status === "TRIAL" ? (
+          <Link className="button-link small" href={`/panel/pago?agente=${encodeURIComponent(agent)}&volver=${encodeURIComponent(back)}`}>
+            Activar plan
+          </Link>
+        ) : null
+      ) : (
         <form action={activateTrialAction}>
           <CsrfField />
           <input type="hidden" name="agent" value={agent} />

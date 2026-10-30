@@ -3,6 +3,7 @@ import { securityHeaders } from "@/lib/security-headers";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["@prisma/adapter-pg", "pg"],
   async headers() {
     return [
       {

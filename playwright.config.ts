@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://brazo:brazo@127.0.0.1:5432/brazo_derecho";
+process.env.DATABASE_URL ??= databaseUrl;
+process.env.DIRECT_URL ??= databaseUrl;
 
 export default defineConfig({
   testDir: "./e2e",
