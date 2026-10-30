@@ -121,6 +121,13 @@ test("la beta cabe en 360, 390 y 414 px y deja capturas", async ({ page }) => {
 
   await page.goto("/panel");
   await expect(page.getByRole("heading", { name: /Hola,/ })).toBeVisible();
+  const tour = page.getByRole("region", { name: "Prueba la demo" });
+  await expect(tour).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Prueba la demo" })).toBeVisible();
+  const siguiente = tour.getByRole("button", { name: "Siguiente" });
+  const siguienteBox = await siguiente.boundingBox();
+  expect(siguienteBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect((siguienteBox?.x ?? 0) + (siguienteBox?.width ?? 0)).toBeLessThanOrEqual(391);
   await expectFits(page);
   await shot(page, "09-panel");
 

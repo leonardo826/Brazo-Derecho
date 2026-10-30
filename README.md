@@ -82,6 +82,8 @@ Entran al panel con datos distintos. María no ve la carta del café y Pedro no 
 
 Al crear la cuenta, el panel abre un asistente de tres pasos: datos de la empresa, elección de un agente y la prueba de 14 días. Sin claves no hay cobro y la respuesta queda en el simulador. Si una sección está vacía, el panel dice qué falta cargar antes de probar.
 
+La primera vez que entras al panel aparece el recorrido **Prueba la demo**: cinco pasos cortos (inicio, los tres agentes, WhatsApp, cotizador y marketing). Se cierra con «Ahora no», «Cerrar», «Listo» o Escape, y no vuelve a salir solo en ese navegador. Si lo cerraste, el botón «Prueba la demo» del menú lo abre de nuevo. En el celular el aviso queda arriba del contenido, con botones de 44 px, y no tapa el formulario.
+
 ## Cómo está armado
 
 - Next.js (App Router) y TypeScript.

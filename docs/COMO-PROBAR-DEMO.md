@@ -28,6 +28,12 @@ La contraseña de las dos es `Clave-demo-2026`. El correo ya está confirmado.
 
 Entra en Ingresar. María tiene horarios, despacho y un descuento que el agente rechaza, más dos cotizaciones. Pedro tiene el horario y la carta del café, una cotización y un borrador. Cada uno ve solo lo suyo.
 
+## Recorrido «Prueba la demo»
+
+La primera vez que abres el panel, arriba del contenido, sale un aviso de cinco pasos. Te lleva al inicio, a Atención WhatsApp, al Cotizador y a Marketing. «Siguiente» cambia de pantalla. «Atrás» vuelve. «Ahora no», «Cerrar», «Listo» o la tecla Escape lo guardan como visto: no vuelve a salir solo en ese navegador. En el menú queda el botón «Prueba la demo» para abrirlo otra vez.
+
+En el celular el aviso ocupa el ancho de la pantalla y se puede cerrar sin tapar los botones del formulario.
+
 ## Qué mirar
 
 1. Sin entrar: Agentes y Precios. Ahí está qué hace cada uno, qué no hace, el neto y el IVA.
