@@ -15,7 +15,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   }, [error]);
 
   return (
-    <html lang="es">
+    <html lang="es-CL">
       <body>
         <main className="auth-screen">
           <div className="narrow card stack">

@@ -6,6 +6,8 @@ Para reportar un problema de seguridad, escribe en privado al dueño del reposit
 
 Estas piezas ya están y no hay que rehacerlas: cabeceras de seguridad (CSP, `X-Frame-Options`, HSTS solo en producción), límite de intentos en memoria, Sentry que no llama a la red si `SENTRY_DSN` está vacío, pruebas de aislamiento entre empresas y el seed de demostración.
 
+La CSP sigue la guía de Next 16 sin nonces, para no obligar a render dinámico en la portada. `script-src` es `'self' 'unsafe-inline'`. `'unsafe-eval'` entra solo si `NODE_ENV` es `development`, porque el servidor de desarrollo de React lo usa para reconstruir el stack. `next start`, la CI y Vercel no lo envían. No hace falta `upgrade-insecure-requests`: el recorrido de Playwright usa `http://127.0.0.1`.
+
 - **Flow.** El HMAC es el del manual: parámetros ordenados, nombre pegado al valor, SHA-256 con `FLOW_SECRET_KEY`, parámetro `s`. Una firma que no calza responde 401 y no toca la suscripción. El aviso que documenta Flow hoy trae solo `token`; en ese caso el estado se pide firmado a `payment/getStatus`. Un campo extra (monto, estado) sin firma válida se rechaza.
 - **WhatsApp.** `POST /api/whatsapp` exige `X-Hub-Signature-256` (HMAC-SHA256 del cuerpo con `WHATSAPP_APP_SECRET`). Si no calza, responde 401. Sin el secreto, responde 503.
 - **Twilio.** No hay ruta Twilio. Si se agrega, hay que validar `X-Twilio-Signature` y rechazar antes de procesar.

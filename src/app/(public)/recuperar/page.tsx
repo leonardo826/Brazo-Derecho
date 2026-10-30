@@ -5,7 +5,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 
-export const metadata: Metadata = { title: "Recuperar clave" };
+export const metadata: Metadata = { title: "Recuperar contraseña" };
 export const dynamic = "force-dynamic";
 
 export default async function RecoverPage({
@@ -18,7 +18,7 @@ export default async function RecoverPage({
     <section className="auth-screen">
       <div className="narrow card stack">
         <p className="eyebrow">Cuenta</p>
-        <h1>¿Olvidaste tu clave?</h1>
+        <h1>¿Olvidaste tu contraseña?</h1>
         <p className="muted">
           Escribe el correo de tu cuenta. Si existe, te enviamos un enlace para elegir una contraseña nueva. El enlace
           dura una hora y se usa una sola vez.

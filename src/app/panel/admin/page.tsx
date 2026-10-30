@@ -87,16 +87,19 @@ export default async function AdminPage({
       {organizations.length === 0 ? (
         <EmptyState title="Todavía no hay empresas">Cuando alguien cree una cuenta, aparece en esta lista.</EmptyState>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Empresas del mes">
+          <table className="wide">
+            <caption className="sr-only">
+              Empresas, suscripción, uso y costo estimado. En un celular, desliza horizontalmente para ver todas las columnas.
+            </caption>
             <thead>
               <tr>
-                <th>Empresa</th>
-                <th>Dueño</th>
-                <th>Suscripciones</th>
-                <th>Uso del mes</th>
-                <th>Costo estimado</th>
-                <th>Estado</th>
+                <th scope="col">Empresa</th>
+                <th scope="col">Dueño</th>
+                <th scope="col">Suscripciones</th>
+                <th scope="col">Uso del mes</th>
+                <th scope="col">Costo estimado</th>
+                <th scope="col">Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -165,7 +168,11 @@ export default async function AdminPage({
                         <CsrfField />
                         <input type="hidden" name="organizationId" value={organization.id} />
                         <input type="hidden" name="suspended" value={organization.suspendedAt ? "0" : "1"} />
-                        <button className={organization.suspendedAt ? "button small" : "button secondary small"} type="submit">
+                        <button
+                          className={organization.suspendedAt ? "button small" : "button secondary small"}
+                          type="submit"
+                          aria-label={organization.suspendedAt ? `Reactivar ${organization.name}` : `Suspender ${organization.name}`}
+                        >
                           {organization.suspendedAt ? "Reactivar" : "Suspender"}
                         </button>
                       </form>
@@ -200,8 +207,8 @@ export default async function AdminPage({
               </select>
             </label>
             <label>
-              Id del número
-              <input name="whatsappPhoneNumberId" inputMode="numeric" placeholder="Solo dígitos" />
+              Identificador del número
+              <input name="whatsappPhoneNumberId" inputMode="numeric" autoComplete="off" placeholder="Solo dígitos" />
             </label>
             <p className="muted">Si dejas el id vacío, se desvincula la empresa elegida.</p>
         <button className="button" type="submit">
@@ -215,12 +222,12 @@ export default async function AdminPage({
         <h2>Correos</h2>
         <p className="muted">
           {mockMail
-            ? "No hay clave de Resend. Los correos no salen de este servidor: quedan en el log y en esta lista para la demostración. El enlace de confirmación y el de clave se pueden abrir desde aquí."
+            ? "No hay clave de Resend. Los correos no salen de este servidor: quedan en el log y en esta lista para la demostración. El enlace de confirmación y el de la contraseña se pueden abrir desde aquí."
             : "Los correos salen por Resend. Esta lista anota el envío, sin guardar el texto ni el enlace."}
         </p>
         {emails.length === 0 ? (
           <EmptyState title="Todavía no hay correos">
-            Cuando alguien cree una cuenta o pida una clave nueva, el mensaje aparece aquí.
+            Cuando alguien cree una cuenta o pida una contraseña nueva, el mensaje aparece aquí.
           </EmptyState>
         ) : (
           <div className="mail-list">
@@ -233,7 +240,7 @@ export default async function AdminPage({
                   {email.kind === "verificacion"
                     ? "Confirmación de correo"
                     : email.kind === "recuperacion"
-                      ? "Recuperación de clave"
+                      ? "Recuperación de contraseña"
                       : email.kind}{" "}
                   · {email.provider === "mock" ? "Simulador" : "Resend"} ·{" "}
                   {email.status === "simulado" ? "Simulado" : email.status === "enviado" ? "Enviado" : "Falló"}

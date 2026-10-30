@@ -107,7 +107,7 @@ export default function PrivacyPage() {
       </p>
 
       <h2>10. Cambios</h2>
-      <p>Si cambiamos este aviso, te lo informaremos por correo o en tu panel antes de que entre en vigor.</p>
+      <p>Si cambiamos este aviso, te lo informaremos por correo o en tu panel antes de que entre en vigencia.</p>
       <p>
         <Marked text="Última actualización: [fecha]" />
       </p>

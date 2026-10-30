@@ -16,15 +16,19 @@ export function PanelShell({
 }) {
   return (
     <div className="panel-shell">
+      <a className="skip" href="#contenido">
+        Saltar al contenido
+      </a>
       <aside className="panel-side">
-        <Logo href="/panel" />
-        <p className="org">{session.organizationName}</p>
+        <div className="side-top">
+          <Logo href="/panel" />
+          <p className="org">{session.organizationName}</p>
+        </div>
         <PanelNav showAdmin={showAdmin} />
         <div className="side-foot">
           <p className="whoami">
-            {session.name}
-            <br />
-            {session.email}
+            <span>{session.name}</span>
+            <span>{session.email}</span>
           </p>
           <Link href="/privacidad">Aviso de privacidad</Link>
           <form action={logoutAction}>
@@ -35,9 +39,9 @@ export function PanelShell({
           </form>
         </div>
       </aside>
-      <div className="panel-main" id="contenido">
+      <main className="panel-main" id="contenido">
         {children}
-      </div>
+      </main>
     </div>
   );
 }

@@ -62,7 +62,7 @@ export default async function PanelHome({
               <h2>{agent.name}</h2>
               <p>{agent.tagline}</p>
               <p className="muted">
-                {formatClp(agent.priceClp)} neto / mes + IVA · {agent.limitLabel}
+                {formatClp(agent.priceClp)} neto al mes, más IVA · {agent.limitLabel}
               </p>
               <SubscribeActions agent={agentId} back="/panel" subscription={subscription} />
               {metrics.map(([metric, limit]) => (

@@ -7,8 +7,14 @@ const BASE_HEADERS = [
   { key: "X-DNS-Prefetch-Control", value: "off" },
 ] as const;
 
-export function contentSecurityPolicy(nodeEnv = process.env.NODE_ENV) {
-  const script = nodeEnv === "production" ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+// Next.js 16 no usa eval en producción ni en `next start`. La guía de CSP
+// pide 'unsafe-eval' solo en `next dev`, porque React reconstruye ahí el stack
+// del servidor. Cualquier otro entorno (build, Vercel, pruebas) queda sin eso.
+export function contentSecurityPolicy(nodeEnv: string | undefined = process.env.NODE_ENV) {
+  const script =
+    nodeEnv === "development"
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'";
   return [
     "default-src 'self'",
     script,
@@ -23,7 +29,7 @@ export function contentSecurityPolicy(nodeEnv = process.env.NODE_ENV) {
   ].join("; ");
 }
 
-export function securityHeaders(nodeEnv = process.env.NODE_ENV) {
+export function securityHeaders(nodeEnv: string | undefined = process.env.NODE_ENV) {
   const headers: { key: string; value: string }[] = [
     ...BASE_HEADERS,
     { key: "Content-Security-Policy", value: contentSecurityPolicy(nodeEnv) },

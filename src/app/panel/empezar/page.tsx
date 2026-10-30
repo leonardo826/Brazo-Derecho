@@ -41,7 +41,7 @@ export default async function OnboardingPage({
           <p className="eyebrow">Primeros pasos</p>
           <h1>Deja listo tu primer agente</h1>
           <p className="muted">
-            Son tres pasos. No pedimos tarjeta. Sin claves, el agente responde en el simulador y no sale nada a un teléfono ni a una red.
+            Son tres pasos. No pedimos tarjeta. Sin claves de servicios, el agente responde en el simulador y no sale nada a un celular ni a una red.
           </p>
         </div>
       </div>
@@ -89,7 +89,7 @@ export default async function OnboardingPage({
                   <strong>{item.name}</strong>
                   <span>{item.tagline}</span>
                   <span className="muted">
-                    {formatClp(item.priceClp)} neto al mes + IVA, después de la prueba · {item.limitLabel}
+                    {formatClp(item.priceClp)} neto al mes, más IVA, después de la prueba · {item.limitLabel}
                   </span>
                 </Link>
               );

@@ -43,7 +43,7 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
                 <h3>{agent.name}</h3>
                 <p>{agent.tagline}</p>
                 <p className="price">
-                  {formatClp(agent.priceClp)} <small>neto / mes + IVA</small>
+                  {formatClp(agent.priceClp)} <small>neto al mes, más IVA</small>
                 </p>
                 <p className="muted">
                   {formatClp(agent.grossClp)} con IVA · prueba de {TRIAL_DAYS} días
@@ -128,7 +128,7 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
           <h2>Crea la cuenta y elige un agente.</h2>
           <p className="lead">
             El asistente de alta pide los datos de la empresa, el agente y la prueba de {TRIAL_DAYS} días. Sin claves
-            de servicios, todo queda en el simulador: no sale un mensaje a un teléfono ni a una red.
+            de servicios, todo queda en el simulador: no sale un mensaje a un celular ni a una red.
           </p>
           <Link className="button-link" href="/registro">
             Crear la cuenta de mi empresa

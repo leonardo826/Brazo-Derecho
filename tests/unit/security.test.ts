@@ -52,6 +52,10 @@ describe("cabeceras", () => {
     expect(prod.some((header) => header.key === "Strict-Transport-Security")).toBe(true);
     expect(contentSecurityPolicy("production")).toContain("frame-ancestors 'none'");
     expect(contentSecurityPolicy("production")).toContain("form-action 'self'");
+    expect(contentSecurityPolicy("production")).toContain("script-src 'self' 'unsafe-inline'");
+    expect(contentSecurityPolicy("production")).not.toContain("unsafe-eval");
+    expect(contentSecurityPolicy("test")).not.toContain("unsafe-eval");
+    expect(contentSecurityPolicy("")).not.toContain("unsafe-eval");
     expect(contentSecurityPolicy("development")).toContain("'unsafe-eval'");
   });
 });

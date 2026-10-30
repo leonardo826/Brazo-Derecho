@@ -54,7 +54,7 @@ export default function HomePage() {
               <span className="who">Agente</span>
               <p>No puedo ofrecer descuentos ni cambiar precios. Si quieres un valor distinto, te deriva una persona.</p>
             </div>
-            <p className="fine">En la beta el mensaje no sale a un teléfono. Sirve para probar las reglas.</p>
+            <p className="fine">En la beta el mensaje no sale a un celular. Sirve para probar las reglas.</p>
           </aside>
         </div>
       </section>
@@ -76,7 +76,7 @@ export default function HomePage() {
                   <h3>{agent.name}</h3>
                   <p>{agent.tagline}</p>
                   <p className="price">
-                    {formatClp(agent.priceClp)} <small>neto / mes + IVA</small>
+                    {formatClp(agent.priceClp)} <small>neto al mes, más IVA</small>
                   </p>
                   <p className="muted">{agent.limitLabel}</p>
                   <ul className="plain">

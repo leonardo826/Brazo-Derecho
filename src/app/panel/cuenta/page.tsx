@@ -62,13 +62,14 @@ export default async function AccountPage({
         </form>
         <article className="panel-card">
           <h2>Personas con acceso</h2>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Personas con acceso">
             <table>
+              <caption className="sr-only">Personas con acceso a esta empresa.</caption>
               <thead>
                 <tr>
-                  <th>Nombre</th>
-                  <th>Correo</th>
-                  <th>Rol</th>
+                  <th scope="col">Nombre</th>
+                  <th scope="col">Correo</th>
+                  <th scope="col">Rol</th>
                 </tr>
               </thead>
               <tbody>

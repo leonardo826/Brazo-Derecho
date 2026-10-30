@@ -38,7 +38,7 @@ export default async function MockCheckoutPage({
         <div>
           <p className="eyebrow">Pago de prueba</p>
           <h1>Pago de prueba</h1>
-          <p className="muted">Esta pantalla simula el checkout de Flow. No es un cobro real.</p>
+          <p className="muted">Esta pantalla simula el pago de Flow. No es un cobro real.</p>
         </div>
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />

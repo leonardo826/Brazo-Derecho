@@ -15,7 +15,8 @@ export function renderMockTask(task: XaiTask) {
       const outside = task.unmatched
         ? ` ${task.unmatched}`
         : " Todo lo cotizado sale de la lista de precios, sin valores inventados.";
-      return `Nota interna para ${task.customerName}: quedaron ${task.lineCount} línea(s), por un total de ${formatClp(task.totalClp)}.${outside} Esta cotización no se envió. La tiene que aprobar una persona.`;
+      const lines = task.lineCount === 1 ? "quedó 1 línea" : `quedaron ${task.lineCount} líneas`;
+      return `Nota interna para ${task.customerName}: ${lines}, por un total de ${formatClp(task.totalClp)}.${outside} Esta cotización no se envió. La tiene que aprobar una persona.`;
     }
     case "marketing_post": {
       const openings = [

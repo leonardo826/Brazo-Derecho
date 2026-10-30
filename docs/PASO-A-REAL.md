@@ -48,15 +48,19 @@ RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 | --- | --- |
 | `DATABASE_URL`, `DIRECT_URL`, `SESSION_SECRET` | La app no parte o la sesión no se firma. |
 | `XAI_API_KEY` o `XAI_MODE=mock` | Simulador. No hay red hacia xAI. |
-| `FLOW_API_KEY` o `FLOW_SECRET_KEY` | La prueba de 14 días se activa en el panel. «Activar plan» abre el checkout simulado «Pago de prueba» y no hay cobro. |
+| `FLOW_API_KEY` o `FLOW_SECRET_KEY` | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
 | `FLOW_API_URL` | Sandbox: `https://sandbox.flow.cl/api`. En real tiene que ser `https://www.flow.cl/api`. |
-| `WHATSAPP_TOKEN` | El hilo queda en el panel y no sale al teléfono. |
+| `WHATSAPP_TOKEN` | El hilo queda en el panel y no sale al celular. |
 | `WHATSAPP_APP_SECRET` | `POST /api/whatsapp` responde 503. |
 | `WHATSAPP_VERIFY_TOKEN` | `GET /api/whatsapp` responde 503 y Meta no verifica el webhook. |
 | `RESEND_API_KEY` | El correo se anota en Administración y no se envía. |
 | `SENTRY_DSN` | No se reporta nada fuera del log. Con DSN, el servidor y el navegador (vía `/api/observabilidad`) envían el error a Sentry. |
 | `SEED_DEMO` | En producción el seed se niega. No lo pongas en `1` en el servidor público. |
 | `ADMIN_EMAILS` | Nadie ve el costo por empresa ni puede suspender. |
+
+## Cabeceras
+
+La CSP de producción no incluye `unsafe-eval`. Next 16 no lo usa fuera de `npm run dev` (ahí React arma el recuadro de errores). No lo agregues en Vercel para «hacer funcionar» el sitio: el build publicado ya corre sin eso. Los estilos en línea de Next siguen permitidos; no hace falta aflojar `script-src` más que `'self'` y `'unsafe-inline'`.
 
 ## Antes de abrir el cobro
 

@@ -36,7 +36,7 @@ export const OKS: Record<string, string> = {
   pago_cancelado: "Cancelaste el pago de prueba. La prueba de 14 días sigue activa.",
   flow: "Listo. Si Flow pidió la tarjeta, termina ese paso. La prueba de 14 días queda en tu panel y el cobro se confirma cuando Flow avisa el pago.",
   cancelada: "Suscripción cancelada. El agente quedó detenido.",
-  respuesta: "El agente respondió. Si el hilo es del simulador, no salió a un teléfono.",
+  respuesta: "El agente respondió. Si el hilo es del simulador, no salió a un celular.",
   enviado: "La respuesta quedó en el hilo y se envió por WhatsApp.",
   numero: "Número de WhatsApp vinculado a la empresa.",
   numero_off: "Se desvinculó el número de WhatsApp.",

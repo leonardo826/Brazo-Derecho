@@ -58,7 +58,7 @@ export default async function UsagePage({
           {usage.byModel["grok-4.7"].outputTokens.toLocaleString("es-CL")} de salida.
         </p>
         <p className="muted">
-          Con la API de xAI, estos números salen de cada respuesta y quedan guardados en tu empresa. Sin la clave, el
+          Con la API de xAI, estos números salen de cada respuesta y quedan guardados en tu empresa. Sin la clave de xAI, el
           simulador anota una estimación. No es un cobro. Supuestos del 29 de octubre de 2026: grok-4.3 a US$1,25 /
           US$0,20 en caché / US$2,50 la salida; grok-4.7 a US$2 / US$0,50 / US$6; imagen a US$0,04; dólar a $
           {FX_CLP_PER_USD.toLocaleString("es-CL")}.

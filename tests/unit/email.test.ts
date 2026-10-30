@@ -40,7 +40,7 @@ describe("correo transaccional", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const message = {
       to: "ana@ejemplo.cl",
-      subject: "Recupera tu clave de Brazo Derecho",
+      subject: "Recupera tu contraseña de Brazo Derecho",
       text: "hola",
       html: "<p>hola</p>",
       kind: "recuperacion" as const,

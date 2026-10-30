@@ -8,7 +8,7 @@ Beta multi-empresa para pymes en Chile. Tres agentes se activan por separado:
 
 Los precios son $39.990, $49.990 y $34.990 netos al mes, más IVA de 19% (el cobro en Flow queda en $47.588, $59.488 y $41.638). La prueba dura 14 días.
 
-Sin claves el panel sigue funcionando: xAI responde con el simulador, la prueba no se cobra y WhatsApp se prueba dentro del panel. Desde la prueba, «Activar plan» abre un checkout simulado, marcado como pago de prueba, y deja el plan activo sin tarjeta. La copia del producto está en español de Chile.
+Sin claves el panel sigue funcionando: xAI responde con el simulador, la prueba no se cobra y WhatsApp se prueba dentro del panel. Desde la prueba, «Activar plan» abre un pago simulado, marcado como pago de prueba, y deja el plan activo sin tarjeta. La copia del producto está en español de Chile.
 
 ## Requisitos
 
@@ -52,10 +52,10 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `XAI_MODE` | `mock` obliga al simulador aunque exista clave. | Con clave, llama a xAI. |
 | `XAI_MODEL_ROUTINE` | Modelo de tareas habituales. `grok-4.3` o `grok-4.7`. | `grok-4.3`. |
 | `XAI_MODEL_COMPLEX` | Modelo de cotizaciones y marketing. `grok-4.3` o `grok-4.7`. | `grok-4.7`. |
-| `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el checkout simulado «Pago de prueba» y no hay cobro. |
+| `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
 | `FLOW_SECRET_KEY` | Secreto para firmar cada llamada (HMAC-SHA256). | Igual que sin api key: no hay cobro. |
 | `FLOW_API_URL` | Base del API. | `https://sandbox.flow.cl/api`. |
-| `WHATSAPP_TOKEN` | Token de la app de Meta para enviar respuestas. | El hilo se guarda en el panel y no sale al teléfono. |
+| `WHATSAPP_TOKEN` | Token de la app de Meta para enviar respuestas. | El hilo se guarda en el panel y no sale al celular. |
 | `WHATSAPP_PHONE_NUMBER_ID` | Id de referencia del número. Igual hay que vincularlo a una empresa. | No se muestra la referencia. El enrutado usa el id guardado en la empresa. |
 | `WHATSAPP_VERIFY_TOKEN` | Token que Meta envía al verificar el webhook. | `GET /api/whatsapp` responde 503. |
 | `WHATSAPP_APP_SECRET` | Secreto de la app para revisar `X-Hub-Signature-256`. | `POST /api/whatsapp` responde 503 y no procesa mensajes. |
@@ -94,7 +94,7 @@ Al crear la cuenta, el panel abre un asistente de tres pasos: datos de la empres
 - Cada formulario lleva un token de CSRF y se compara el origen con el host. El ingreso, el registro y el chat del agente tienen un límite de intentos en memoria del proceso.
 - Los webhooks de Flow y WhatsApp escriben un log en JSON, sin el texto del mensaje ni el token de pago. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
 - Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos. También muestra los correos del simulador, con el enlace para confirmar el correo o cambiar la clave.
-- Al crear la cuenta se pide confirmar el correo. El aviso del panel no bloquea el uso. Las cuentas del seed de demostración ya quedan confirmadas. En Ingresar, «¿Olvidaste tu clave?» manda un enlace de un solo uso que dura una hora. Hay un límite de intentos por IP y por correo. Cambiar la clave cierra las sesiones anteriores.
+- Al crear la cuenta se pide confirmar el correo. El aviso del panel no bloquea el uso. Las cuentas del seed de demostración ya quedan confirmadas. En Ingresar, «¿Olvidaste tu contraseña?» manda un enlace de un solo uso que dura una hora. Hay un límite de intentos por IP y por correo. Cambiar la contraseña cierra las sesiones anteriores.
 - El catálogo público está en `/agentes` y `/precios`: qué hace y qué no hace cada agente, el precio neto más IVA, la prueba de 14 días, preguntas frecuentes y el enlace para crear la cuenta. El menú de la portada apunta ahí.
 
 ```
@@ -129,7 +129,7 @@ npm run test:integration # aislamiento entre empresas; necesita Postgres
 npm run typecheck
 npm run lint
 npm run build            # migra y construye; necesita DATABASE_URL y DIRECT_URL
-npm run test:e2e         # Playwright: registro, prueba, chat y administración. Corre después del build.
+npm run test:e2e         # Playwright: registro, prueba, chat y administración, más un proyecto móvil (360–414 px) que guarda capturas en artifacts/mobile. Corre después del build.
 ```
 
 El comando de seed vive en `prisma.config.ts`, que también carga `.env`. Prisma CLI lo usa en `npm run db:seed` y al resetear la base.

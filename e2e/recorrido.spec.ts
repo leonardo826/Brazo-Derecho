@@ -130,8 +130,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
 
   await logout(page);
   await page.goto("/ingresar");
-  await page.getByRole("link", { name: "¿Olvidaste tu clave?" }).click();
-  await expect(page.getByRole("heading", { name: "¿Olvidaste tu clave?" })).toBeVisible();
+  await page.getByRole("link", { name: "¿Olvidaste tu contraseña?" }).click();
+  await expect(page.getByRole("heading", { name: "¿Olvidaste tu contraseña?" })).toBeVisible();
   await page.getByLabel("Correo").fill(email);
   await clickHydrated(page, page.getByRole("button", { name: "Enviar enlace" }), async () => {
     await expect(page.getByText("Si ese correo tiene una cuenta")).toBeVisible({ timeout: 3_000 });
@@ -142,7 +142,7 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await expect(page.getByRole("heading", { name: "Correos" })).toBeVisible();
   await expect(page.getByText("No hay clave de Resend")).toBeVisible();
   const verifyUrl = await mailLink(page, email, "Confirma tu correo en Brazo Derecho");
-  const resetUrl = await mailLink(page, email, "Recupera tu clave de Brazo Derecho");
+  const resetUrl = await mailLink(page, email, "Recupera tu contraseña de Brazo Derecho");
   await logout(page);
 
   await page.goto(verifyUrl);

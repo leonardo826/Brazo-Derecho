@@ -52,14 +52,17 @@ export default async function QuoteDetailPage({
         <p>Aprobar no envía la cotización. La mandas tú, por el canal que uses hoy.</p>
         {quote.notes ? <p>Notas: {quote.notes}</p> : null}
         {quote.unmatchedNote ? <p>{quote.unmatchedNote}</p> : null}
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Líneas de la cotización">
+          <table className="wide">
+            <caption className="sr-only">
+              Líneas de la cotización. En un celular, desliza horizontalmente para ver todas las columnas.
+            </caption>
             <thead>
               <tr>
-                <th>Producto</th>
-                <th>Cantidad</th>
-                <th>Precio</th>
-                <th>Subtotal</th>
+                <th scope="col">Producto</th>
+                <th scope="col">Cantidad</th>
+                <th scope="col">Precio</th>
+                <th scope="col">Subtotal</th>
               </tr>
             </thead>
             <tbody>

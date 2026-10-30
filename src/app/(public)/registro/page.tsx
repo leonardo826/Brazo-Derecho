@@ -41,14 +41,19 @@ export default async function RegisterPage({
           <label>
             Contraseña
             <input
+              id="password"
               name="password"
               type="password"
               required
               minLength={8}
               autoComplete="new-password"
-              placeholder="Mínimo 8 caracteres, con una letra y un número"
+              aria-describedby="ayuda-clave"
+              placeholder="Ejemplo: casa-aromos-2026"
             />
           </label>
+          <p id="ayuda-clave" className="field-hint">
+            Mínimo 8 caracteres, con una letra y un número.
+          </p>
           <label>
             Nombre del negocio
             <input name="organizationName" required minLength={2} maxLength={120} placeholder="Ferretería Los Aromos" />

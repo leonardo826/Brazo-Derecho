@@ -31,7 +31,7 @@ export function QuoteForm({ items }: { items: { id: string; label: string }[] })
       {Array.from({ length: rows }, (_, index) => (
         <div className="split" key={index}>
           <label>
-            Producto de la lista
+            {`Producto de la lista, línea ${index + 1}`}
             <select name="priceItemId" defaultValue="">
               <option value="">Elegir de la lista</option>
               {items.map((item) => (
@@ -42,7 +42,7 @@ export function QuoteForm({ items }: { items: { id: string; label: string }[] })
             </select>
           </label>
           <label>
-            Cantidad
+            {`Cantidad, línea ${index + 1}`}
             <input name="quantity" type="number" min={1} max={999} defaultValue={1} />
           </label>
         </div>

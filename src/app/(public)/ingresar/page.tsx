@@ -38,7 +38,7 @@ export default async function LoginPage({
             <input name="password" type="password" autoComplete="current-password" required />
           </label>
           <p className="muted">
-            <Link href="/recuperar">¿Olvidaste tu clave?</Link>
+            <Link href="/recuperar">¿Olvidaste tu contraseña?</Link>
           </p>
           <button className="button" type="submit">
             Entrar al panel

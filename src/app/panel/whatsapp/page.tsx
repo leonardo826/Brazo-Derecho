@@ -83,13 +83,14 @@ export default async function WhatsappPage({
           <form action={linkWhatsappNumberAction} className="stack">
             <CsrfField />
             <label>
-              Id del número en Meta
+              Identificador del número en Meta
               <input
                 name="whatsappPhoneNumberId"
                 inputMode="numeric"
                 pattern="\d{8,20}"
                 defaultValue={organization.whatsappPhoneNumberId ?? ""}
                 placeholder="Solo dígitos, como los muestra Meta"
+                autoComplete="off"
               />
             </label>
             <p className="muted">Déjalo vacío y guarda para desvincularlo.</p>
@@ -145,7 +146,7 @@ export default async function WhatsappPage({
                 <form action={deleteKnowledgeAction}>
                   <CsrfField />
                   <input type="hidden" name="id" value={item.id} />
-                  <button className="button secondary small" type="submit">
+                  <button className="button secondary small" type="submit" aria-label={`Eliminar ${item.title}`}>
                     Eliminar
                   </button>
                 </form>
@@ -156,9 +157,9 @@ export default async function WhatsappPage({
             <h2>{selected?.channel === "whatsapp" ? "WhatsApp" : "Simulador"}</h2>
             <form action={startConversationAction} className="inline">
               <CsrfField />
-              <label style={{ flex: 1 }}>
+              <label className="grow">
                 Quién escribe
-                <input name="customerLabel" required minLength={2} maxLength={80} placeholder="Cliente del mesón" />
+                <input name="customerLabel" required minLength={2} maxLength={80} placeholder="Cliente del mesón" autoComplete="off" />
               </label>
               <button className="button secondary" type="submit">
                 Abrir hilo
@@ -183,7 +184,7 @@ export default async function WhatsappPage({
             )}
             {selected ? (
               <>
-                <div className="thread" aria-live="polite">
+                <div className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Mensajes del hilo">
                   {messages.length === 0 ? <p className="muted">Sin mensajes todavía.</p> : null}
                   {messages.map((message) => (
                     <div

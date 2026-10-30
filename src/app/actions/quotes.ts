@@ -135,7 +135,9 @@ export async function createQuoteAction(formData: FormData) {
   const totalClp = quoteTotal(built.lines);
   const unmatchedNote =
     built.rejected > 0
-      ? `${built.rejected} línea(s) no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
+      ? built.rejected === 1
+        ? "1 línea no estaba en la lista activa y no se incluyó. No inventamos el precio."
+        : `${built.rejected} líneas no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
       : "";
   let gated: { ok: true; value: XaiResponse } | { ok: false; reason: "limite"; message: string };
   try {

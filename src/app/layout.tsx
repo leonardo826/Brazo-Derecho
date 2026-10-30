@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const headerStore = await headers();
   const csrf = headerStore.get(CSRF_HEADER) ?? "";
   return (
-    <html lang="es">
+    <html lang="es-CL">
       <body className={`${display.variable} ${sans.variable}`}>
         <CsrfProvider token={csrf}>{children}</CsrfProvider>
       </body>

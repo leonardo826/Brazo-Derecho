@@ -40,5 +40,23 @@ export default defineConfig({
       ADMIN_EMAILS: "admin-e2e@brazo.cl",
     },
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: "**/mobile-vista.spec.ts",
+    },
+    {
+      name: "mobile",
+      use: {
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        deviceScaleFactor: 1,
+        userAgent: devices["Pixel 7"].userAgent,
+        reducedMotion: "reduce",
+      },
+      testMatch: "**/mobile-vista.spec.ts",
+    },
+  ],
 });

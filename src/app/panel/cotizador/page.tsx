@@ -127,11 +127,16 @@ export default async function QuotesPage({
               <div className="inline">
                 <span className={item.active ? "badge good" : "badge warn"}>{item.active ? "Activo" : "Pausado"}</span>
                 <span>{formatClp(item.priceClp)}</span>
-                <button className="button small" type="submit">
+                <button className="button small" type="submit" aria-label={`Guardar ${item.name}`}>
                   Guardar
                 </button>
               </div>
-              <button className="button secondary small" type="submit" formAction={togglePriceAction}>
+              <button
+                className="button secondary small"
+                type="submit"
+                formAction={togglePriceAction}
+                aria-label={`${item.active ? "Pausar" : "Activar"} ${item.name}`}
+              >
                 {item.active ? "Pausar" : "Activar"}
               </button>
             </form>
@@ -164,14 +169,17 @@ export default async function QuotesPage({
                 Cuando armes una, queda pendiente de tu aprobación. Brazo Derecho no la envía.
               </EmptyState>
             ) : null}
-            <div className="table-wrap">
-              <table>
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Cotizaciones">
+              <table className="wide">
+                <caption className="sr-only">
+                  Cotizaciones de la empresa. En un celular, desliza horizontalmente para ver todas las columnas.
+                </caption>
                 <thead>
                   <tr>
-                    <th>Número</th>
-                    <th>Cliente</th>
-                    <th>Estado</th>
-                    <th>Total</th>
+                    <th scope="col">Número</th>
+                    <th scope="col">Cliente</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Total</th>
                   </tr>
                 </thead>
                 <tbody>

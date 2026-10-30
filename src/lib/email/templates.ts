@@ -29,11 +29,11 @@ export function verificationEmail(input: { name: string; url: string }) {
 }
 
 export function passwordResetEmail(input: { name: string; url: string }) {
-  const subject = "Recupera tu clave de Brazo Derecho";
+  const subject = "Recupera tu contraseña de Brazo Derecho";
   const paragraphs = [
     `Hola ${input.name},`,
-    "Recibimos un pedido para cambiar la contraseña de tu cuenta.",
-    "El enlace dura 1 hora y se puede usar una sola vez. Si no fuiste tú, ignora este mensaje: la contraseña no cambia.",
+    "Recibimos una solicitud para cambiar la contraseña de tu cuenta.",
+    "El enlace dura una hora y se puede usar una sola vez. Si no fuiste tú, ignora este mensaje: la contraseña no cambia.",
     "Abre este enlace:",
   ];
   return {
