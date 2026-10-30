@@ -25,7 +25,7 @@ export default async function LoginPage({
       <div className="narrow card stack">
         <p className="eyebrow">Cuenta</p>
         <h1>Ingresar</h1>
-        <Flash error={firstParam(params.error)} />
+        <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
         <form action={loginAction} className="stack">
           <CsrfField />
           <input type="hidden" name="siguiente" value={siguiente} />
@@ -37,6 +37,9 @@ export default async function LoginPage({
             Contraseña
             <input name="password" type="password" autoComplete="current-password" required />
           </label>
+          <p className="muted">
+            <Link href="/recuperar">¿Olvidaste tu clave?</Link>
+          </p>
           <button className="button" type="submit">
             Entrar al panel
           </button>

@@ -9,6 +9,8 @@ export function SiteFooter() {
           terminar la prueba. Si Flow no está conectado, la prueba queda en el panel y no hay cargo.
         </p>
         <nav className="nav-links" aria-label="Legal">
+          <Link href="/agentes">Agentes</Link>
+          <Link href="/precios">Precios</Link>
           <Link href="/privacidad">Aviso de privacidad</Link>
           <Link href="/terminos">Términos</Link>
         </nav>

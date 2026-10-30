@@ -62,12 +62,14 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `ADMIN_EMAILS` | Correos, separados por coma, que entran a Administración: ven empresas, uso, costo estimado y pueden suspender o reactivar. También vinculan el número de cualquier empresa. | Esa pantalla no aparece. El dueño igual vincula el número de su empresa en Atención WhatsApp. |
 | `SEED_DEMO` | En producción, `1` permite correr el seed de demostración. | El seed se niega si `NODE_ENV=production`. |
 | `SENTRY_DSN` | DSN de Sentry para errores de los webhooks de Flow y WhatsApp. | No se envía nada. El error queda solo en el log del proceso. |
+| `RESEND_API_KEY` | Clave de Resend para correos de confirmación y de recuperación de clave. | Simulador: el correo se escribe en el log y queda en Administración. No sale ningún mensaje. |
+| `RESEND_FROM` | Remitente, por ejemplo `Brazo Derecho <onboarding@resend.dev>`. | `Brazo Derecho <onboarding@resend.dev>`. En el plan gratis, ese remitente solo entrega al correo de la cuenta de Resend. |
 
 Los tokens de cada respuesta quedan en `UsageEvent`, por empresa, con el modelo usado. El tope mensual se descuenta en la misma transacción que guarda la respuesta. El mes se calcula en `America/Santiago`.
 
 ## Cuentas de demostración
 
-El seed es idempotente: se puede correr otra vez y no duplica fichas, hilos, cotizaciones ni borradores. Si la prueba de 14 días de una cuenta demo venció y no está pagada en Flow, la vuelve a dejar activa. La contraseña de las dos queda en `Clave-demo-2026`.
+El seed es idempotente: se puede correr otra vez y no duplica fichas, hilos, cotizaciones ni borradores. Si la prueba de 14 días de una cuenta demo venció y no está pagada en Flow, la vuelve a dejar activa. La contraseña de las dos queda en `Clave-demo-2026`. Las dos cuentas quedan con el correo confirmado, así que no ven el aviso de verificación.
 
 | Correo | Empresa | Qué trae |
 | --- | --- | --- |
@@ -91,7 +93,9 @@ Al crear la cuenta, el panel abre un asistente de tres pasos: datos de la empres
 - WhatsApp: `GET/POST /api/whatsapp`. El mensaje se enruta por `phone_number_id` a la empresa vinculada. Salud: `GET /api/health`.
 - Cada formulario lleva un token de CSRF y se compara el origen con el host. El ingreso, el registro y el chat del agente tienen un límite de intentos en memoria del proceso.
 - Los webhooks de Flow y WhatsApp escriben un log en JSON, sin el texto del mensaje ni el token de pago. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
-- Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos.
+- Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos. También muestra los correos del simulador, con el enlace para confirmar el correo o cambiar la clave.
+- Al crear la cuenta se pide confirmar el correo. El aviso del panel no bloquea el uso. Las cuentas del seed de demostración ya quedan confirmadas. En Ingresar, «¿Olvidaste tu clave?» manda un enlace de un solo uso que dura una hora. Hay un límite de intentos por IP y por correo. Cambiar la clave cierra las sesiones anteriores.
+- El catálogo público está en `/agentes` y `/precios`: qué hace y qué no hace cada agente, el precio neto más IVA, la prueba de 14 días, preguntas frecuentes y el enlace para crear la cuenta. El menú de la portada apunta ahí.
 
 ```
 Sitio y panel
@@ -115,7 +119,7 @@ Acciones del servidor  -- filtran por empresa de la sesión
 5. En Flow (sandbox o producción), las claves van en `FLOW_API_KEY` y `FLOW_SECRET_KEY`. El plan avisa los pagos a `https://tu-dominio.cl/api/flow/confirmacion`.
 6. Revisa `GET /api/health`. Responde `{ "ok": true }` cuando la base contesta.
 7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número y, si hace falta, suspéndela. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
-8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN` o `SENTRY_DSN` el panel sigue en modo simulado y no sale ningún aviso externo.
+8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN`, `SENTRY_DSN` o `RESEND_API_KEY` el panel sigue en modo simulado y no sale ningún aviso externo. Los correos de la demo se leen en Administración.
 
 ## Scripts
 

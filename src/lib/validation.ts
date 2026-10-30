@@ -13,6 +13,19 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+export const emailOnlySchema = z.object({
+  email: z.string().trim().email().max(160),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(20).max(200),
+  password: z.string().min(8).max(200),
+});
+
+export const confirmEmailSchema = z.object({
+  token: z.string().trim().min(20).max(200),
+});
+
 export const organizationSchema = z.object({
   organizationName: z.string().trim().min(2).max(120),
   rut: z.string().trim().max(20),

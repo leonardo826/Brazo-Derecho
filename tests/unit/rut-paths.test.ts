@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { passwordError } from "@/lib/password";
-import { safePanelPath } from "@/lib/paths";
+import { panelReturnPath, safePanelPath } from "@/lib/paths";
 import { formatRut, isValidRut } from "@/lib/rut";
 import { slugify } from "@/lib/slug";
 
@@ -24,6 +24,17 @@ describe("rutas internas", () => {
     expect(safePanelPath("//evil.test")).toBe("/panel");
     expect(safePanelPath("/panel/../cuenta")).toBe("/panel");
     expect(safePanelPath("/ingresar")).toBe("/panel");
+  });
+
+  test("al reenviar el correo vuelve al paso del asistente", () => {
+    expect(panelReturnPath("http://127.0.0.1:3100/panel/empezar?paso=agente")).toBe("/panel/empezar?paso=agente");
+    expect(panelReturnPath("http://127.0.0.1:3100/panel/empezar?paso=probar&agente=WHATSAPP")).toBe(
+      "/panel/empezar?paso=probar&agente=WHATSAPP",
+    );
+    expect(panelReturnPath("http://127.0.0.1:3100/panel/cotizador?ok=precio")).toBe("/panel/cotizador");
+    expect(panelReturnPath("http://evil.test/panel/cuenta")).toBe("/panel/cuenta");
+    expect(panelReturnPath("no-es-url")).toBe("/panel");
+    expect(panelReturnPath(null)).toBe("/panel");
   });
 });
 

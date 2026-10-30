@@ -33,6 +33,8 @@ export default defineConfig({
       WHATSAPP_APP_SECRET: "",
       WHATSAPP_VERIFY_TOKEN: "",
       SENTRY_DSN: "",
+      RESEND_API_KEY: "",
+      RESEND_FROM: "Brazo Derecho <onboarding@resend.dev>",
       ADMIN_EMAILS: "admin-e2e@brazo.cl",
     },
   },

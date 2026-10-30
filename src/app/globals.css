@@ -234,6 +234,19 @@ textarea { min-height: 7rem; resize: vertical; }
 }
 .banner.ok { background: var(--good-bg); color: var(--good); }
 .banner.error { background: var(--bad-bg); color: #6f2414; }
+.banner.warn { background: var(--warn-bg); color: #6d4a10; }
+.banner p:last-child { margin-bottom: 0; }
+.banner form { margin-top: 0.7rem; }
+h4 { margin: 0.8rem 0 0.2rem; font-size: 1rem; }
+.mail-list { display: grid; gap: 0.55rem; }
+.mail-list details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.7rem 0.85rem;
+  background: white;
+}
+.mail-list summary { cursor: pointer; font-weight: 650; }
+.mail-list pre { max-height: 16rem; overflow: auto; word-break: break-word; }
 .badge {
   display: inline-flex;
   border-radius: 999px;

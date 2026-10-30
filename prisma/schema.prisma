@@ -9,14 +9,17 @@ datasource db {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String
+  id               String       @id @default(cuid())
+  email            String       @unique
+  name             String
   passwordHash     String
+  authVersion      Int          @default(0)
+  emailVerifiedAt  DateTime?
   consentAt        DateTime?
   marketingOptInAt DateTime?
   createdAt        DateTime     @default(now())
   memberships      Membership[]
+  authTokens       AuthToken[]
 }
 
 model Organization {
@@ -42,6 +45,40 @@ model Organization {
 enum MemberRole {
   OWNER
   STAFF
+}
+
+enum AuthTokenKind {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  kind      AuthTokenKind
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind])
+}
+
+model EmailMessage {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  text      String
+  html      String   @default("")
+  kind      String
+  provider  String
+  status    String
+  error     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([to])
+  @@index([createdAt])
 }
 
 model Membership {

@@ -24,6 +24,7 @@ export const ERRORS: Record<string, string> = {
   ritmo: "Demasiados intentos seguidos. Espera un momento y prueba otra vez.",
   suspendida: "Tu empresa está suspendida. Los agentes están detenidos hasta que administración la reactive.",
   plataforma: "Esa acción es solo de administración.",
+  token: "Ese enlace ya no sirve: se usó o se venció. Pide uno nuevo.",
 };
 
 export const OKS: Record<string, string> = {
@@ -49,4 +50,10 @@ export const OKS: Record<string, string> = {
   suspendida: "Empresa suspendida. Los agentes quedan detenidos y los datos se conservan.",
   reactivada: "Empresa reactivada. Las pruebas y suscripciones que ya tenía vuelven a contar.",
   empresa_lista: "Datos guardados. Ahora elige el agente con el que quieres partir.",
+  clave_enviada:
+    "Si ese correo tiene una cuenta, te enviamos un enlace para elegir una contraseña nueva. Dura una hora y se usa una sola vez. En la demo, el mensaje queda en Administración.",
+  clave: "Contraseña actualizada. Ya puedes ingresar.",
+  verificacion: "Te reenviamos el enlace para confirmar el correo.",
+  verificado: "Ese correo ya estaba confirmado.",
+  correo_ok: "Correo confirmado. Gracias.",
 };

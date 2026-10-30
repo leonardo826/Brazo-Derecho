@@ -6,7 +6,8 @@ import { Flash } from "@/components/flash";
 import { isPlatformAdmin } from "@/lib/admin";
 import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type MetricId } from "@/lib/catalog";
 import { whatsappEnv } from "@/lib/env";
-import { formatClp } from "@/lib/format";
+import { emailIsMock } from "@/lib/email/deliver";
+import { formatClp, formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -37,6 +38,11 @@ export default async function AdminPage({
   });
   const usage = await usageByOrganization(organizations.map((organization) => organization.id));
   const referenceId = whatsappEnv().phoneNumberId;
+  const emails = await prisma.emailMessage.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 40,
+  });
+  const mockMail = emailIsMock();
 
   return (
     <>
@@ -162,12 +168,47 @@ export default async function AdminPage({
               <input name="whatsappPhoneNumberId" inputMode="numeric" placeholder="Solo dígitos" />
             </label>
             <p className="muted">Si dejas el id vacío, se desvincula la empresa elegida.</p>
-            <button className="button" type="submit">
-              Guardar vínculo
-            </button>
+        <button className="button" type="submit">
+          Guardar vínculo
+        </button>
           </>
         )}
       </form>
+
+      <section className="panel-card stack" style={{ marginTop: "1rem" }}>
+        <h2>Correos</h2>
+        <p className="muted">
+          {mockMail
+            ? "No hay clave de Resend. Los correos no salen de este servidor: quedan en el log y en esta lista para la demostración. El enlace de confirmación y el de clave se pueden abrir desde aquí."
+            : "Los correos salen por Resend. Esta lista anota el envío, sin guardar el texto ni el enlace."}
+        </p>
+        {emails.length === 0 ? (
+          <EmptyState title="Todavía no hay correos">
+            Cuando alguien cree una cuenta o pida una clave nueva, el mensaje aparece aquí.
+          </EmptyState>
+        ) : (
+          <div className="mail-list">
+            {emails.map((email) => (
+              <details key={email.id}>
+                <summary>
+                  {formatWhen(email.createdAt)} · {email.to} · {email.subject}
+                </summary>
+                <p className="muted">
+                  {email.kind === "verificacion"
+                    ? "Confirmación de correo"
+                    : email.kind === "recuperacion"
+                      ? "Recuperación de clave"
+                      : email.kind}{" "}
+                  · {email.provider === "mock" ? "Simulador" : "Resend"} ·{" "}
+                  {email.status === "simulado" ? "Simulado" : email.status === "enviado" ? "Enviado" : "Falló"}
+                </p>
+                {email.error ? <p className="banner error">{email.error}</p> : null}
+                {email.text ? <pre className="copy">{email.text}</pre> : <p className="muted">Sin texto guardado.</p>}
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
     </>
   );
 }

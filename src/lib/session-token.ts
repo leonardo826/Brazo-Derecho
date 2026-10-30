@@ -8,6 +8,7 @@ export type Session = {
   organizationId: string;
   organizationName: string;
   role: MemberRole;
+  authVersion: number;
 };
 
 function secretKey() {
@@ -27,7 +28,9 @@ function isSession(value: unknown): value is Session {
     typeof record.name === "string" &&
     typeof record.organizationId === "string" &&
     typeof record.organizationName === "string" &&
-    (record.role === "OWNER" || record.role === "STAFF")
+    (record.role === "OWNER" || record.role === "STAFF") &&
+    typeof record.authVersion === "number" &&
+    Number.isInteger(record.authVersion)
   );
 }
 
@@ -50,6 +53,7 @@ export async function readSessionToken(token: string): Promise<Session | null> {
       organizationId: payload.organizationId,
       organizationName: payload.organizationName,
       role: payload.role,
+      authVersion: payload.authVersion,
     };
   } catch {
     return null;

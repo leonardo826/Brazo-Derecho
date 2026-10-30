@@ -8,6 +8,7 @@ export default defineConfig({
       DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://brazo:brazo@127.0.0.1:5432/brazo_derecho",
       SESSION_SECRET: process.env.SESSION_SECRET ?? "dev-only-session-secret-cambia-esto-32",
       XAI_MODE: process.env.XAI_MODE ?? "mock",
+      RESEND_API_KEY: "",
     },
   },
   resolve: {

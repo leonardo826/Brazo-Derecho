@@ -5,11 +5,15 @@ import { sameOrigin } from "@/lib/csrf-token";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimit } from "@/lib/rate-limit";
 
-export function withError(path: string, code: string) {
+export function withNotice(path: string, key: "error" | "ok", code: string) {
   const hashIndex = path.indexOf("#");
   const base = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
   const join = base.includes("?") ? "&" : "?";
-  return `${base}${join}error=${code}`;
+  return `${base}${join}${key}=${encodeURIComponent(code)}`;
+}
+
+export function withError(path: string, code: string) {
+  return withNotice(path, "error", code);
 }
 
 export async function clientAddress() {

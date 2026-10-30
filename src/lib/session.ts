@@ -42,7 +42,7 @@ export async function resolveSession(): Promise<Session | null> {
     },
     include: { organization: true, user: true },
   });
-  if (!membership) return null;
+  if (!membership || membership.user.authVersion !== session.authVersion) return null;
   return {
     userId: membership.userId,
     email: membership.user.email,
@@ -50,6 +50,7 @@ export async function resolveSession(): Promise<Session | null> {
     organizationId: membership.organizationId,
     organizationName: membership.organization.name,
     role: membership.role,
+    authVersion: membership.user.authVersion,
   };
 }
 

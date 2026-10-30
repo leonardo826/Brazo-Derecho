@@ -1,12 +1,19 @@
 import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type MetricId } from "@/lib/catalog";
+import { Flash } from "@/components/flash";
 import { UsageBar } from "@/components/usage-bar";
 import { formatClp } from "@/lib/format";
 import { FX_CLP_PER_USD } from "@/lib/pricing";
+import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 import { usageSnapshot } from "@/lib/usage-store";
 
-export default async function UsagePage() {
+export default async function UsagePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireSession();
+  const params = await searchParams;
   const usage = await usageSnapshot(session.organizationId);
   return (
     <>
@@ -19,6 +26,7 @@ export default async function UsagePage() {
           </p>
         </div>
       </div>
+      <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       <div className="grid-3">
         {AGENT_ORDER.map((agentId) => {
           const agent = AGENT_CATALOG[agentId];

@@ -23,7 +23,10 @@ export default async function RegisterPage({
       <div className="narrow card stack">
         <p className="eyebrow">Nueva empresa</p>
         <h1>Crear cuenta</h1>
-        <p className="muted">Una cuenta, una empresa. Después eliges un agente y lo pruebas 14 días, sin tarjeta.</p>
+        <p className="muted">
+          Una cuenta, una empresa. Después eliges un agente y lo pruebas 14 días, sin tarjeta. Te enviamos un enlace
+          para confirmar el correo; puedes usar el panel antes de abrirlo.
+        </p>
         <Flash error={firstParam(params.error)} />
         <form action={registerAction} className="stack">
           <CsrfField />

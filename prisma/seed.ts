@@ -236,6 +236,7 @@ async function ensureOwner(input: {
       data: {
         passwordHash: input.passwordHash,
         consentAt: existing.consentAt ?? new Date(),
+        emailVerifiedAt: existing.emailVerifiedAt ?? new Date(),
       },
     });
     const organizationId = existing.memberships[0]?.organizationId;
@@ -253,6 +254,7 @@ async function ensureOwner(input: {
       name: input.person,
       passwordHash: input.passwordHash,
       consentAt: now,
+      emailVerifiedAt: now,
       memberships: {
         create: {
           role: "OWNER",

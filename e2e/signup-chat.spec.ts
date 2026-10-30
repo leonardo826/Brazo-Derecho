@@ -16,6 +16,7 @@ async function signup(page: Page, input: { email: string; organization: string; 
 test("registro, prueba y conversación con el agente", async ({ page }) => {
   const email = `e2e-${Date.now()}@ejemplo.cl`;
   await signup(page, { email, organization: "Taller E2E", name: "Ana Pérez" });
+  await expect(page.getByText("Tu correo todavía no está confirmado")).toBeVisible();
 
   await clickHydrated(page, page.getByRole("button", { name: "Seguir" }), async () => {
     await expect(page.getByRole("heading", { name: "Elige con cuál partir" })).toBeVisible({ timeout: 3_000 });
@@ -35,7 +36,7 @@ test("registro, prueba y conversación con el agente", async ({ page }) => {
 
   await page.getByLabel("Quién escribe").fill("Cliente de prueba");
   await clickHydrated(page, page.getByRole("button", { name: "Abrir hilo" }), async () => {
-    await expect(page.getByRole("link", { name: "Cliente de prueba" })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole("link", { name: "Cliente de prueba" }).first()).toBeVisible({ timeout: 3_000 });
   });
 
   await page.getByLabel("Mensaje del cliente").fill("¿A qué hora abren el sábado?");

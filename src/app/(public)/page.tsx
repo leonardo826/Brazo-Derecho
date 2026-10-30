@@ -63,7 +63,10 @@ export default function HomePage() {
         <div className="wrap">
           <p className="eyebrow">Los tres agentes</p>
           <h2>Se contratan por separado.</h2>
-          <p className="lead">Parte por el que hoy te quita más tiempo. Cada uno tiene un techo de uso para que el gasto no se dispare.</p>
+          <p className="lead">
+            Parte por el que hoy te quita más tiempo. Cada uno tiene un techo de uso para que el gasto no se dispare. El detalle, lo que no hacen y las preguntas están en el{" "}
+            <Link href="/agentes">catálogo</Link> y en <Link href="/precios">precios</Link>.
+          </p>
           <div className="grid-3" id="precios">
             {AGENT_ORDER.map((id) => {
               const agent = AGENT_CATALOG[id];

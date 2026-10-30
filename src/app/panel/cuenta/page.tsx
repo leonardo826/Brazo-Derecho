@@ -21,6 +21,7 @@ export default async function AccountPage({
       orderBy: { createdAt: "asc" },
     }),
   ]);
+  const me = members.find((member) => member.userId === session.userId)?.user;
 
   return (
     <>
@@ -45,11 +46,13 @@ export default async function AccountPage({
             <input name="rut" maxLength={20} defaultValue={organization.rut ?? ""} placeholder="76.123.456-0" />
           </label>
           <p className="muted">Identificador interno: {organization.slug}</p>
-          {members.find((member) => member.userId === session.userId)?.user.consentAt ? (
-            <p className="muted">
-              Aceptaste los términos y el aviso de privacidad el{" "}
-              {formatWhen(members.find((member) => member.userId === session.userId)!.user.consentAt!)}.
-            </p>
+          {me?.emailVerifiedAt ? (
+            <p className="muted">Correo confirmado el {formatWhen(me.emailVerifiedAt)}.</p>
+          ) : (
+            <p className="muted">El correo todavía no está confirmado. Puedes seguir usando el panel.</p>
+          )}
+          {me?.consentAt ? (
+            <p className="muted">Aceptaste los términos y el aviso de privacidad el {formatWhen(me.consentAt)}.</p>
           ) : (
             <p className="muted">Esta cuenta no tiene fecha de aceptación del aviso de privacidad.</p>
           )}
