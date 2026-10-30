@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 import { subscriptionView } from "@/lib/subscription";
+import { monthKey, monthQueryDate, usageAlerts } from "@/lib/usage";
 import { usageByOrganization } from "@/lib/usage-store";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export default async function AdminPage({
   const session = await requireSession();
   if (!isPlatformAdmin(session.email)) notFound();
   const params = await searchParams;
+  const viewedAt = monthQueryDate(firstParam(params.mes));
   const organizations = await prisma.organization.findMany({
     orderBy: { name: "asc" },
     include: {
@@ -36,7 +38,15 @@ export default async function AdminPage({
       },
     },
   });
-  const usage = await usageByOrganization(organizations.map((organization) => organization.id));
+  const usage = await usageByOrganization(
+    organizations.map((organization) => organization.id),
+    viewedAt,
+  );
+  const selectedKey = monthKey(viewedAt);
+  const totalCost = organizations.reduce(
+    (sum, organization) => sum + (usage.byOrganization.get(organization.id)?.costClp ?? 0),
+    0,
+  );
   const referenceId = whatsappEnv().phoneNumberId;
   const emails = await prisma.emailMessage.findMany({
     orderBy: { createdAt: "desc" },
@@ -56,6 +66,24 @@ export default async function AdminPage({
         </div>
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      <section className="panel-card stack" style={{ marginBottom: "1rem" }}>
+        <h2>Costo por empresa</h2>
+        <p className="muted">
+          Estimación de {usage.label}, en hora de Chile. Cada fila de abajo es una empresa de ese mes. No es la boleta de xAI.
+        </p>
+        <form method="get" action="/panel/admin" className="inline">
+          <label>
+            Mes
+            <input name="mes" type="month" defaultValue={selectedKey} />
+          </label>
+          <button className="button secondary small" type="submit">
+            Ver mes
+          </button>
+        </form>
+        <p className="price">
+          {formatClp(totalCost)} <small>suma de las empresas</small>
+        </p>
+      </section>
       {organizations.length === 0 ? (
         <EmptyState title="Todavía no hay empresas">Cuando alguien cree una cuenta, aparece en esta lista.</EmptyState>
       ) : (
@@ -75,6 +103,7 @@ export default async function AdminPage({
               {organizations.map((organization) => {
                 const owner = organization.memberships[0]?.user;
                 const summary = usage.byOrganization.get(organization.id);
+                const alerts = summary ? usageAlerts(summary.totals) : [];
                 const tokens = summary
                   ? summary.byModel["grok-4.3"].inputTokens +
                     summary.byModel["grok-4.3"].outputTokens +
@@ -122,7 +151,14 @@ export default async function AdminPage({
                       ))}
                       <span className="muted">{tokens.toLocaleString("es-CL")} tokens de entrada y salida</span>
                     </td>
-                    <td>{formatClp(summary?.costClp ?? 0)}</td>
+                    <td>
+                      {formatClp(summary?.costClp ?? 0)}
+                      {alerts.map((alert) => (
+                        <div key={alert.metric} className="muted">
+                          {METRIC_LABEL[alert.metric]} al {alert.percent}%
+                        </div>
+                      ))}
+                    </td>
                     <td>
                       <p>{organization.suspendedAt ? "Suspendida" : "Al día"}</p>
                       <form action={setOrganizationSuspensionAction}>

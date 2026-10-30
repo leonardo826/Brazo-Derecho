@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { limitFor } from "@/lib/catalog";
-import { evaluateLimit, monthBounds, summarizeUsage } from "@/lib/usage";
+import { evaluateLimit, monthBounds, monthKey, monthQueryDate, usageAlertMessage, usageAlerts, summarizeUsage } from "@/lib/usage";
 import { USAGE_PRESETS, scaleUsage } from "@/lib/pricing";
 
 describe("límites de uso", () => {
@@ -78,6 +78,31 @@ describe("mes en Chile", () => {
     const { start, end } = monthBounds(now);
     expect(start.getTime()).toBeLessThanOrEqual(now.getTime());
     expect(end.getTime()).toBeGreaterThan(now.getTime());
+  });
+});
+
+describe("aviso de cupo", () => {
+  test("el aviso parte en el 80% y al 100% el texto cambia", () => {
+    expect(usageAlerts({ RESPONSES: 799, QUOTES: 0, TEXTS: 0, IMAGES: 0 })).toEqual([]);
+    const [alert] = usageAlerts({ RESPONSES: 800, QUOTES: 0, TEXTS: 0, IMAGES: 0 });
+    expect(alert).toMatchObject({ agent: "WHATSAPP", metric: "RESPONSES", percent: 80 });
+    expect(usageAlertMessage(alert)).toBe(
+      "Vas al 80% del cupo de respuestas de Atención WhatsApp. Si llegas al 100%, ese agente se pausa hasta el próximo mes para no seguir gastando.",
+    );
+    const full = usageAlerts({ RESPONSES: 1000, QUOTES: 240, TEXTS: 0, IMAGES: 0 });
+    expect(full.map((item) => item.metric)).toEqual(["RESPONSES", "QUOTES"]);
+    expect(usageAlertMessage(full[0])).toMatch(/Ya usaste el cupo de respuestas/);
+  });
+
+  test("el mes pedido cae dentro de ese mes en Chile", () => {
+    const when = monthQueryDate("2026-03");
+    const bounds = monthBounds(when);
+    expect(monthKey(when)).toBe("2026-03");
+    expect(bounds.start.getTime()).toBeLessThanOrEqual(when.getTime());
+    expect(bounds.end.getTime()).toBeGreaterThan(when.getTime());
+    const fallback = new Date("2026-05-01T12:00:00.000Z");
+    expect(monthQueryDate("no-es-mes", fallback)).toBe(fallback);
+    expect(monthQueryDate("2019-01", fallback)).toBe(fallback);
   });
 });
 

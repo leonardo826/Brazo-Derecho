@@ -1,5 +1,6 @@
 import { applyFlowToken } from "@/lib/flow/apply";
-import { flowIsConfigured } from "@/lib/flow/client";
+import { flowConfig } from "@/lib/flow/client";
+import { verifyFlowWebhook } from "@/lib/flow/sign";
 import { logEvent } from "@/lib/log";
 import { captureException } from "@/lib/sentry";
 
@@ -16,17 +17,22 @@ export async function POST(request: Request) {
 }
 
 async function handleFlowPost(request: Request) {
-  if (!flowIsConfigured()) {
+  const config = flowConfig();
+  if (!config) {
     logEvent("flow.webhook", { status: 503, reason: "sin_claves" });
     return Response.json({ ok: false, error: "Flow no está configurado" }, { status: 503 });
   }
   const form = await request.formData();
-  const token = String(form.get("token") ?? "").trim();
-  if (!token || token.length > 200) {
-    logEvent("flow.webhook", { status: 400, reason: "token" });
-    return Response.json({ ok: false }, { status: 400 });
+  const params: Record<string, string> = {};
+  for (const [key, value] of form.entries()) {
+    if (typeof value === "string") params[key] = value;
   }
-  const result = await applyFlowToken(token);
+  const verdict = verifyFlowWebhook(params, config.secretKey);
+  if (!verdict.ok) {
+    logEvent("flow.webhook", { status: verdict.status, reason: verdict.reason });
+    return Response.json({ ok: false }, { status: verdict.status });
+  }
+  const result = await applyFlowToken(verdict.token);
   if (!result.ok) {
     logEvent("flow.webhook", { status: result.status, reason: "estado" });
     return Response.json({ ok: false }, { status: result.status });

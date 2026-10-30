@@ -5,14 +5,15 @@ import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "@/lib/agents/quotes";
-import { instructionsFor, limitFor, modelFor } from "@/lib/catalog";
+import { instructionsFor, modelFor } from "@/lib/catalog";
+import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { evaluateLimit } from "@/lib/usage";
-import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
+import { reserveUsage } from "@/lib/usage-store";
 import { priceSchema, quoteRequestSchema, quoteStatusSchema, recordIdSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
+import type { XaiResponse } from "@/lib/xai/types";
 
 export async function createPriceAction(formData: FormData) {
   await guardMutation(formData, "/panel/cotizador");
@@ -136,29 +137,32 @@ export async function createQuoteAction(formData: FormData) {
     built.rejected > 0
       ? `${built.rejected} línea(s) no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
       : "";
-  if (!evaluateLimit(await usedThisMonth(session.organizationId, "QUOTES"), 1, limitFor("QUOTES", "QUOTES")).ok) {
-    redirect("/panel/cotizador?error=limite");
-  }
-
-  let response;
+  let gated: { ok: true; value: XaiResponse } | { ok: false; reason: "limite"; message: string };
   try {
-    response = await createXaiClient().respond({
-      model: modelFor("QUOTES"),
-      instructions: instructionsFor("QUOTES", session.organizationName),
-      task: {
-        type: "quote_note",
-        customerName,
-        lineCount: built.lines.length,
-        totalClp,
-        unmatched: unmatchedNote,
-      },
-      usage: USAGE_PRESETS.quote,
-      businessName: session.organizationName,
-      maxOutputTokens: 700,
+    gated = await callWithinPlan({
+      organizationId: session.organizationId,
+      checks: [{ agent: "QUOTES", metric: "QUOTES", quantity: 1 }],
+      call: () =>
+        createXaiClient().respond({
+          model: modelFor("QUOTES"),
+          instructions: instructionsFor("QUOTES", session.organizationName),
+          task: {
+            type: "quote_note",
+            customerName,
+            lineCount: built.lines.length,
+            totalClp,
+            unmatched: unmatchedNote,
+          },
+          usage: USAGE_PRESETS.quote,
+          businessName: session.organizationName,
+          maxOutputTokens: 700,
+        }),
     });
   } catch {
     redirect("/panel/cotizador?error=ia");
   }
+  if (!gated.ok) redirect("/panel/cotizador?error=limite");
+  const response = gated.value;
 
   let quoteId: string | null = null;
   try {

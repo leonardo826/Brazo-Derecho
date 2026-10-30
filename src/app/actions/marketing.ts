@@ -5,6 +5,7 @@ import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { channelFor, draftImageSvg, toMarketingRecord } from "@/lib/agents/marketing";
 import { instructionsFor, limitFor, modelFor, routineModel } from "@/lib/catalog";
+import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
@@ -61,54 +62,73 @@ export async function generatePostsAction(formData: FormData) {
   let textModel: string = modelFor("MARKETING");
   let imageModel: string = routineModel();
   try {
-  for (let index = 0; index < count; index += 1) {
-    const channel = channelFor(index);
-    const text = await client.respond({
-      model: textModel,
-      instructions: instructionsFor("MARKETING", session.organizationName),
-      task: {
-        type: "marketing_post",
-        channel,
-        voice: profile.voice,
-        audience: profile.audience,
-        summary: profile.summary,
-        index,
-      },
-      usage: USAGE_PRESETS.text,
-      businessName: session.organizationName,
-      maxOutputTokens: 900,
-    });
-    textModel = text.model;
-    textTokens = addUsage(textTokens, text.usage);
-    let imagePrompt = "";
-    let imageSvg = "";
-    if (withImage) {
-      const image = await client.respond({
-        model: imageModel,
-        instructions: instructionsFor("MARKETING", session.organizationName),
-        task: { type: "marketing_image", summary: profile.summary, channel },
-        usage: EMPTY_USAGE,
-        businessName: session.organizationName,
-        maxOutputTokens: 200,
+    for (let index = 0; index < count; index += 1) {
+      const checks: PlanCheck[] = [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }];
+      if (withImage) checks.push({ agent: "MARKETING", metric: "IMAGES", quantity: 1 });
+      const room = await planRoom({ organizationId: session.organizationId, checks });
+      if (!room.ok) break;
+
+      const channel = channelFor(index);
+      const text = await callWithinPlan({
+        organizationId: session.organizationId,
+        checks: [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }],
+        call: () =>
+          client.respond({
+            model: textModel,
+            instructions: instructionsFor("MARKETING", session.organizationName),
+            task: {
+              type: "marketing_post",
+              channel,
+              voice: profile.voice,
+              audience: profile.audience,
+              summary: profile.summary,
+              index,
+            },
+            usage: USAGE_PRESETS.text,
+            businessName: session.organizationName,
+            maxOutputTokens: 900,
+          }),
       });
-      imageModel = image.model;
-      imageTokens = addUsage(imageTokens, image.usage);
-      imagePrompt = image.outputText;
-      imageSvg = draftImageSvg(channel, imagePrompt);
+      if (!text.ok) break;
+      textModel = text.value.model;
+      textTokens = addUsage(textTokens, text.value.usage);
+      let imagePrompt = "";
+      let imageSvg = "";
+      if (withImage) {
+        const image = await callWithinPlan({
+          organizationId: session.organizationId,
+          checks: [{ agent: "MARKETING", metric: "IMAGES", quantity: 1 }],
+          call: () =>
+            client.respond({
+              model: imageModel,
+              instructions: instructionsFor("MARKETING", session.organizationName),
+              task: { type: "marketing_image", summary: profile.summary, channel },
+              usage: EMPTY_USAGE,
+              businessName: session.organizationName,
+              maxOutputTokens: 200,
+            }),
+        });
+        if (!image.ok) break;
+        imageModel = image.value.model;
+        imageTokens = addUsage(imageTokens, image.value.usage);
+        imagePrompt = image.value.outputText;
+        imageSvg = draftImageSvg(channel, imagePrompt);
+      }
+      drafts.push(
+        toMarketingRecord({
+          channel,
+          index,
+          copy: text.value.outputText,
+          imagePrompt,
+          imageSvg,
+        }),
+      );
     }
-    drafts.push(
-      toMarketingRecord({
-        channel,
-        index,
-        copy: text.outputText,
-        imagePrompt,
-        imageSvg,
-      }),
-    );
-  }
   } catch {
     redirect("/panel/marketing?error=ia");
   }
+
+  if (drafts.length < 1) redirect("/panel/marketing?error=limite");
 
   const saved = await prisma.$transaction(async (tx) => {
     const texts = await reserveUsage(tx, {

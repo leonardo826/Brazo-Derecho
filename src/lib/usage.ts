@@ -1,4 +1,4 @@
-import { AGENT_CATALOG, type AgentId, type MetricId, type ModelId } from "@/lib/catalog";
+import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type AgentId, type MetricId, type ModelId } from "@/lib/catalog";
 import { EMPTY_USAGE, estimateCostClp, type TokenUsage } from "@/lib/pricing";
 
 export type UsageSlice = {
@@ -79,6 +79,54 @@ export function monthBounds(now = new Date(), timeZone = "America/Santiago") {
     end,
     label: new Intl.DateTimeFormat("es-CL", { timeZone, month: "long", year: "numeric" }).format(now),
   };
+}
+
+export const USAGE_WARN_AT = 0.8;
+
+export type UsageAlert = {
+  agent: AgentId;
+  metric: MetricId;
+  used: number;
+  limit: number;
+  percent: number;
+};
+
+export function usageAlerts(totals: Record<MetricId, number>) {
+  const alerts: UsageAlert[] = [];
+  for (const agent of AGENT_ORDER) {
+    for (const [metric, limit] of Object.entries(AGENT_CATALOG[agent].limits) as [MetricId, number][]) {
+      const used = totals[metric] ?? 0;
+      if (!limit || used / limit < USAGE_WARN_AT) continue;
+      const percent = used >= limit ? 100 : Math.floor((used / limit) * 100);
+      alerts.push({ agent, metric, used, limit, percent });
+    }
+  }
+  return alerts;
+}
+
+export function usageAlertMessage(alert: Pick<UsageAlert, "agent" | "metric" | "percent">) {
+  const name = AGENT_CATALOG[alert.agent].name;
+  const metric = METRIC_LABEL[alert.metric].toLowerCase();
+  if (alert.percent >= 100) {
+    return `Ya usaste el cupo de ${metric} de ${name} este mes. El agente queda pausado hasta el próximo mes para no seguir gastando.`;
+  }
+  return `Vas al ${alert.percent}% del cupo de ${metric} de ${name}. Si llegas al 100%, ese agente se pausa hasta el próximo mes para no seguir gastando.`;
+}
+
+export function monthKey(now = new Date(), timeZone = "America/Santiago") {
+  const map = zoneParts(now, timeZone);
+  return `${map.year}-${String(map.month).padStart(2, "0")}`;
+}
+
+export function monthQueryDate(raw: string | undefined, now = new Date()) {
+  const match = raw?.trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return now;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12 || year < 2020 || year > 2100) {
+    return now;
+  }
+  return new Date(Date.UTC(year, month - 1, 15, 16, 0, 0));
 }
 
 export function summarizeUsage(events: UsageSlice[]) {

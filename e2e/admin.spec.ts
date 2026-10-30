@@ -5,6 +5,7 @@ test("administración lista empresas y suspende", async ({ page }) => {
   await ensureAdmin(page);
   await page.goto("/panel/admin");
   await expect(page.getByRole("heading", { name: "Empresas" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Costo por empresa" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Costo estimado" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Suscripciones" })).toBeVisible();
 

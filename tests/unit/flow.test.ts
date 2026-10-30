@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { flowCall } from "@/lib/flow/client";
 import { agentForAmount, flowRedirectUrl, planFor, priceWithIva, trialDaysToAsk } from "@/lib/flow/plans";
-import { signFlowParams } from "@/lib/flow/sign";
+import { signFlowParams, verifyFlowWebhook } from "@/lib/flow/sign";
 import { FLOW_PAYMENT, FLOW_SUBSCRIPTION, flowTargetFromPayment, nextSubscriptionState } from "@/lib/flow/state";
 import { TRIAL_DAYS } from "@/lib/subscription";
 
@@ -26,6 +26,25 @@ describe("firma de Flow", () => {
     expect(signature).toBe(KNOWN_SIGNATURE);
     expect(signFlowParams({ amount: "5000", apiKey: "XXXX-XXXX-XXXX", currency: "CLP" }, SECRET)).toBe(signature);
     expect(createHmac("sha256", SECRET).update(KNOWN_STRING).digest("hex")).toBe(signature);
+  });
+
+  test("el aviso con firma válida pasa y una firma inválida se rechaza", () => {
+    const params = { token: "TOK123" };
+    const signature = signFlowParams(params, SECRET);
+    expect(verifyFlowWebhook({ ...params, s: signature }, SECRET)).toEqual({ ok: true, token: "TOK123" });
+    expect(verifyFlowWebhook({ ...params, s: signature.toUpperCase() }, SECRET)).toEqual({ ok: true, token: "TOK123" });
+    expect(verifyFlowWebhook({ token: "OTRO", s: signature }, SECRET)).toMatchObject({ ok: false, status: 401, reason: "firma" });
+    expect(verifyFlowWebhook({ ...params, s: "0".repeat(64) }, SECRET)).toMatchObject({ ok: false, status: 401 });
+    expect(verifyFlowWebhook({ ...params, s: "corta" }, SECRET)).toMatchObject({ ok: false, status: 401 });
+  });
+
+  test("el callback documentado trae solo el token y un campo extra sin firma no entra", () => {
+    expect(verifyFlowWebhook({ token: "TOK123" }, SECRET)).toEqual({ ok: true, token: "TOK123" });
+    expect(verifyFlowWebhook({ token: "TOK123", status: "2" }, SECRET)).toMatchObject({ ok: false, status: 401, reason: "firma" });
+    const signed = signFlowParams({ token: "TOK123", status: "2" }, SECRET);
+    expect(verifyFlowWebhook({ token: "TOK123", status: "2", s: signed }, SECRET)).toEqual({ ok: true, token: "TOK123" });
+    expect(verifyFlowWebhook({ token: "" }, SECRET)).toMatchObject({ ok: false, status: 400 });
+    expect(verifyFlowWebhook({ token: "TOK123" }, "")).toMatchObject({ ok: false, status: 401 });
   });
 
   test("el parámetro s no entra en la firma y un valor cambiado la rompe", () => {

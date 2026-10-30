@@ -1,15 +1,17 @@
 import { PanelShell } from "@/components/panel-shell";
+import { UsageWarningBanner } from "@/components/usage-warning";
 import { VerifyBanner } from "@/components/verify-banner";
 import { isPlatformAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
+import { usageSnapshot } from "@/lib/usage-store";
 
 export const dynamic = "force-dynamic";
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   const admin = isPlatformAdmin(session.email);
-  const [organization, user] = await Promise.all([
+  const [organization, user, usage] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.organizationId },
       select: { suspendedAt: true },
@@ -18,11 +20,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       where: { id: session.userId },
       select: { emailVerifiedAt: true },
     }),
+    usageSnapshot(session.organizationId),
   ]);
   const suspended = Boolean(organization?.suspendedAt);
   return (
     <PanelShell session={session} showAdmin={admin}>
       {user?.emailVerifiedAt ? null : <VerifyBanner />}
+      <UsageWarningBanner totals={usage.totals} />
       {suspended && admin ? (
         <p className="banner error">Tu empresa está suspendida. Como administración igual puedes revisar el panel.</p>
       ) : null}

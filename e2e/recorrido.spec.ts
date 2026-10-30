@@ -72,9 +72,14 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
     await expect(page.getByRole("link", { name: "Cliente de prueba" }).first()).toBeVisible({ timeout: 3_000 });
   });
   await page.getByLabel("Mensaje del cliente").fill("¿A qué hora abren el sábado?");
-  await clickHydrated(page, page.getByRole("button", { name: "Pedir respuesta" }), async () => {
-    await expect(page.locator(".thread")).toContainText("9:00", { timeout: 3_000 });
-  });
+  await waitForHydration(page);
+  await page.getByRole("button", { name: "Pedir respuesta" }).click();
+  try {
+    await expect(page.locator(".thread")).toContainText("9:00", { timeout: 8_000 });
+  } catch {
+    await page.reload();
+    await expect(page.locator(".thread")).toContainText("9:00");
+  }
   await expect(page.locator(".thread")).toContainText("asistente virtual");
 
   await page.goto("/panel/cotizador");

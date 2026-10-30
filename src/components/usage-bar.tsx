@@ -1,6 +1,8 @@
+import { USAGE_WARN_AT } from "@/lib/usage";
+
 export function UsageBar({ used, limit, label }: { used: number; limit: number; label: string }) {
-  const ratio = limit === 0 ? 0 : Math.min(100, (used / limit) * 100);
-  const pct = used > 0 ? Math.max(ratio, 2) : 0;
+  const ratio = limit === 0 ? 0 : used / limit;
+  const pct = used > 0 ? Math.max(Math.min(ratio * 100, 100), 2) : 0;
   return (
     <div>
       <div className="bar-label">
@@ -10,7 +12,7 @@ export function UsageBar({ used, limit, label }: { used: number; limit: number; 
         </span>
       </div>
       <div
-        className={pct >= 90 ? "bar warn" : "bar"}
+        className={ratio >= USAGE_WARN_AT ? "bar warn" : "bar"}
         role="meter"
         aria-label={label}
         aria-valuemin={0}

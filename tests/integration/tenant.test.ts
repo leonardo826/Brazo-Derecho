@@ -1,5 +1,6 @@
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { agentIsOpen } from "@/lib/agent-access";
+import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { reserveUsage } from "@/lib/usage-store";
@@ -76,6 +77,15 @@ describe("aislamiento entre empresas", () => {
     );
     expect(blocked.ok).toBe(false);
     expect(allowed.ok).toBe(true);
+
+    const call = vi.fn(async () => "no debía llamar a xAI");
+    const gated = await callWithinPlan({
+      organizationId: ferreteria,
+      checks: [{ agent: "WHATSAPP", metric: "RESPONSES", quantity: 1 }],
+      call,
+    });
+    expect(gated.ok).toBe(false);
+    expect(call).not.toHaveBeenCalled();
   });
 
   test("una empresa no lee ni modifica cotizaciones, hilos ni borradores de la otra", async () => {

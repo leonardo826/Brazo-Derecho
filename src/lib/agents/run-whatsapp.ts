@@ -1,12 +1,13 @@
 import { Prisma } from "@prisma/client";
 import { withAssistantDisclosure } from "@/lib/agents/whatsapp";
 import { decideWhatsappReply } from "@/lib/agents/whatsapp";
-import { instructionsFor, limitFor, modelFor } from "@/lib/catalog";
+import { instructionsFor, modelFor } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
-import { dayStart, evaluateLimit } from "@/lib/usage";
-import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
+import { callWithinPlan } from "@/lib/plan-limit";
+import { dayStart } from "@/lib/usage";
+import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
 export async function runWhatsappTurn(input: {
@@ -26,10 +27,6 @@ export async function runWhatsappTurn(input: {
   if (access.suspended) return { ok: false as const, reason: "suspendida" as const };
   if (!access.open) return { ok: false as const, reason: "suscripcion" as const };
 
-  const used = await usedThisMonth(input.organizationId, "RESPONSES", input.now);
-  const room = evaluateLimit(used, 1, limitFor("WHATSAPP", "RESPONSES"));
-  if (!room.ok) return { ok: false as const, reason: "limite" as const };
-
   const knowledge = await prisma.knowledgeItem.findMany({ where: { organizationId: input.organizationId } });
   const decision = decideWhatsappReply(input.question, knowledge);
   const task =
@@ -46,14 +43,22 @@ export async function runWhatsappTurn(input: {
 
   let response;
   try {
-    response = await createXaiClient().respond({
-      model: modelFor("WHATSAPP"),
-      instructions: instructionsFor("WHATSAPP", input.organizationName),
-      task,
-      usage: USAGE_PRESETS.whatsapp,
-      businessName: input.organizationName,
-      maxOutputTokens: 500,
+    const gated = await callWithinPlan({
+      organizationId: input.organizationId,
+      checks: [{ agent: "WHATSAPP", metric: "RESPONSES", quantity: 1 }],
+      now: input.now,
+      call: () =>
+        createXaiClient().respond({
+          model: modelFor("WHATSAPP"),
+          instructions: instructionsFor("WHATSAPP", input.organizationName),
+          task,
+          usage: USAGE_PRESETS.whatsapp,
+          businessName: input.organizationName,
+          maxOutputTokens: 500,
+        }),
     });
+    if (!gated.ok) return { ok: false as const, reason: "limite" as const };
+    response = gated.value;
   } catch {
     return { ok: false as const, reason: "ia" as const };
   }

@@ -1,10 +1,12 @@
+import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
+
 export const ERRORS: Record<string, string> = {
   credenciales: "El correo o la contraseña no coinciden.",
   correo: "Ese correo ya tiene una cuenta.",
   datos: "Revisa los datos del formulario.",
   rut: "El RUT no es válido. Usa un RUT chileno, con dígito verificador.",
   clave: "La contraseña debe tener al menos 8 caracteres, una letra y un número.",
-  limite: "Llegaste al límite de este mes. El agente se detiene para no seguir gastando.",
+  limite: PLAN_LIMIT_MESSAGE,
   suscripcion: "Activa la prueba o la suscripción de este agente para usarlo.",
   consentimiento: "Para crear la cuenta tienes que aceptar los términos y confirmar que leíste el aviso de privacidad.",
   ia: "El asistente no alcanzó a responder. No descontamos esta vez.",

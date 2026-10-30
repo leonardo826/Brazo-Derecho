@@ -7,12 +7,13 @@ import { prisma } from "@/lib/prisma";
 import { captureException } from "@/lib/sentry";
 import { dayStart } from "@/lib/usage";
 import { parseInboundTexts, routeInbound, verifyMetaSignature, verifyWebhookChallenge } from "@/lib/whatsapp/cloud";
+import { PLAN_LIMIT_WHATSAPP } from "@/lib/plan-copy";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
 
 export const dynamic = "force-dynamic";
 
 const CLOSED = "Ahora no podemos atender por este canal. Si es urgente, escríbele directo al local.";
-const LIMITED = "Llegamos al cupo de respuestas de este mes. Una persona del equipo puede seguir la conversación.";
+const LIMITED = PLAN_LIMIT_WHATSAPP;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
