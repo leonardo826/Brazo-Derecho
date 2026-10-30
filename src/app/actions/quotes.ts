@@ -4,11 +4,12 @@ import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "@/lib/agents/quotes";
-import { AGENT_CATALOG } from "@/lib/catalog";
+import { instructionsFor, limitFor, modelFor } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { reserveUsage } from "@/lib/usage-store";
+import { evaluateLimit } from "@/lib/usage";
+import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { priceSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -118,18 +119,29 @@ export async function createQuoteAction(formData: FormData) {
     built.rejected > 0
       ? `${built.rejected} línea(s) no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
       : "";
-  const response = await createXaiClient().respond({
-    model: AGENT_CATALOG.QUOTES.model,
-    instructions: AGENT_CATALOG.QUOTES.instructions,
-    task: {
-      type: "quote_note",
-      customerName,
-      lineCount: built.lines.length,
-      totalClp,
-      unmatched: unmatchedNote,
-    },
-    usage: USAGE_PRESETS.quote,
-  });
+  if (!evaluateLimit(await usedThisMonth(session.organizationId, "QUOTES"), 1, limitFor("QUOTES", "QUOTES")).ok) {
+    redirect("/panel/cotizador?error=limite");
+  }
+
+  let response;
+  try {
+    response = await createXaiClient().respond({
+      model: modelFor("QUOTES"),
+      instructions: instructionsFor("QUOTES", session.organizationName),
+      task: {
+        type: "quote_note",
+        customerName,
+        lineCount: built.lines.length,
+        totalClp,
+        unmatched: unmatchedNote,
+      },
+      usage: USAGE_PRESETS.quote,
+      businessName: session.organizationName,
+      maxOutputTokens: 700,
+    });
+  } catch {
+    redirect("/panel/cotizador?error=ia");
+  }
 
   let quoteId: string | null = null;
   try {
@@ -140,6 +152,7 @@ export async function createQuoteAction(formData: FormData) {
       metric: "QUOTES",
       quantity: 1,
       tokens: response.usage,
+      model: response.model,
     });
     if (!usage.ok) return null;
     const aggregate = await tx.quote.aggregate({

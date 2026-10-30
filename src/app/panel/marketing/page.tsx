@@ -1,10 +1,10 @@
 import { generatePostsAction, saveBrandAction } from "@/app/actions/marketing";
 import { Flash } from "@/components/flash";
-import { TrialButton } from "@/components/trial-button";
+import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
 import { agentIsOpen } from "@/lib/agent-access";
-import { AGENT_CATALOG, limitFor } from "@/lib/catalog";
-import { formatDay, formatWhen } from "@/lib/format";
+import { limitFor, modelFor } from "@/lib/catalog";
+import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -34,15 +34,11 @@ export default async function MarketingPage({
     <>
       <div className="page-head">
         <div>
-          <p className="eyebrow">{AGENT_CATALOG.MARKETING.model}</p>
+          <p className="eyebrow">{modelFor("MARKETING")}</p>
           <h1>Marketing</h1>
           <p className="muted">Los textos quedan en borrador. Brazo Derecho no publica ni compra avisos.</p>
         </div>
-        {open && subscription ? (
-          <p className="badge good">Prueba hasta el {formatDay(subscription.periodEnd)}</p>
-        ) : (
-          <TrialButton agent="MARKETING" back="/panel/marketing" />
-        )}
+        <SubscribeActions agent="MARKETING" back="/panel/marketing" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       <div className="grid-2">

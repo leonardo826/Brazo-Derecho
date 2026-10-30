@@ -11,6 +11,8 @@ import { slugify } from "@/lib/slug";
 import { loginSchema, registerSchema } from "@/lib/validation";
 
 export async function registerAction(formData: FormData) {
+  if (formData.get("consent") !== "on") redirect("/registro?error=consentimiento");
+  const marketingOptIn = formData.get("marketingOptIn") === "on";
   const parsed = registerSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
@@ -34,6 +36,8 @@ export async function registerAction(formData: FormData) {
         name: parsed.data.name.trim(),
         email,
         passwordHash: await hashPassword(parsed.data.password),
+        consentAt: new Date(),
+        marketingOptInAt: marketingOptIn ? new Date() : null,
         memberships: {
           create: {
             role: "OWNER",

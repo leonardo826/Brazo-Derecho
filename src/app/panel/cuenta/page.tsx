@@ -1,5 +1,6 @@
 import { updateOrganizationAction } from "@/app/actions/account";
 import { Flash } from "@/components/flash";
+import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -42,6 +43,14 @@ export default async function AccountPage({
             <input name="rut" maxLength={20} defaultValue={organization.rut ?? ""} placeholder="76.123.456-0" />
           </label>
           <p className="muted">Identificador interno: {organization.slug}</p>
+          {members.find((member) => member.userId === session.userId)?.user.consentAt ? (
+            <p className="muted">
+              Aceptaste los términos y el aviso de privacidad el{" "}
+              {formatWhen(members.find((member) => member.userId === session.userId)!.user.consentAt!)}.
+            </p>
+          ) : (
+            <p className="muted">Esta cuenta no tiene fecha de aceptación del aviso de privacidad.</p>
+          )}
           <button className="button" type="submit">
             Guardar
           </button>

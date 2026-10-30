@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { AGENT_CATALOG, AGENT_ORDER, type AgentId, type MetricId } from "@/lib/catalog";
 import { Flash } from "@/components/flash";
-import { TrialButton } from "@/components/trial-button";
+import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
-import { formatClp, formatDay } from "@/lib/format";
+import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
-import { isSubscriptionOpen } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 const HREF: Record<AgentId, string> = {
@@ -44,8 +43,7 @@ export default async function PanelHome({
       <div className="grid-3">
         {AGENT_ORDER.map((agentId) => {
           const agent = AGENT_CATALOG[agentId];
-          const subscription = byAgent.get(agentId);
-          const open = isSubscriptionOpen(subscription);
+          const subscription = byAgent.get(agentId) ?? null;
           const metrics = Object.entries(agent.limits) as [MetricId, number][];
           return (
             <article className="panel-card stack" key={agentId}>
@@ -54,11 +52,7 @@ export default async function PanelHome({
               <p className="muted">
                 {formatClp(agent.priceClp)} neto / mes + IVA · {agent.limitLabel}
               </p>
-              {open && subscription ? (
-                <p className="badge good">Prueba hasta el {formatDay(subscription.periodEnd)}</p>
-              ) : (
-                <p className="badge warn">Sin prueba activa</p>
-              )}
+              <SubscribeActions agent={agentId} back="/panel" subscription={subscription} />
               {metrics.map(([metric, limit]) => (
                 <UsageBar key={metric} used={usage.totals[metric]} limit={limit} label={metric === "RESPONSES" ? "Respuestas" : metric === "QUOTES" ? "Cotizaciones" : metric === "TEXTS" ? "Textos" : "Imágenes"} />
               ))}
@@ -66,7 +60,6 @@ export default async function PanelHome({
                 <Link className="button-link small secondary" href={HREF[agentId]}>
                   Abrir
                 </Link>
-                {open ? null : <TrialButton agent={agentId} back="/panel" />}
               </div>
             </article>
           );

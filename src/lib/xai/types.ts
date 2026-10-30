@@ -26,6 +26,8 @@ export type XaiRequest = {
   instructions: string;
   task: XaiTask;
   usage: TokenUsage;
+  businessName?: string;
+  maxOutputTokens?: number;
 };
 
 export type XaiResponse = {
@@ -33,7 +35,7 @@ export type XaiResponse = {
   model: string;
   outputText: string;
   usage: TokenUsage;
-  mocked: true;
+  mocked: boolean;
 };
 
 export interface XaiClient {

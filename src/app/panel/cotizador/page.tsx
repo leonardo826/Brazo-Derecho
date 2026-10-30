@@ -6,11 +6,11 @@ import {
 } from "@/app/actions/quotes";
 import { Flash } from "@/components/flash";
 import { QuoteForm } from "@/components/quote-form";
-import { TrialButton } from "@/components/trial-button";
+import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
 import { agentIsOpen } from "@/lib/agent-access";
-import { AGENT_CATALOG, limitFor } from "@/lib/catalog";
-import { formatClp, formatDay, quoteCode } from "@/lib/format";
+import { limitFor, modelFor } from "@/lib/catalog";
+import { formatClp, quoteCode } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -50,15 +50,11 @@ export default async function QuotesPage({
     <>
       <div className="page-head">
         <div>
-          <p className="eyebrow">{AGENT_CATALOG.QUOTES.model}</p>
+          <p className="eyebrow">{modelFor("QUOTES")}</p>
           <h1>Cotizador</h1>
           <p className="muted">Los precios salen solo de esta lista. La cotización no se envía sola.</p>
         </div>
-        {open && subscription ? (
-          <p className="badge good">Prueba hasta el {formatDay(subscription.periodEnd)}</p>
-        ) : (
-          <TrialButton agent="QUOTES" back="/panel/cotizador" />
-        )}
+        <SubscribeActions agent="QUOTES" back="/panel/cotizador" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       <UsageBar used={usage.totals.QUOTES} limit={quoteLimit} label="Cotizaciones de este mes" />

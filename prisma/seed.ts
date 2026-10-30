@@ -262,6 +262,7 @@ async function createOwner(input: {
       email: input.email,
       name: input.person,
       passwordHash: input.passwordHash,
+      consentAt: now,
       memberships: {
         create: {
           role: "OWNER",

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { limitFor } from "@/lib/catalog";
 import { evaluateLimit, monthBounds, summarizeUsage } from "@/lib/usage";
 import { USAGE_PRESETS, scaleUsage } from "@/lib/pricing";
 
@@ -16,6 +17,47 @@ describe("límites de uso", () => {
   test("rechaza cantidades que no son enteros positivos", () => {
     expect(() => evaluateLimit(0, 0, 1000)).toThrow(/entero/);
     expect(() => evaluateLimit(0, 1.5, 1000)).toThrow(/entero/);
+  });
+
+  test("respeta el tope mensual de cada agente", () => {
+    expect(evaluateLimit(limitFor("WHATSAPP", "RESPONSES"), 1, limitFor("WHATSAPP", "RESPONSES")).ok).toBe(false);
+    expect(evaluateLimit(limitFor("QUOTES", "QUOTES"), 1, limitFor("QUOTES", "QUOTES")).ok).toBe(false);
+    expect(evaluateLimit(limitFor("MARKETING", "TEXTS"), 1, limitFor("MARKETING", "TEXTS")).ok).toBe(false);
+    expect(evaluateLimit(limitFor("MARKETING", "IMAGES"), 1, limitFor("MARKETING", "IMAGES")).ok).toBe(false);
+    expect(limitFor("WHATSAPP", "RESPONSES")).toBe(1000);
+    expect(limitFor("QUOTES", "QUOTES")).toBe(300);
+    expect(limitFor("MARKETING", "TEXTS")).toBe(60);
+    expect(limitFor("MARKETING", "IMAGES")).toBe(30);
+  });
+
+  test("los tokens quedan en el modelo de esa empresa y no se mezclan con otra", () => {
+    const ferreteria = summarizeUsage([
+      {
+        agent: "WHATSAPP",
+        metric: "RESPONSES",
+        quantity: 2,
+        inputTokens: 10,
+        cachedTokens: 4,
+        outputTokens: 3,
+        model: "grok-4.3",
+      },
+    ]);
+    const cafe = summarizeUsage([
+      {
+        agent: "QUOTES",
+        metric: "QUOTES",
+        quantity: 1,
+        inputTokens: 50,
+        cachedTokens: 0,
+        outputTokens: 7,
+        model: "grok-4.7",
+      },
+    ]);
+    expect(ferreteria.byModel["grok-4.3"].inputTokens).toBe(10);
+    expect(ferreteria.byModel["grok-4.7"].inputTokens).toBe(0);
+    expect(ferreteria.totals.QUOTES).toBe(0);
+    expect(cafe.totals.RESPONSES).toBe(0);
+    expect(cafe.byModel["grok-4.7"].outputTokens).toBe(7);
   });
 });
 

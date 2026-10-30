@@ -106,7 +106,7 @@ export default function HomePage() {
             <article className="step">
               <b>2</b>
               <h3>Activa una prueba</h3>
-              <p>14 días por agente. Todavía no se cobra: Flow entra después.</p>
+              <p>14 días por agente. Si el cobro con Flow está activo, después se cobra el plan. Si no, la prueba no tiene cargo.</p>
             </article>
             <article className="step">
               <b>3</b>
@@ -127,17 +127,20 @@ export default function HomePage() {
           <p className="eyebrow">Preguntas</p>
           <h2>Qué hace esta beta y qué no.</h2>
           <details>
-            <summary>¿Está conectado a WhatsApp de verdad?</summary>
+            <summary>¿Cómo se conecta WhatsApp?</summary>
             <p>
-              No. En la beta atiendes dentro de un simulador, con las mismas reglas que después usaría el canal. La
-              conexión a la API de Meta queda para el piloto.
+              En el panel puedes probar con el simulador, con las mismas reglas del canal. Si vinculas el id del número
+              y está configurada la API de Meta, los mensajes de esa línea llegan al agente de Atención WhatsApp de esa
+              empresa. La respuesta indica que es un asistente virtual.
             </p>
           </details>
           <details>
-            <summary>¿La respuesta sale de un modelo en vivo?</summary>
+            <summary>¿Quién redacta la respuesta?</summary>
             <p>
-              No. El cliente de xAI de esta beta es simulado: no llama a la red. La atención busca en tu base de
-              conocimiento y, si no encuentra, deriva a una persona. El precio de una cotización sale solo de tu lista.
+              La atención usa la ficha de tu empresa y, si no encuentra el dato, deriva a una persona. El precio de una
+              cotización sale solo de tu lista. Si la API de xAI está conectada, el texto lo redacta grok-4.3 en la
+              atención y grok-4.7 en cotizaciones y marketing, y los tokens quedan anotados en tu empresa. Si no está
+              conectada, el mismo texto lo arma el simulador, con el límite del mes igual de firme.
             </p>
           </details>
           <details>
@@ -147,8 +150,9 @@ export default function HomePage() {
           <details>
             <summary>¿Cómo se va a cobrar?</summary>
             <p>
-              Los precios están en pesos chilenos, netos, más IVA. El plan es cobrar con Flow y emitir boleta. En la
-              beta solo se activa la prueba, sin cargo.
+              Cada agente tiene un plan mensual en pesos chilenos, neto, más IVA. La prueba dura 14 días. Con Flow
+              activo, registras la tarjeta y el aviso de pago deja el agente activo o lo detiene. Si Flow no está
+              conectado, la prueba se activa en el panel y no hay cargo. La boleta electrónica sigue pendiente.
             </p>
           </details>
         </div>

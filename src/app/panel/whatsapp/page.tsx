@@ -7,11 +7,13 @@ import {
   startConversationAction,
 } from "@/app/actions/whatsapp";
 import { Flash } from "@/components/flash";
-import { TrialButton } from "@/components/trial-button";
+import { linkWhatsappNumberAction } from "@/app/actions/admin";
+import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
 import { agentIsOpen } from "@/lib/agent-access";
-import { AGENT_CATALOG, limitFor } from "@/lib/catalog";
-import { formatDay, formatWhen } from "@/lib/format";
+import { AGENT_CATALOG, limitFor, modelFor } from "@/lib/catalog";
+import { whatsappEnv } from "@/lib/env";
+import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -25,7 +27,7 @@ export default async function WhatsappPage({
   const session = await requireSession();
   const params = await searchParams;
   const selectedId = firstParam(params.c);
-  const [{ subscription, open }, knowledge, conversations, usage] = await Promise.all([
+  const [{ subscription, open }, knowledge, conversations, usage, organization] = await Promise.all([
     agentIsOpen(session.organizationId, "WHATSAPP"),
     prisma.knowledgeItem.findMany({
       where: { organizationId: session.organizationId },
@@ -37,6 +39,7 @@ export default async function WhatsappPage({
       take: 20,
     }),
     usageSnapshot(session.organizationId),
+    prisma.organization.findUniqueOrThrow({ where: { id: session.organizationId } }),
   ]);
   const selected = conversations.find((item) => item.id === selectedId) ?? conversations[0];
   const messages = selected
@@ -52,22 +55,51 @@ export default async function WhatsappPage({
     <>
       <div className="page-head">
         <div>
-          <p className="eyebrow">{AGENT_CATALOG.WHATSAPP.model}</p>
+          <p className="eyebrow">{modelFor("WHATSAPP")}</p>
           <h1>Atención WhatsApp</h1>
-          <p className="muted">Simulador. Nada de esto sale a un teléfono ni a Meta.</p>
+          <p className="muted">
+            El simulador usa las mismas reglas que el canal real. Si el número está vinculado, la respuesta también sale por WhatsApp.
+          </p>
         </div>
-        {open && subscription ? (
-          <p className="badge good">Prueba hasta el {formatDay(subscription.periodEnd)}</p>
-        ) : (
-          <TrialButton agent="WHATSAPP" back="/panel/whatsapp" />
-        )}
+        <SubscribeActions agent="WHATSAPP" back="/panel/whatsapp" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       <UsageBar used={responses} limit={responseLimit} label="Respuestas de este mes" />
+      <article className="panel-card stack" style={{ marginTop: "1rem" }}>
+        <h2>Número de WhatsApp</h2>
+        <p className="muted">
+          {organization.whatsappPhoneNumberId
+            ? `Este número está vinculado: ${organization.whatsappPhoneNumberId}. Los mensajes de esa línea entran a esta empresa.`
+            : "Todavía no hay un número vinculado. Puedes seguir probando en el simulador."}
+        </p>
+        {session.role === "OWNER" ? (
+          <form action={linkWhatsappNumberAction} className="stack">
+            <label>
+              Id del número en Meta
+              <input
+                name="whatsappPhoneNumberId"
+                inputMode="numeric"
+                pattern="\d{8,20}"
+                defaultValue={organization.whatsappPhoneNumberId ?? ""}
+                placeholder="Solo dígitos, como los muestra Meta"
+              />
+            </label>
+            <p className="muted">Déjalo vacío y guarda para desvincularlo.</p>
+            <button className="button secondary" type="submit">
+              Guardar número
+            </button>
+          </form>
+        ) : (
+          <p className="muted">El dueño de la empresa puede vincular el número.</p>
+        )}
+        {whatsappEnv().phoneNumberId ? (
+          <p className="muted">Id de referencia configurado en el servidor: {whatsappEnv().phoneNumberId}.</p>
+        ) : null}
+      </article>
       {!open ? (
         <article className="panel-card" style={{ marginTop: "1rem" }}>
           <h2>Activa la prueba para atender</h2>
-          <p>Son 14 días, sin cobro. El agente solo responde con la información que cargues aquí.</p>
+          <p>Son 14 días de prueba. El agente solo responde con la información que cargues aquí.</p>
           <ul className="plain no">
             {AGENT_CATALOG.WHATSAPP.doesNot.map((item) => (
               <li key={item}>{item}</li>
@@ -107,7 +139,7 @@ export default async function WhatsappPage({
             ))}
           </section>
           <section className="panel-card stack">
-            <h2>Simulador</h2>
+            <h2>{selected?.channel === "whatsapp" ? "WhatsApp" : "Simulador"}</h2>
             <form action={startConversationAction} className="inline">
               <label style={{ flex: 1 }}>
                 Quién escribe

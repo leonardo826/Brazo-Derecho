@@ -13,8 +13,9 @@ export default function TermsPage() {
       </p>
       <h2>Qué estás probando</h2>
       <p>
-        Un panel para tres agentes: Atención WhatsApp, Cotizador y Marketing. La prueba de 14 días no se cobra. Los
-        precios publicados son referenciales, netos, más IVA.
+        Un panel para tres agentes: Atención WhatsApp, Cotizador y Marketing. La prueba dura 14 días. Los precios
+        publicados son netos, más IVA. Al crear la cuenta queda registrada la fecha en que aceptaste estos términos y
+        el aviso de privacidad.
       </p>
       <h2>Qué no hace el servicio</h2>
       <p>

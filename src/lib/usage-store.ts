@@ -10,6 +10,7 @@ type ReserveInput = {
   metric: MetricId;
   quantity: number;
   tokens?: TokenUsage;
+  model?: string;
   now?: Date;
 };
 
@@ -45,6 +46,7 @@ export async function reserveUsage(tx: Prisma.TransactionClient, input: ReserveI
       inputTokens: input.tokens?.inputTokens ?? 0,
       cachedTokens: input.tokens?.cachedTokens ?? 0,
       outputTokens: input.tokens?.outputTokens ?? 0,
+      model: input.model ?? "",
     },
   });
   return decision;
@@ -65,6 +67,7 @@ export async function usageSnapshot(organizationId: string, now = new Date()) {
     inputTokens: event.inputTokens,
     cachedTokens: event.cachedTokens,
     outputTokens: event.outputTokens,
+    model: event.model,
   }));
   return { ...bounds, ...summarizeUsage(slices) };
 }

@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
+      DIRECT_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
       SESSION_SECRET: ci-session-secret-de-al-menos-32-chars
       XAI_MODE: mock
     steps:

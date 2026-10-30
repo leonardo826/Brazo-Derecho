@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
 import { channelFor, draftImageSvg, toMarketingRecord } from "@/lib/agents/marketing";
-import { AGENT_CATALOG, limitFor } from "@/lib/catalog";
+import { instructionsFor, limitFor, modelFor, routineModel } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
@@ -52,11 +52,15 @@ export async function generatePostsAction(formData: FormData) {
   const client = createXaiClient();
   const drafts: ReturnType<typeof toMarketingRecord>[] = [];
   let textTokens = { ...EMPTY_USAGE };
+  let imageTokens = { ...EMPTY_USAGE };
+  let textModel: string = modelFor("MARKETING");
+  let imageModel: string = routineModel();
+  try {
   for (let index = 0; index < count; index += 1) {
     const channel = channelFor(index);
     const text = await client.respond({
-      model: AGENT_CATALOG.MARKETING.model,
-      instructions: AGENT_CATALOG.MARKETING.instructions,
+      model: textModel,
+      instructions: instructionsFor("MARKETING", session.organizationName),
       task: {
         type: "marketing_post",
         channel,
@@ -66,17 +70,24 @@ export async function generatePostsAction(formData: FormData) {
         index,
       },
       usage: USAGE_PRESETS.text,
+      businessName: session.organizationName,
+      maxOutputTokens: 900,
     });
+    textModel = text.model;
     textTokens = addUsage(textTokens, text.usage);
     let imagePrompt = "";
     let imageSvg = "";
     if (withImage) {
       const image = await client.respond({
-        model: "grok-imagine-image-2.0",
-        instructions: AGENT_CATALOG.MARKETING.instructions,
+        model: imageModel,
+        instructions: instructionsFor("MARKETING", session.organizationName),
         task: { type: "marketing_image", summary: profile.summary, channel },
         usage: EMPTY_USAGE,
+        businessName: session.organizationName,
+        maxOutputTokens: 200,
       });
+      imageModel = image.model;
+      imageTokens = addUsage(imageTokens, image.usage);
       imagePrompt = image.outputText;
       imageSvg = draftImageSvg(channel, imagePrompt);
     }
@@ -90,6 +101,9 @@ export async function generatePostsAction(formData: FormData) {
       }),
     );
   }
+  } catch {
+    redirect("/panel/marketing?error=ia");
+  }
 
   const saved = await prisma.$transaction(async (tx) => {
     const texts = await reserveUsage(tx, {
@@ -98,6 +112,7 @@ export async function generatePostsAction(formData: FormData) {
       metric: "TEXTS",
       quantity: drafts.length,
       tokens: textTokens,
+      model: textModel,
     });
     if (!texts.ok) return false;
     if (withImage) {
@@ -106,6 +121,8 @@ export async function generatePostsAction(formData: FormData) {
         agent: "MARKETING",
         metric: "IMAGES",
         quantity: drafts.length,
+        tokens: imageTokens,
+        model: imageModel,
       });
       if (!images.ok) return false;
     }

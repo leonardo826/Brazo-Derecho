@@ -5,11 +5,11 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="wrap inner">
         <p>
-          Beta privada. Precios referenciales en pesos chilenos, netos, al 29 de octubre de 2026. El cobro con Flow y
-          la boleta electrónica todavía no están conectados.
+          Precios en pesos chilenos, netos, más IVA. La prueba dura 14 días. Con Flow conectado, el plan se cobra al
+          terminar la prueba. Si Flow no está conectado, la prueba queda en el panel y no hay cargo.
         </p>
         <nav className="nav-links" aria-label="Legal">
-          <Link href="/privacidad">Privacidad</Link>
+          <Link href="/privacidad">Aviso de privacidad</Link>
           <Link href="/terminos">Términos</Link>
         </nav>
       </div>

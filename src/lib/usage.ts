@@ -8,6 +8,7 @@ export type UsageSlice = {
   inputTokens: number;
   cachedTokens: number;
   outputTokens: number;
+  model?: string | null;
 };
 
 export function evaluateLimit(used: number, quantity: number, limit: number) {
@@ -60,6 +61,13 @@ function zonedMidnight(year: number, month: number, timeZone: string) {
   return new Date(guess.getTime() - offsetMs(first, timeZone));
 }
 
+export function dayStart(now = new Date(), timeZone = "America/Santiago") {
+  const map = zoneParts(now, timeZone);
+  const guess = new Date(Date.UTC(map.year, map.month - 1, map.day, 0, 0, 0));
+  const first = new Date(guess.getTime() - offsetMs(guess, timeZone));
+  return new Date(guess.getTime() - offsetMs(first, timeZone));
+}
+
 export function monthBounds(now = new Date(), timeZone = "America/Santiago") {
   const map = zoneParts(now, timeZone);
   const start = zonedMidnight(map.year, map.month, timeZone);
@@ -81,7 +89,8 @@ export function summarizeUsage(events: UsageSlice[]) {
   };
   for (const event of events) {
     totals[event.metric] += event.quantity;
-    const model = AGENT_CATALOG[event.agent].model;
+    const model =
+      event.model === "grok-4.3" || event.model === "grok-4.7" ? event.model : AGENT_CATALOG[event.agent].model;
     byModel[model].inputTokens += event.inputTokens;
     byModel[model].cachedTokens += event.cachedTokens;
     byModel[model].outputTokens += event.outputTokens;

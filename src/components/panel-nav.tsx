@@ -12,11 +12,11 @@ const LINKS = [
   { href: "/panel/cuenta", label: "Cuenta" },
 ];
 
-export function PanelNav() {
+export function PanelNav({ showAdmin = false }: { showAdmin?: boolean }) {
   const pathname = usePathname();
   return (
     <nav className="panel-nav" aria-label="Panel">
-      {LINKS.map((link) => {
+      {[...LINKS, ...(showAdmin ? [{ href: "/panel/admin", label: "Administración" }] : [])].map((link) => {
         const active = link.href === "/panel" ? pathname === "/panel" : pathname.startsWith(link.href);
         return (
           <Link key={link.href} href={link.href} className={active ? "active" : undefined} aria-current={active ? "page" : undefined}>

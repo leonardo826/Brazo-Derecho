@@ -300,6 +300,14 @@ pre.copy {
 }
 .legal { width: min(760px, calc(100% - 2rem)); margin: 0 auto; padding-bottom: 3rem; }
 .legal h1 { font-size: clamp(2.2rem, 4vw, 3.4rem); margin-bottom: 1rem; }
+.legal ol, .legal ul { padding-left: 1.2rem; }
+mark.placeholder {
+  background: #f6ecd8;
+  color: var(--copper);
+  font-weight: 700;
+  padding: 0 0.2rem;
+  border-radius: 0.2rem;
+}
 
 :focus-visible { outline: 3px solid var(--copper); outline-offset: 2px; }
 

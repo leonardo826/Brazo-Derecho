@@ -52,6 +52,17 @@ export default async function RegisterPage({
             RUT de la empresa (opcional)
             <input name="rut" maxLength={20} placeholder="76.123.456-0" />
           </label>
+          <label className="check">
+            <input name="consent" type="checkbox" required />
+            <span>
+              Acepto los <Link href="/terminos">Términos del Servicio</Link> y he leído el{" "}
+              <Link href="/privacidad">Aviso de Privacidad</Link>.
+            </span>
+          </label>
+          <label className="check">
+            <input name="marketingOptIn" type="checkbox" />
+            <span>Quiero recibir novedades y ofertas de Brazo Derecho.</span>
+          </label>
           <button className="button" type="submit">
             Crear empresa
           </button>

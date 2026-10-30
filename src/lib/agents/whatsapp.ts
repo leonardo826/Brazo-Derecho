@@ -139,6 +139,13 @@ export type WhatsappDecision =
   | { kind: "escalate" }
   | { kind: "answer"; item: Knowledge };
 
+export function withAssistantDisclosure(text: string, businessName: string, disclose: boolean) {
+  const clean = text.trim();
+  if (!disclose || /asistente virtual/i.test(clean)) return clean;
+  const name = businessName.trim() || "este negocio";
+  return `Hola, soy el asistente virtual de ${name}. ${clean}`;
+}
+
 export function decideWhatsappReply(question: string, knowledge: Knowledge[]): WhatsappDecision {
   const refusal = detectRefusal(question);
   if (refusal) return { kind: "refuse", code: refusal.code, reply: refusal.reply };

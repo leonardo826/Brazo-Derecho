@@ -1,15 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { AGENT_CATALOG } from "@/lib/catalog";
 import { agentIsOpen } from "@/lib/agent-access";
-import { decideWhatsappReply } from "@/lib/agents/whatsapp";
+import { runWhatsappTurn } from "@/lib/agents/run-whatsapp";
 import { prisma } from "@/lib/prisma";
-import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { reserveUsage } from "@/lib/usage-store";
 import { conversationSchema, knowledgeSchema, messageSchema } from "@/lib/validation";
-import { createXaiClient } from "@/lib/xai/client";
+import { sendWhatsappText } from "@/lib/whatsapp/send";
 
 function backTo(conversationId?: string, notice?: { error?: string; ok?: string }) {
   const params = new URLSearchParams();
@@ -78,49 +75,25 @@ export async function sendCustomerMessageAction(formData: FormData) {
   });
   if (!conversation) redirect(backTo(undefined, { error: "noencontrado" }));
 
-  const knowledge = await prisma.knowledgeItem.findMany({
-    where: { organizationId: session.organizationId },
+  const turn = await runWhatsappTurn({
+    organizationId: session.organizationId,
+    organizationName: session.organizationName,
+    conversationId,
+    question: parsed.data.body,
   });
-  const decision = decideWhatsappReply(parsed.data.body, knowledge);
-  const task =
-    decision.kind === "refuse"
-      ? { type: "whatsapp_refuse" as const, reply: decision.reply }
-      : decision.kind === "answer"
-        ? { type: "whatsapp_answer" as const, title: decision.item.title, body: decision.item.body }
-        : { type: "whatsapp_escalate" as const };
+  if (!turn.ok) redirect(backTo(conversationId, { error: turn.reason === "ia" ? "ia" : turn.reason }));
 
-  const response = await createXaiClient().respond({
-    model: AGENT_CATALOG.WHATSAPP.model,
-    instructions: AGENT_CATALOG.WHATSAPP.instructions,
-    task,
-    usage: USAGE_PRESETS.whatsapp,
-  });
-
-  const saved = await prisma.$transaction(async (tx) => {
-    const usage = await reserveUsage(tx, {
-      organizationId: session.organizationId,
-      agent: "WHATSAPP",
-      metric: "RESPONSES",
-      quantity: 1,
-      tokens: response.usage,
-    });
-    if (!usage.ok) return usage;
-    await tx.message.create({
-      data: { conversationId, role: "CUSTOMER", body: parsed.data.body },
-    });
-    await tx.message.create({
-      data: {
-        conversationId,
-        role: "AGENT",
-        body: response.outputText,
-        escalated: decision.kind === "escalate",
-        refused: decision.kind === "refuse",
-      },
-    });
-    return { ok: true as const };
-  });
-
-  if (!saved.ok) redirect(backTo(conversationId, { error: "limite" }));
+  if (conversation.channel === "whatsapp" && conversation.externalId?.startsWith("wa:")) {
+    const organization = await prisma.organization.findUnique({ where: { id: session.organizationId } });
+    if (organization?.whatsappPhoneNumberId && turn.text) {
+      const sent = await sendWhatsappText(
+        organization.whatsappPhoneNumberId,
+        conversation.externalId.slice(3),
+        turn.text,
+      );
+      if (sent.sent) redirect(backTo(conversationId, { ok: "enviado" }));
+    }
+  }
   redirect(backTo(conversationId, { ok: "respuesta" }));
 }
 
@@ -136,5 +109,16 @@ export async function sendHumanMessageAction(formData: FormData) {
   await prisma.message.create({
     data: { conversationId, role: "HUMAN", body: parsed.data.body },
   });
+  if (conversation.channel === "whatsapp" && conversation.externalId?.startsWith("wa:")) {
+    const organization = await prisma.organization.findUnique({ where: { id: session.organizationId } });
+    if (organization?.whatsappPhoneNumberId) {
+      const sent = await sendWhatsappText(
+        organization.whatsappPhoneNumberId,
+        conversation.externalId.slice(3),
+        parsed.data.body,
+      );
+      if (sent.sent) redirect(backTo(conversationId, { ok: "enviado" }));
+    }
+  }
   redirect(backTo(conversationId, { ok: "persona" }));
 }
