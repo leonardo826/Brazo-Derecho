@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AGENT_CATALOG, AGENT_ORDER, type AgentId, type MetricId } from "@/lib/catalog";
+import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
@@ -7,6 +8,7 @@ import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { isSubscriptionOpen } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 const HREF: Record<AgentId, string> = {
@@ -40,6 +42,16 @@ export default async function PanelHome({
         </div>
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      {AGENT_ORDER.every((agentId) => !isSubscriptionOpen(byAgent.get(agentId) ?? null)) ? (
+        <EmptyState title="Todavía no tienes un agente en prueba">
+          <p>En tres pasos dejas uno listo, sin tarjeta. La prueba dura 14 días y cada agente se activa por separado.</p>
+          <p>
+            <Link className="button-link" href="/panel/empezar">
+              Empezar
+            </Link>
+          </p>
+        </EmptyState>
+      ) : null}
       <div className="grid-3">
         {AGENT_ORDER.map((agentId) => {
           const agent = AGENT_CATALOG[agentId];

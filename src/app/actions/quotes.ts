@@ -3,6 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
+import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "@/lib/agents/quotes";
 import { instructionsFor, limitFor, modelFor } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
@@ -10,11 +11,13 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
 import { evaluateLimit } from "@/lib/usage";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
-import { priceSchema } from "@/lib/validation";
+import { priceSchema, quoteRequestSchema, quoteStatusSchema, recordIdSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
 
 export async function createPriceAction(formData: FormData) {
+  await guardMutation(formData, "/panel/cotizador");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/cotizador");
   const parsed = priceSchema.safeParse({
     sku: formData.get("sku"),
     name: formData.get("name"),
@@ -44,8 +47,12 @@ export async function createPriceAction(formData: FormData) {
 }
 
 export async function updatePriceAction(formData: FormData) {
+  await guardMutation(formData, "/panel/cotizador");
   const session = await requireSession();
-  const id = String(formData.get("id") ?? "");
+  await assertOwnOrganizationActive(session.organizationId, "/panel/cotizador");
+  const parsedId = recordIdSchema.safeParse(formData.get("id"));
+  if (!parsedId.success) redirect("/panel/cotizador?error=datos");
+  const id = parsedId.data;
   const parsed = priceSchema.safeParse({
     sku: formData.get("sku"),
     name: formData.get("name"),
@@ -74,8 +81,12 @@ export async function updatePriceAction(formData: FormData) {
 }
 
 export async function togglePriceAction(formData: FormData) {
+  await guardMutation(formData, "/panel/cotizador");
   const session = await requireSession();
-  const id = String(formData.get("id") ?? "");
+  await assertOwnOrganizationActive(session.organizationId, "/panel/cotizador");
+  const parsedId = recordIdSchema.safeParse(formData.get("id"));
+  if (!parsedId.success) redirect("/panel/cotizador?error=datos");
+  const id = parsedId.data;
   const item = await prisma.priceItem.findFirst({
     where: { id, organizationId: session.organizationId },
   });
@@ -88,16 +99,22 @@ export async function togglePriceAction(formData: FormData) {
 }
 
 export async function createQuoteAction(formData: FormData) {
+  await guardMutation(formData, "/panel/cotizador");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/cotizador");
+  guardRate(`cotizador:${session.organizationId}`, 20, 10 * 60 * 1000, "/panel/cotizador");
   if (!(await agentIsOpen(session.organizationId, "QUOTES")).open) {
     redirect("/panel/cotizador?error=suscripcion");
   }
-  const customerName = String(formData.get("customerName") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
-  const freeText = String(formData.get("pedidoLibre") ?? "");
-  if (customerName.length < 2 || customerName.length > 120 || notes.length > 1000) {
-    redirect("/panel/cotizador?error=datos");
-  }
+  const parsed = quoteRequestSchema.safeParse({
+    customerName: formData.get("customerName"),
+    notes: formData.get("notes") ?? "",
+    pedidoLibre: formData.get("pedidoLibre") ?? "",
+  });
+  if (!parsed.success) redirect("/panel/cotizador?error=datos");
+  const customerName = parsed.data.customerName;
+  const notes = parsed.data.notes;
+  const freeText = parsed.data.pedidoLibre;
 
   const ids = formData.getAll("priceItemId").map(String);
   const quantities = formData.getAll("quantity").map((value) => Number(value));
@@ -194,12 +211,16 @@ export async function createQuoteAction(formData: FormData) {
 }
 
 export async function setQuoteStatusAction(formData: FormData) {
+  await guardMutation(formData, "/panel/cotizador");
   const session = await requireSession();
-  const id = String(formData.get("id") ?? "");
-  const status = String(formData.get("status") ?? "");
-  if (status !== "APPROVED" && status !== "REJECTED") {
-    redirect(`/panel/cotizador/${id}?error=datos`);
-  }
+  await assertOwnOrganizationActive(session.organizationId, "/panel/cotizador");
+  const parsed = quoteStatusSchema.safeParse({
+    id: formData.get("id"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) redirect("/panel/cotizador?error=datos");
+  const id = parsed.data.id;
+  const status = parsed.data.status;
   const updated = await prisma.quote.updateMany({
     where: { id, organizationId: session.organizationId },
     data: { status },

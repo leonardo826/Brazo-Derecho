@@ -43,3 +43,29 @@ export const brandSchema = z.object({
   audience: z.string().trim().min(2).max(200),
   summary: z.string().trim().min(2).max(600),
 });
+
+export const recordIdSchema = z.string().trim().min(1).max(80);
+
+export const quoteRequestSchema = z.object({
+  customerName: z.string().trim().min(2).max(120),
+  notes: z.string().trim().max(1000),
+  pedidoLibre: z.string().trim().max(2000),
+});
+
+export const quoteStatusSchema = z.object({
+  id: recordIdSchema,
+  status: z.enum(["APPROVED", "REJECTED"]),
+});
+
+export const postBatchSchema = z.object({
+  count: z.coerce.number().int().min(1).max(8),
+});
+
+export const phoneIdSchema = z.string().trim().regex(/^$|^\d{8,20}$/);
+
+export const suspensionSchema = z.object({
+  organizationId: recordIdSchema,
+  suspended: z.enum(["0", "1"]),
+});
+
+export const agentFieldSchema = z.enum(["WHATSAPP", "QUOTES", "MARKETING"]);

@@ -7,6 +7,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: brazo
+          POSTGRES_PASSWORD: brazo
+          POSTGRES_DB: brazo_derecho
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U brazo -d brazo_derecho"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
       DIRECT_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
@@ -22,3 +36,8 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e

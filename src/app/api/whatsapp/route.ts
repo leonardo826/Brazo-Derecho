@@ -2,7 +2,9 @@ import { Prisma } from "@prisma/client";
 import { withAssistantDisclosure } from "@/lib/agents/whatsapp";
 import { runWhatsappTurn } from "@/lib/agents/run-whatsapp";
 import { whatsappEnv } from "@/lib/env";
+import { logEvent } from "@/lib/log";
 import { prisma } from "@/lib/prisma";
+import { captureException } from "@/lib/sentry";
 import { dayStart } from "@/lib/usage";
 import { parseInboundTexts, routeInbound, verifyMetaSignature, verifyWebhookChallenge } from "@/lib/whatsapp/cloud";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
     challenge: url.searchParams.get("hub.challenge"),
     expectedToken: env.verifyToken || null,
   });
+  logEvent("whatsapp.webhook", { method: "GET", status: result.ok ? 200 : result.status });
   if (!result.ok) return new Response(null, { status: result.status });
   return new Response(result.challenge, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
@@ -56,23 +59,38 @@ async function saveCanned(input: {
 }
 
 export async function POST(request: Request) {
+  try {
+    return await handleWhatsappPost(request);
+  } catch (error) {
+    captureException(error, { source: "whatsapp.webhook" });
+    return Response.json({ ok: false }, { status: 500 });
+  }
+}
+
+async function handleWhatsappPost(request: Request) {
   const env = whatsappEnv();
   if (!env.appSecret) {
+    logEvent("whatsapp.webhook", { method: "POST", status: 503, reason: "sin_secreto" });
     return Response.json({ ok: false, error: "Falta WHATSAPP_APP_SECRET" }, { status: 503 });
   }
   const raw = await request.text();
   if (!verifyMetaSignature(raw, request.headers.get("x-hub-signature-256"), env.appSecret)) {
+    logEvent("whatsapp.webhook", { method: "POST", status: 401, reason: "firma" });
     return Response.json({ ok: false }, { status: 401 });
   }
   let payload: unknown;
   try {
     payload = JSON.parse(raw);
   } catch {
+    logEvent("whatsapp.webhook", { method: "POST", status: 400, reason: "json" });
     return Response.json({ ok: false }, { status: 400 });
   }
 
   const inbound = parseInboundTexts(payload);
-  if (inbound.length === 0) return Response.json({ ok: true });
+  if (inbound.length === 0) {
+    logEvent("whatsapp.webhook", { method: "POST", status: 200, inbound: 0 });
+    return Response.json({ ok: true });
+  }
 
   const phoneIds = [...new Set(inbound.map((item) => item.phoneNumberId))];
   const owners = await prisma.organization.findMany({
@@ -125,7 +143,7 @@ export async function POST(request: Request) {
     }
 
     let outgoing = "";
-    if (!turn.ok && (turn.reason === "suscripcion" || turn.reason === "limite")) {
+    if (!turn.ok && (turn.reason === "suscripcion" || turn.reason === "limite" || turn.reason === "suspendida")) {
       outgoing = await saveCanned({
         conversationId: conversation.id,
         question: message.body,
@@ -142,6 +160,13 @@ export async function POST(request: Request) {
     }
   }
 
+  const status = retry ? 500 : 200;
+  logEvent("whatsapp.webhook", {
+    method: "POST",
+    status,
+    inbound: inbound.length,
+    organizations: owners.length,
+  });
   if (retry) return Response.json({ ok: false }, { status: 500 });
   return Response.json({ ok: true });
 }

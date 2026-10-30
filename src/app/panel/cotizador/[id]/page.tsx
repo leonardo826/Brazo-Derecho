@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { setQuoteStatusAction } from "@/app/actions/quotes";
+import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { formatClp, formatWhen, quoteCode } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -81,6 +82,7 @@ export default async function QuoteDetailPage({
         {quote.agentNote ? <p className="muted">{quote.agentNote}</p> : null}
         <div className="inline">
           <form action={setQuoteStatusAction}>
+            <CsrfField />
             <input type="hidden" name="id" value={quote.id} />
             <input type="hidden" name="status" value="APPROVED" />
             <button className="button" type="submit">
@@ -88,6 +90,7 @@ export default async function QuoteDetailPage({
             </button>
           </form>
           <form action={setQuoteStatusAction}>
+            <CsrfField />
             <input type="hidden" name="id" value={quote.id} />
             <input type="hidden" name="status" value="REJECTED" />
             <button className="button secondary" type="submit">

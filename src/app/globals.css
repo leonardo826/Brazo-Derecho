@@ -301,6 +301,44 @@ pre.copy {
 .legal { width: min(760px, calc(100% - 2rem)); margin: 0 auto; padding-bottom: 3rem; }
 .legal h1 { font-size: clamp(2.2rem, 4vw, 3.4rem); margin-bottom: 1rem; }
 .legal ol, .legal ul { padding-left: 1.2rem; }
+.empty-state {
+  border: 1px dashed var(--line-strong);
+  border-radius: 18px;
+  padding: 0.9rem 1rem 0.2rem;
+  background: var(--cream);
+  margin: 0.4rem 0 1rem;
+}
+.wizard-steps {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wizard-steps li {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  color: var(--ink-soft);
+  background: white;
+}
+.wizard-steps li.current {
+  border-color: var(--copper);
+  color: var(--copper);
+  font-weight: 700;
+}
+.choice-grid { display: grid; gap: 0.7rem; }
+.choice {
+  display: block;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: white;
+}
+.choice:hover { border-color: var(--copper); }
+.choice strong { display: block; margin-bottom: 0.2rem; }
 mark.placeholder {
   background: #f6ecd8;
   color: var(--copper);

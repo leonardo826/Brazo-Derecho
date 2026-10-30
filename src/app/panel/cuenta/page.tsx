@@ -1,4 +1,5 @@
 import { updateOrganizationAction } from "@/app/actions/account";
+import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -33,6 +34,7 @@ export default async function AccountPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       <div className="grid-2">
         <form action={updateOrganizationAction} className="panel-card stack">
+          <CsrfField />
           <h2>Datos de la empresa</h2>
           <label>
             Nombre

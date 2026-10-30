@@ -26,6 +26,7 @@ model Organization {
   rut                    String?
   flowCustomerId         String?         @unique
   whatsappPhoneNumberId  String?         @unique
+  suspendedAt            DateTime?
   createdAt              DateTime        @default(now())
   memberships   Membership[]
   subscriptions Subscription[]

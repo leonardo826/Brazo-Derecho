@@ -3,9 +3,10 @@
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
 import { runWhatsappTurn } from "@/lib/agents/run-whatsapp";
+import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { conversationSchema, knowledgeSchema, messageSchema } from "@/lib/validation";
+import { conversationSchema, knowledgeSchema, messageSchema, recordIdSchema } from "@/lib/validation";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
 
 function backTo(conversationId?: string, notice?: { error?: string; ok?: string }) {
@@ -18,7 +19,9 @@ function backTo(conversationId?: string, notice?: { error?: string; ok?: string 
 }
 
 export async function createKnowledgeAction(formData: FormData) {
+  await guardMutation(formData, "/panel/whatsapp");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/whatsapp");
   const parsed = knowledgeSchema.safeParse({
     title: formData.get("title"),
     body: formData.get("body"),
@@ -37,8 +40,12 @@ export async function createKnowledgeAction(formData: FormData) {
 }
 
 export async function deleteKnowledgeAction(formData: FormData) {
+  await guardMutation(formData, "/panel/whatsapp");
   const session = await requireSession();
-  const id = String(formData.get("id") ?? "");
+  await assertOwnOrganizationActive(session.organizationId, "/panel/whatsapp");
+  const parsedId = recordIdSchema.safeParse(formData.get("id"));
+  if (!parsedId.success) redirect(backTo(undefined, { error: "datos" }));
+  const id = parsedId.data;
   const deleted = await prisma.knowledgeItem.deleteMany({
     where: { id, organizationId: session.organizationId },
   });
@@ -46,7 +53,9 @@ export async function deleteKnowledgeAction(formData: FormData) {
 }
 
 export async function startConversationAction(formData: FormData) {
+  await guardMutation(formData, "/panel/whatsapp");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/whatsapp");
   const parsed = conversationSchema.safeParse({ customerLabel: formData.get("customerLabel") });
   if (!parsed.success) redirect(backTo(undefined, { error: "datos" }));
   if (!(await agentIsOpen(session.organizationId, "WHATSAPP")).open) {
@@ -62,10 +71,14 @@ export async function startConversationAction(formData: FormData) {
 }
 
 export async function sendCustomerMessageAction(formData: FormData) {
+  const parsedConversation = recordIdSchema.safeParse(formData.get("conversationId"));
+  const conversationId = parsedConversation.success ? parsedConversation.data : "";
+  await guardMutation(formData, backTo(conversationId));
   const session = await requireSession();
-  const conversationId = String(formData.get("conversationId") ?? "");
+  await assertOwnOrganizationActive(session.organizationId, backTo(conversationId));
+  guardRate(`chat:${session.organizationId}`, 30, 10 * 60 * 1000, backTo(conversationId));
   const parsed = messageSchema.safeParse({ body: formData.get("body") });
-  if (!parsed.success) redirect(backTo(conversationId, { error: "datos" }));
+  if (!parsedConversation.success || !parsed.success) redirect(backTo(conversationId, { error: "datos" }));
   if (!(await agentIsOpen(session.organizationId, "WHATSAPP")).open) {
     redirect(backTo(conversationId, { error: "suscripcion" }));
   }
@@ -98,10 +111,13 @@ export async function sendCustomerMessageAction(formData: FormData) {
 }
 
 export async function sendHumanMessageAction(formData: FormData) {
+  const parsedConversation = recordIdSchema.safeParse(formData.get("conversationId"));
+  const conversationId = parsedConversation.success ? parsedConversation.data : "";
+  await guardMutation(formData, backTo(conversationId));
   const session = await requireSession();
-  const conversationId = String(formData.get("conversationId") ?? "");
+  await assertOwnOrganizationActive(session.organizationId, backTo(conversationId));
   const parsed = messageSchema.safeParse({ body: formData.get("body") });
-  if (!parsed.success) redirect(backTo(conversationId, { error: "datos" }));
+  if (!parsedConversation.success || !parsed.success) redirect(backTo(conversationId, { error: "datos" }));
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.organizationId },
   });

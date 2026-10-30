@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { registerAction } from "@/app/actions/auth";
+import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 import { resolveSession } from "@/lib/session";
@@ -22,9 +23,10 @@ export default async function RegisterPage({
       <div className="narrow card stack">
         <p className="eyebrow">Nueva empresa</p>
         <h1>Crear cuenta</h1>
-        <p className="muted">Una cuenta, una empresa. En la beta no se pide tarjeta.</p>
+        <p className="muted">Una cuenta, una empresa. Después eliges un agente y lo pruebas 14 días, sin tarjeta.</p>
         <Flash error={firstParam(params.error)} />
         <form action={registerAction} className="stack">
+          <CsrfField />
           <label>
             Tu nombre
             <input name="name" required minLength={2} maxLength={80} autoComplete="name" placeholder="María Soto" />

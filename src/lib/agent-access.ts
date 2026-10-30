@@ -9,6 +9,13 @@ export async function loadSubscription(organizationId: string, agent: AgentId) {
 }
 
 export async function agentIsOpen(organizationId: string, agent: AgentId, now = new Date()) {
-  const subscription = await loadSubscription(organizationId, agent);
-  return { subscription, open: isSubscriptionOpen(subscription, now) };
+  const [subscription, organization] = await Promise.all([
+    loadSubscription(organizationId, agent),
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { suspendedAt: true },
+    }),
+  ]);
+  const suspended = Boolean(organization?.suspendedAt);
+  return { subscription, suspended, open: !suspended && isSubscriptionOpen(subscription, now) };
 }

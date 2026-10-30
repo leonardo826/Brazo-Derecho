@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, Source_Sans_3 } from "next/font/google";
+import { headers } from "next/headers";
+import { CsrfProvider } from "@/components/csrf-field";
+import { CSRF_HEADER } from "@/lib/csrf-token";
 import "./globals.css";
 
 const display = Fraunces({
@@ -23,10 +26,14 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headerStore = await headers();
+  const csrf = headerStore.get(CSRF_HEADER) ?? "";
   return (
     <html lang="es">
-      <body className={`${display.variable} ${sans.variable}`}>{children}</body>
+      <body className={`${display.variable} ${sans.variable}`}>
+        <CsrfProvider token={csrf}>{children}</CsrfProvider>
+      </body>
     </html>
   );
 }

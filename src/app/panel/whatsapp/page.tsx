@@ -6,6 +6,8 @@ import {
   sendHumanMessageAction,
   startConversationAction,
 } from "@/app/actions/whatsapp";
+import { CsrfField } from "@/components/csrf-field";
+import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
 import { linkWhatsappNumberAction } from "@/app/actions/admin";
 import { SubscribeActions } from "@/components/trial-button";
@@ -64,6 +66,11 @@ export default async function WhatsappPage({
         <SubscribeActions agent="WHATSAPP" back="/panel/whatsapp" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      {firstParam(params.guia) === "1" ? (
+        <p className="banner ok">
+          La prueba de 14 días quedó activa. No se cobró nada. Escribe el horario o la dirección y haz una pregunta de prueba.
+        </p>
+      ) : null}
       <UsageBar used={responses} limit={responseLimit} label="Respuestas de este mes" />
       <article className="panel-card stack" style={{ marginTop: "1rem" }}>
         <h2>Número de WhatsApp</h2>
@@ -74,6 +81,7 @@ export default async function WhatsappPage({
         </p>
         {session.role === "OWNER" ? (
           <form action={linkWhatsappNumberAction} className="stack">
+            <CsrfField />
             <label>
               Id del número en Meta
               <input
@@ -112,6 +120,7 @@ export default async function WhatsappPage({
             <h2>Base de conocimiento</h2>
             <p className="muted">Horarios, dirección, despachos, medios de pago. Si no está escrito, el agente no lo inventa.</p>
             <form action={createKnowledgeAction} className="stack">
+              <CsrfField />
               <label>
                 Título
                 <input name="title" required minLength={3} maxLength={120} placeholder="Título de la ficha" autoComplete="off" />
@@ -124,12 +133,17 @@ export default async function WhatsappPage({
                 Guardar ficha
               </button>
             </form>
-            {knowledge.length === 0 ? <p>Todavía no hay fichas.</p> : null}
+            {knowledge.length === 0 ? (
+              <EmptyState title="Todavía no hay fichas">
+                Parte por el horario y la dirección. El agente solo repite lo que escribas aquí y no inventa el resto.
+              </EmptyState>
+            ) : null}
             {knowledge.map((item) => (
               <article key={item.id}>
                 <h3>{item.title}</h3>
                 <p>{item.body}</p>
                 <form action={deleteKnowledgeAction}>
+                  <CsrfField />
                   <input type="hidden" name="id" value={item.id} />
                   <button className="button secondary small" type="submit">
                     Eliminar
@@ -141,6 +155,7 @@ export default async function WhatsappPage({
           <section className="panel-card stack">
             <h2>{selected?.channel === "whatsapp" ? "WhatsApp" : "Simulador"}</h2>
             <form action={startConversationAction} className="inline">
+              <CsrfField />
               <label style={{ flex: 1 }}>
                 Quién escribe
                 <input name="customerLabel" required minLength={2} maxLength={80} placeholder="Cliente del mesón" />
@@ -162,7 +177,9 @@ export default async function WhatsappPage({
                 ))}
               </div>
             ) : (
-              <p>Abre un hilo para probar una pregunta.</p>
+              <EmptyState title="Todavía no hay conversaciones">
+                Abre un hilo con el nombre de quien escribe y haz una pregunta que esté en tus fichas.
+              </EmptyState>
             )}
             {selected ? (
               <>
@@ -184,6 +201,7 @@ export default async function WhatsappPage({
                   ))}
                 </div>
                 <form action={sendCustomerMessageAction} className="stack">
+                  <CsrfField />
                   <input type="hidden" name="conversationId" value={selected.id} />
                   <label>
                     Mensaje del cliente
@@ -194,6 +212,7 @@ export default async function WhatsappPage({
                   </button>
                 </form>
                 <form action={sendHumanMessageAction} className="stack">
+                  <CsrfField />
                   <input type="hidden" name="conversationId" value={selected.id} />
                   <label>
                     Respuesta de una persona

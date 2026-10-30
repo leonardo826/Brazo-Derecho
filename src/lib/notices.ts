@@ -20,6 +20,10 @@ export const ERRORS: Record<string, string> = {
   sesion: "Tu sesión ya no es válida. Ingresa de nuevo.",
   sku: "Ese SKU ya existe en la lista de tu empresa.",
   cupo: "Llegaste al máximo de registros de esta sección.",
+  csrf: "No pudimos confirmar el formulario. Recarga la página e intenta de nuevo.",
+  ritmo: "Demasiados intentos seguidos. Espera un momento y prueba otra vez.",
+  suspendida: "Tu empresa está suspendida. Los agentes están detenidos hasta que administración la reactive.",
+  plataforma: "Esa acción es solo de administración.",
 };
 
 export const OKS: Record<string, string> = {
@@ -42,4 +46,7 @@ export const OKS: Record<string, string> = {
   perfil: "Perfil de marca guardado.",
   empresa: "Datos de la empresa actualizados.",
   hilo: "Conversación abierta en el simulador.",
+  suspendida: "Empresa suspendida. Los agentes quedan detenidos y los datos se conservan.",
+  reactivada: "Empresa reactivada. Las pruebas y suscripciones que ya tenía vuelven a contar.",
+  empresa_lista: "Datos guardados. Ahora elige el agente con el que quieres partir.",
 };

@@ -1,4 +1,5 @@
 import { activateTrialAction, cancelSubscriptionAction } from "@/app/actions/subscriptions";
+import { CsrfField } from "@/components/csrf-field";
 import { SubscriptionBadge } from "@/components/subscription-status";
 import { flowIsConfigured } from "@/lib/flow/client";
 import { isSubscriptionOpen } from "@/lib/subscription";
@@ -31,6 +32,7 @@ export function SubscribeActions({
       <SubscriptionBadge subscription={subscription} />
       {open && !needsCard ? null : (
         <form action={activateTrialAction}>
+          <CsrfField />
           <input type="hidden" name="agent" value={agent} />
           <input type="hidden" name="back" value={back} />
           <button className="button small" type="submit">
@@ -40,6 +42,7 @@ export function SubscribeActions({
       )}
       {flow && subscription?.flowSubscriptionId ? (
         <form action={activateTrialAction}>
+          <CsrfField />
           <input type="hidden" name="agent" value={agent} />
           <input type="hidden" name="back" value={back} />
           <button className="button secondary small" type="submit">
@@ -49,6 +52,7 @@ export function SubscribeActions({
       ) : null}
       {open ? (
         <form action={cancelSubscriptionAction}>
+          <CsrfField />
           <input type="hidden" name="agent" value={agent} />
           <input type="hidden" name="back" value={back} />
           <button className="button secondary small" type="submit">

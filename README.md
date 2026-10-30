@@ -59,21 +59,26 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `WHATSAPP_PHONE_NUMBER_ID` | Id de referencia del número. Igual hay que vincularlo a una empresa. | No se muestra la referencia. El enrutado usa el id guardado en la empresa. |
 | `WHATSAPP_VERIFY_TOKEN` | Token que Meta envía al verificar el webhook. | `GET /api/whatsapp` responde 503. |
 | `WHATSAPP_APP_SECRET` | Secreto de la app para revisar `X-Hub-Signature-256`. | `POST /api/whatsapp` responde 503 y no procesa mensajes. |
-| `ADMIN_EMAILS` | Correos, separados por coma, que entran a Administración y vinculan el número de cualquier empresa. | Esa pantalla no aparece. El dueño igual vincula el número de su empresa en Atención WhatsApp. |
+| `ADMIN_EMAILS` | Correos, separados por coma, que entran a Administración: ven empresas, uso, costo estimado y pueden suspender o reactivar. También vinculan el número de cualquier empresa. | Esa pantalla no aparece. El dueño igual vincula el número de su empresa en Atención WhatsApp. |
 | `SEED_DEMO` | En producción, `1` permite correr el seed de demostración. | El seed se niega si `NODE_ENV=production`. |
+| `SENTRY_DSN` | DSN de Sentry para errores de los webhooks de Flow y WhatsApp. | No se envía nada. El error queda solo en el log del proceso. |
 
 Los tokens de cada respuesta quedan en `UsageEvent`, por empresa, con el modelo usado. El tope mensual se descuenta en la misma transacción que guarda la respuesta. El mes se calcula en `America/Santiago`.
 
 ## Cuentas de demostración
 
-El seed local crea dos empresas separadas. La contraseña de las dos es `Clave-demo-2026`.
+El seed es idempotente: se puede correr otra vez y no duplica fichas, hilos, cotizaciones ni borradores. Si la prueba de 14 días de una cuenta demo venció y no está pagada en Flow, la vuelve a dejar activa. La contraseña de las dos queda en `Clave-demo-2026`.
 
-| Correo | Empresa |
-| --- | --- |
-| maria@losaromos.cl | Ferretería Los Aromos |
-| pedro@cafedelpuerto.cl | Café del Puerto |
+| Correo | Empresa | Qué trae |
+| --- | --- | --- |
+| maria@losaromos.cl | Ferretería Los Aromos | Los tres agentes en prueba, hilos de horario, despacho y un descuento que el agente rechaza, y dos cotizaciones. |
+| pedro@cafedelpuerto.cl | Café del Puerto | Los tres agentes en prueba, hilos de horario y carta, una cotización y un borrador de marketing. |
 
-Entran al panel con datos distintos. María no ve la carta del café y Pedro no ve la lista de la ferretería. No uses estas claves en un servidor público.
+Entran al panel con datos distintos. María no ve la carta del café y Pedro no ve la lista de la ferretería. Para ver Administración con María, pon `ADMIN_EMAILS=maria@losaromos.cl`. No uses estas claves en un servidor público.
+
+## Primeros pasos
+
+Al crear la cuenta, el panel abre un asistente de tres pasos: datos de la empresa, elección de un agente y la prueba de 14 días. Sin claves no hay cobro y la respuesta queda en el simulador. Si una sección está vacía, el panel dice qué falta cargar antes de probar.
 
 ## Cómo está armado
 
@@ -84,6 +89,9 @@ Entran al panel con datos distintos. María no ve la carta del café y Pedro no 
 - xAI: `POST /v1/responses`. Sin clave, el simulador redacta a partir de la ficha, la lista o el perfil. Un rechazo de atención (descuento, cobro, asesoría, publicidad masiva) no llama al modelo.
 - Flow: planes mensuales `brazo-whatsapp`, `brazo-cotizador` y `brazo-marketing`, con 14 días de prueba la primera vez. El webhook `POST /api/flow/confirmacion` recibe el `token`, consulta el estado firmado y deja el agente activo o lo detiene.
 - WhatsApp: `GET/POST /api/whatsapp`. El mensaje se enruta por `phone_number_id` a la empresa vinculada. Salud: `GET /api/health`.
+- Cada formulario lleva un token de CSRF y se compara el origen con el host. El ingreso, el registro y el chat del agente tienen un límite de intentos en memoria del proceso.
+- Los webhooks de Flow y WhatsApp escriben un log en JSON, sin el texto del mensaje ni el token de pago. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
+- Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos.
 
 ```
 Sitio y panel
@@ -106,8 +114,8 @@ Acciones del servidor  -- filtran por empresa de la sesión
 4. En Meta, la URL de devolución es `https://tu-dominio.cl/api/whatsapp`. El token de verificación es `WHATSAPP_VERIFY_TOKEN`.
 5. En Flow (sandbox o producción), las claves van en `FLOW_API_KEY` y `FLOW_SECRET_KEY`. El plan avisa los pagos a `https://tu-dominio.cl/api/flow/confirmacion`.
 6. Revisa `GET /api/health`. Responde `{ "ok": true }` cuando la base contesta.
-7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
-8. Sin `XAI_API_KEY`, `FLOW_API_KEY` o `WHATSAPP_TOKEN` el panel sigue en modo simulado.
+7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número y, si hace falta, suspéndela. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
+8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN` o `SENTRY_DSN` el panel sigue en modo simulado y no sale ningún aviso externo.
 
 ## Scripts
 
@@ -117,7 +125,10 @@ npm run test:integration # aislamiento entre empresas; necesita Postgres
 npm run typecheck
 npm run lint
 npm run build            # migra y construye; necesita DATABASE_URL y DIRECT_URL
+npm run test:e2e         # Playwright: registro, prueba, chat y administración. Corre después del build.
 ```
+
+El comando de seed vive en `prisma.config.ts`, que también carga `.env`. Prisma CLI lo usa en `npm run db:seed` y al resetear la base.
 
 ## Qué falta para el primer cobro en serio
 

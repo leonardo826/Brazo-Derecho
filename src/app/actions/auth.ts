@@ -2,6 +2,7 @@
 
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { clientAddress, guardMutation, guardRate } from "@/lib/guard";
 import { hashPassword, passwordError, verifyPassword } from "@/lib/password";
 import { safePanelPath } from "@/lib/paths";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +12,8 @@ import { slugify } from "@/lib/slug";
 import { loginSchema, registerSchema } from "@/lib/validation";
 
 export async function registerAction(formData: FormData) {
+  await guardMutation(formData, "/registro");
+  await guardRate(`auth:register:${await clientAddress()}`, 5, 60 * 60 * 1000, "/registro");
   if (formData.get("consent") !== "on") redirect("/registro?error=consentimiento");
   const marketingOptIn = formData.get("marketingOptIn") === "on";
   const parsed = registerSchema.safeParse({
@@ -70,15 +73,21 @@ export async function registerAction(formData: FormData) {
     throw error;
   }
 
-  redirect("/panel?ok=cuenta");
+  redirect("/panel/empezar");
 }
 
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
 export async function loginAction(formData: FormData) {
+  await guardMutation(formData, "/ingresar");
+  const ip = await clientAddress();
+  await guardRate(`auth:login:${ip}`, 20, LOGIN_WINDOW_MS, "/ingresar");
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
   });
   if (!parsed.success) redirect("/ingresar?error=credenciales");
+  await guardRate(`auth:login:${ip}:${parsed.data.email.toLowerCase()}`, 8, LOGIN_WINDOW_MS, "/ingresar");
 
   const user = await prisma.user.findUnique({
     where: { email: parsed.data.email.toLowerCase() },
@@ -105,7 +114,8 @@ export async function loginAction(formData: FormData) {
   redirect(safePanelPath(String(formData.get("siguiente") ?? "")));
 }
 
-export async function logoutAction() {
+export async function logoutAction(formData: FormData) {
+  await guardMutation(formData, "/ingresar");
   const session = await resolveSession();
   if (!session) redirect("/");
   await clearSession();

@@ -2,17 +2,20 @@
 
 import { redirect } from "next/navigation";
 import { agentIsOpen } from "@/lib/agent-access";
+import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { channelFor, draftImageSvg, toMarketingRecord } from "@/lib/agents/marketing";
 import { instructionsFor, limitFor, modelFor, routineModel } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
-import { brandSchema } from "@/lib/validation";
+import { brandSchema, postBatchSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
 
 export async function saveBrandAction(formData: FormData) {
+  await guardMutation(formData, "/panel/marketing");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/marketing");
   const parsed = brandSchema.safeParse({
     voice: formData.get("voice"),
     audience: formData.get("audience"),
@@ -28,15 +31,17 @@ export async function saveBrandAction(formData: FormData) {
 }
 
 export async function generatePostsAction(formData: FormData) {
+  await guardMutation(formData, "/panel/marketing");
   const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, "/panel/marketing");
+  guardRate(`marketing:${session.organizationId}`, 10, 10 * 60 * 1000, "/panel/marketing");
   if (!(await agentIsOpen(session.organizationId, "MARKETING")).open) {
     redirect("/panel/marketing?error=suscripcion");
   }
-  const requested = Number(formData.get("count") ?? 4);
+  const parsedCount = postBatchSchema.safeParse({ count: formData.get("count") ?? 4 });
+  if (!parsedCount.success) redirect("/panel/marketing?error=datos");
+  const requested = parsedCount.data.count;
   const withImage = formData.get("withImage") === "on";
-  if (!Number.isInteger(requested) || requested < 1 || requested > 8) {
-    redirect("/panel/marketing?error=datos");
-  }
   const profile = await prisma.brandProfile.findUnique({
     where: { organizationId: session.organizationId },
   });

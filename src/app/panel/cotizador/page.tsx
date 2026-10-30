@@ -4,6 +4,8 @@ import {
   togglePriceAction,
   updatePriceAction,
 } from "@/app/actions/quotes";
+import { CsrfField } from "@/components/csrf-field";
+import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
 import { QuoteForm } from "@/components/quote-form";
 import { SubscribeActions } from "@/components/trial-button";
@@ -57,12 +59,18 @@ export default async function QuotesPage({
         <SubscribeActions agent="QUOTES" back="/panel/cotizador" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      {firstParam(params.guia) === "1" ? (
+        <p className="banner ok">
+          La prueba de 14 días quedó activa. No se cobró nada. Agrega un producto con su precio neto y arma una cotización de prueba.
+        </p>
+      ) : null}
       <UsageBar used={usage.totals.QUOTES} limit={quoteLimit} label="Cotizaciones de este mes" />
 
       <div className="grid-2" style={{ marginTop: "1rem" }}>
         <section className="panel-card stack">
           <h2>Lista de precios</h2>
           <form action={createPriceAction} className="stack" autoComplete="off">
+            <CsrfField />
             <div className="split">
               <label>
                 SKU
@@ -87,9 +95,14 @@ export default async function QuotesPage({
               Agregar a la lista
             </button>
           </form>
-          {prices.length === 0 ? <p>Todavía no hay productos.</p> : null}
+          {prices.length === 0 ? (
+            <EmptyState title="Todavía no hay productos">
+              Agrega el primero con su precio neto. Sin lista, el cotizador no arma nada y no inventa valores.
+            </EmptyState>
+          ) : null}
           {prices.map((item) => (
             <form key={item.id} action={updatePriceAction} className="stack">
+              <CsrfField />
               <input type="hidden" name="id" value={item.id} />
               <div className="split">
                 <label>
@@ -129,7 +142,7 @@ export default async function QuotesPage({
             <h2>Nueva cotización</h2>
             {open ? (
               active.length === 0 ? (
-                <p>Agrega al menos un producto activo antes de cotizar.</p>
+                <EmptyState title="Falta un producto activo">Agrega al menos uno a la lista antes de cotizar.</EmptyState>
               ) : usage.totals.QUOTES >= quoteLimit ? (
                 <p>Llegaste a las {quoteLimit.toLocaleString("es-CL")} cotizaciones de este mes.</p>
               ) : (
@@ -146,7 +159,11 @@ export default async function QuotesPage({
           </article>
           <article className="panel-card">
             <h2>Cotizaciones</h2>
-            {quotes.length === 0 ? <p>Todavía no hay cotizaciones.</p> : null}
+            {quotes.length === 0 ? (
+              <EmptyState title="Todavía no hay cotizaciones">
+                Cuando armes una, queda pendiente de tu aprobación. Brazo Derecho no la envía.
+              </EmptyState>
+            ) : null}
             <div className="table-wrap">
               <table>
                 <thead>

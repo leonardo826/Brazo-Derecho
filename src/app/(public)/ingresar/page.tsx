@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
+import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 import { resolveSession } from "@/lib/session";
@@ -26,6 +27,7 @@ export default async function LoginPage({
         <h1>Ingresar</h1>
         <Flash error={firstParam(params.error)} />
         <form action={loginAction} className="stack">
+          <CsrfField />
           <input type="hidden" name="siguiente" value={siguiente} />
           <label>
             Correo

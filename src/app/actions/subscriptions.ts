@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { isAgentId } from "@/lib/catalog";
+import { assertOwnOrganizationActive, guardMutation } from "@/lib/guard";
 import { cancelFlowSubscription, startFlowSubscription } from "@/lib/flow/checkout";
 import { flowIsConfigured } from "@/lib/flow/client";
 import { safePanelPath } from "@/lib/paths";
@@ -10,10 +11,13 @@ import { requireSession } from "@/lib/session";
 import { trialEnd } from "@/lib/subscription";
 
 export async function activateTrialAction(formData: FormData) {
-  const session = await requireSession();
-  const agentRaw = String(formData.get("agent") ?? "");
   const back = safePanelPath(String(formData.get("back") ?? "/panel"));
+  await guardMutation(formData, back);
+  const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, back);
+  const agentRaw = String(formData.get("agent") ?? "");
   if (!isAgentId(agentRaw)) redirect(`${back}?error=datos`);
+  const guia = formData.get("guia") === "1" ? "&guia=1" : "";
 
   if (flowIsConfigured()) {
     let url: string | null = null;
@@ -54,13 +58,15 @@ export async function activateTrialAction(formData: FormData) {
       periodEnd: trialEnd(now),
     },
   });
-  redirect(`${back}?ok=prueba`);
+  redirect(`${back}?ok=prueba${guia}`);
 }
 
 export async function cancelSubscriptionAction(formData: FormData) {
-  const session = await requireSession();
-  const agentRaw = String(formData.get("agent") ?? "");
   const back = safePanelPath(String(formData.get("back") ?? "/panel"));
+  await guardMutation(formData, back);
+  const session = await requireSession();
+  await assertOwnOrganizationActive(session.organizationId, back);
+  const agentRaw = String(formData.get("agent") ?? "");
   if (!isAgentId(agentRaw)) redirect(`${back}?error=datos`);
 
   if (flowIsConfigured()) {

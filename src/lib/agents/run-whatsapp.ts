@@ -23,6 +23,7 @@ export async function runWhatsappTurn(input: {
   }
 
   const access = await agentIsOpen(input.organizationId, "WHATSAPP", input.now);
+  if (access.suspended) return { ok: false as const, reason: "suspendida" as const };
   if (!access.open) return { ok: false as const, reason: "suscripcion" as const };
 
   const used = await usedThisMonth(input.organizationId, "RESPONSES", input.now);

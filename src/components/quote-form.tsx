@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { createQuoteAction } from "@/app/actions/quotes";
+import { CsrfField } from "@/components/csrf-field";
 
 export function QuoteForm({ items }: { items: { id: string; label: string }[] }) {
   const [rows, setRows] = useState(1);
   return (
     <form action={createQuoteAction} className="stack" autoComplete="off">
+      <CsrfField />
       <label>
         Cliente
         <input name="customerName" required minLength={2} maxLength={120} placeholder="Nombre del cliente" autoComplete="off" />

@@ -52,6 +52,35 @@ export async function reserveUsage(tx: Prisma.TransactionClient, input: ReserveI
   return decision;
 }
 
+export async function usageByOrganization(organizationIds: string[], now = new Date()) {
+  const bounds = monthBounds(now);
+  const grouped = new Map<string, UsageSlice[]>();
+  for (const id of organizationIds) grouped.set(id, []);
+  if (organizationIds.length === 0) {
+    return { label: bounds.label, byOrganization: new Map<string, ReturnType<typeof summarizeUsage>>() };
+  }
+  const events = await prisma.usageEvent.findMany({
+    where: {
+      organizationId: { in: organizationIds },
+      createdAt: { gte: bounds.start, lt: bounds.end },
+    },
+  });
+  for (const event of events) {
+    grouped.get(event.organizationId)?.push({
+      agent: event.agent,
+      metric: event.metric,
+      quantity: event.quantity,
+      inputTokens: event.inputTokens,
+      cachedTokens: event.cachedTokens,
+      outputTokens: event.outputTokens,
+      model: event.model,
+    });
+  }
+  const byOrganization = new Map<string, ReturnType<typeof summarizeUsage>>();
+  for (const [id, slices] of grouped) byOrganization.set(id, summarizeUsage(slices));
+  return { label: bounds.label, byOrganization };
+}
+
 export async function usageSnapshot(organizationId: string, now = new Date()) {
   const bounds = monthBounds(now);
   const events = await prisma.usageEvent.findMany({

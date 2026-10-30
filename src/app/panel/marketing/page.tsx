@@ -1,4 +1,6 @@
 import { generatePostsAction, saveBrandAction } from "@/app/actions/marketing";
+import { CsrfField } from "@/components/csrf-field";
+import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
@@ -41,6 +43,11 @@ export default async function MarketingPage({
         <SubscribeActions agent="MARKETING" back="/panel/marketing" subscription={subscription} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      {firstParam(params.guia) === "1" ? (
+        <p className="banner ok">
+          La prueba de 14 días quedó activa. No se cobró nada. Guarda la voz de tu marca y prepara un borrador. No se publica solo.
+        </p>
+      ) : null}
       <div className="grid-2">
         <UsageBar used={usage.totals.TEXTS} limit={textLimit} label="Textos de este mes" />
         <UsageBar used={usage.totals.IMAGES} limit={imageLimit} label="Imágenes de este mes" />
@@ -49,6 +56,7 @@ export default async function MarketingPage({
         <section className="panel-card stack">
           <h2>Perfil de marca</h2>
           <form action={saveBrandAction} className="stack">
+            <CsrfField />
             <label>
               Voz
               <input name="voice" required maxLength={200} defaultValue={profile?.voice ?? ""} placeholder="Cercana, clara, sin tecnicismos" />
@@ -67,6 +75,7 @@ export default async function MarketingPage({
           </form>
           {open && profile ? (
             <form action={generatePostsAction} className="stack">
+              <CsrfField />
               <label>
                 Cuántos borradores
                 <input name="count" type="number" min={1} max={8} defaultValue={4} />
@@ -83,11 +92,19 @@ export default async function MarketingPage({
               </p>
             </form>
           ) : (
-            <p>Guarda el perfil y activa la prueba para preparar borradores.</p>
+            <EmptyState title="Falta el perfil o la prueba">
+              {!profile
+                ? "Cuéntanos la voz, el público y un resumen. El agente no inventa promociones que no estén ahí."
+                : "Activa la prueba de 14 días para preparar el primer borrador. Nada se publica solo."}
+            </EmptyState>
           )}
         </section>
         <section className="stack">
-          {posts.length === 0 ? <article className="panel-card">Todavía no hay borradores.</article> : null}
+          {posts.length === 0 ? (
+            <EmptyState title="Todavía no hay borradores">
+              Cuando prepares uno, queda en esta lista para que lo revises. Brazo Derecho no lo publica ni compra avisos.
+            </EmptyState>
+          ) : null}
           {posts.map((post) => (
             <article className="panel-card draft" key={post.id}>
               <div className="draft-grid">
