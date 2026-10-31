@@ -1,0 +1,257 @@
+import { notFound } from "next/navigation";
+import { linkWhatsappNumberAction, setOrganizationSuspensionAction } from "@/app/actions/admin";
+import { CsrfField } from "@/components/csrf-field";
+import { EmptyState } from "@/components/empty-state";
+import { Flash } from "@/components/flash";
+import { isPlatformAdmin } from "@/lib/admin";
+import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type MetricId } from "@/lib/catalog";
+import { whatsappEnv } from "@/lib/env";
+import { emailIsMock } from "@/lib/email/deliver";
+import { formatClp, formatWhen } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+import { firstParam } from "@/lib/search";
+import { requireSession } from "@/lib/session";
+import { subscriptionView } from "@/lib/subscription";
+import { monthKey, monthQueryDate, usageAlerts } from "@/lib/usage";
+import { usageByOrganization } from "@/lib/usage-store";
+
+export const dynamic = "force-dynamic";
+
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const session = await requireSession();
+  if (!isPlatformAdmin(session.email)) notFound();
+  const params = await searchParams;
+  const viewedAt = monthQueryDate(firstParam(params.mes));
+  const organizations = await prisma.organization.findMany({
+    orderBy: { name: "asc" },
+    include: {
+      subscriptions: true,
+      memberships: {
+        where: { role: "OWNER" },
+        include: { user: { select: { name: true, email: true } } },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      },
+    },
+  });
+  const usage = await usageByOrganization(
+    organizations.map((organization) => organization.id),
+    viewedAt,
+  );
+  const selectedKey = monthKey(viewedAt);
+  const totalCost = organizations.reduce(
+    (sum, organization) => sum + (usage.byOrganization.get(organization.id)?.costClp ?? 0),
+    0,
+  );
+  const referenceId = whatsappEnv().phoneNumberId;
+  const emails = await prisma.emailMessage.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 40,
+  });
+  const mockMail = emailIsMock();
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Administración</p>
+          <h1>Empresas</h1>
+          <p className="muted">
+            Uso y costo estimado de {usage.label}, estado de cada suscripción y suspensión. Suspender detiene los agentes y conserva los datos.
+          </p>
+        </div>
+      </div>
+      <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      <section className="panel-card stack" style={{ marginBottom: "1rem" }}>
+        <h2>Costo por empresa</h2>
+        <p className="muted">
+          Estimación de {usage.label}, en hora de Chile. Cada fila de abajo es una empresa de ese mes. No es la boleta de xAI.
+        </p>
+        <form method="get" action="/panel/admin" className="inline">
+          <label>
+            Mes
+            <input name="mes" type="month" defaultValue={selectedKey} />
+          </label>
+          <button className="button secondary small" type="submit">
+            Ver mes
+          </button>
+        </form>
+        <p className="price">
+          {formatClp(totalCost)} <small>suma de las empresas</small>
+        </p>
+      </section>
+      {organizations.length === 0 ? (
+        <EmptyState title="Todavía no hay empresas">Cuando alguien cree una cuenta, aparece en esta lista.</EmptyState>
+      ) : (
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Empresas del mes">
+          <table className="wide">
+            <caption className="sr-only">
+              Empresas, suscripción, uso y costo estimado. En un celular, desliza horizontalmente para ver todas las columnas.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Empresa</th>
+                <th scope="col">Dueño</th>
+                <th scope="col">Suscripciones</th>
+                <th scope="col">Uso del mes</th>
+                <th scope="col">Costo estimado</th>
+                <th scope="col">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organizations.map((organization) => {
+                const owner = organization.memberships[0]?.user;
+                const summary = usage.byOrganization.get(organization.id);
+                const alerts = summary ? usageAlerts(summary.totals) : [];
+                const tokens = summary
+                  ? summary.byModel["grok-4.3"].inputTokens +
+                    summary.byModel["grok-4.3"].outputTokens +
+                    summary.byModel["grok-4.7"].inputTokens +
+                    summary.byModel["grok-4.7"].outputTokens
+                  : 0;
+                return (
+                  <tr key={organization.id}>
+                    <td>
+                      <strong>{organization.name}</strong>
+                      <br />
+                      <span className="muted">
+                        {organization.whatsappPhoneNumberId
+                          ? `WhatsApp ${organization.whatsappPhoneNumberId}`
+                          : "Sin número de WhatsApp"}
+                      </span>
+                    </td>
+                    <td>
+                      {owner ? (
+                        <>
+                          {owner.name}
+                          <br />
+                          <span className="muted">{owner.email}</span>
+                        </>
+                      ) : (
+                        "Sin dueño"
+                      )}
+                    </td>
+                    <td>
+                      {AGENT_ORDER.map((agent) => {
+                        const subscription = organization.subscriptions.find((item) => item.agent === agent);
+                        const view = subscriptionView(subscription);
+                        return (
+                          <div key={agent}>
+                            {AGENT_CATALOG[agent].name}: {view.label}
+                          </div>
+                        );
+                      })}
+                    </td>
+                    <td>
+                      {(["RESPONSES", "QUOTES", "TEXTS", "IMAGES"] as MetricId[]).map((metric) => (
+                        <div key={metric}>
+                          {METRIC_LABEL[metric]}: {(summary?.totals[metric] ?? 0).toLocaleString("es-CL")}
+                        </div>
+                      ))}
+                      <span className="muted">{tokens.toLocaleString("es-CL")} tokens de entrada y salida</span>
+                    </td>
+                    <td>
+                      {formatClp(summary?.costClp ?? 0)}
+                      {alerts.map((alert) => (
+                        <div key={alert.metric} className="muted">
+                          {METRIC_LABEL[alert.metric]} al {alert.percent}%
+                        </div>
+                      ))}
+                    </td>
+                    <td>
+                      <p>{organization.suspendedAt ? "Suspendida" : "Al día"}</p>
+                      <form action={setOrganizationSuspensionAction}>
+                        <CsrfField />
+                        <input type="hidden" name="organizationId" value={organization.id} />
+                        <input type="hidden" name="suspended" value={organization.suspendedAt ? "0" : "1"} />
+                        <button
+                          className={organization.suspendedAt ? "button small" : "button secondary small"}
+                          type="submit"
+                          aria-label={organization.suspendedAt ? `Reactivar ${organization.name}` : `Suspender ${organization.name}`}
+                        >
+                          {organization.suspendedAt ? "Reactivar" : "Suspender"}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <form action={linkWhatsappNumberAction} className="panel-card stack" style={{ marginTop: "1rem" }}>
+        <CsrfField />
+        <h2>Vincular WhatsApp</h2>
+        <p className="muted">
+          El id es el que muestra Meta. Los mensajes de ese número llegan solo al agente de la empresa elegida.
+          {referenceId ? ` Id de referencia en el servidor: ${referenceId}.` : ""}
+        </p>
+        {organizations.length === 0 ? (
+          <p>Cuando exista una empresa, puedes vincular su número aquí.</p>
+        ) : (
+          <>
+            <label>
+              Empresa
+              <select name="organizationId" required defaultValue={organizations[0]?.id ?? ""}>
+                {organizations.map((organization) => (
+                  <option key={organization.id} value={organization.id}>
+                    {organization.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Identificador del número
+              <input name="whatsappPhoneNumberId" inputMode="numeric" autoComplete="off" placeholder="Solo dígitos" />
+            </label>
+            <p className="muted">Si dejas el id vacío, se desvincula la empresa elegida.</p>
+        <button className="button" type="submit">
+          Guardar vínculo
+        </button>
+          </>
+        )}
+      </form>
+
+      <section className="panel-card stack" style={{ marginTop: "1rem" }}>
+        <h2>Correos</h2>
+        <p className="muted">
+          {mockMail
+            ? "No hay clave de Resend. Los correos no salen de este servidor: quedan en el log y en esta lista para la demostración. El enlace de confirmación y el de la contraseña se pueden abrir desde aquí."
+            : "Los correos salen por Resend. Esta lista anota el envío, sin guardar el texto ni el enlace."}
+        </p>
+        {emails.length === 0 ? (
+          <EmptyState title="Todavía no hay correos">
+            Cuando alguien cree una cuenta o pida una contraseña nueva, el mensaje aparece aquí.
+          </EmptyState>
+        ) : (
+          <div className="mail-list">
+            {emails.map((email) => (
+              <details key={email.id}>
+                <summary>
+                  {formatWhen(email.createdAt)} · {email.to} · {email.subject}
+                </summary>
+                <p className="muted">
+                  {email.kind === "verificacion"
+                    ? "Confirmación de correo"
+                    : email.kind === "recuperacion"
+                      ? "Recuperación de contraseña"
+                      : email.kind}{" "}
+                  · {email.provider === "mock" ? "Simulador" : "Resend"} ·{" "}
+                  {email.status === "simulado" ? "Simulado" : email.status === "enviado" ? "Enviado" : "Falló"}
+                </p>
+                {email.error ? <p className="banner error">{email.error}</p> : null}
+                {email.text ? <pre className="copy">{email.text}</pre> : <p className="muted">Sin texto guardado.</p>}
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}

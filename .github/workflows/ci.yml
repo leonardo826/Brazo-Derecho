@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: brazo
+          POSTGRES_PASSWORD: brazo
+          POSTGRES_DB: brazo_derecho
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U brazo -d brazo_derecho"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
+      DIRECT_URL: postgresql://brazo:brazo@localhost:5432/brazo_derecho
+      SESSION_SECRET: ci-session-secret-de-al-menos-32-chars
+      APP_URL: http://127.0.0.1:3100
+      XAI_MODE: mock
+      XAI_API_KEY: ""
+      FLOW_API_KEY: ""
+      FLOW_SECRET_KEY: ""
+      WHATSAPP_TOKEN: ""
+      WHATSAPP_APP_SECRET: ""
+      WHATSAPP_VERIFY_TOKEN: ""
+      RESEND_API_KEY: ""
+      SENTRY_DSN: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Migrate
+        run: npx prisma migrate deploy
+      - name: Integration tests
+        run: npm run test:integration
+      - name: Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: End to end
+        run: npm run test:e2e
+      - name: Capturas móviles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots
+          path: artifacts/mobile
+          if-no-files-found: ignore
