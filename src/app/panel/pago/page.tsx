@@ -2,12 +2,15 @@ import Link from "next/link";
 import { confirmMockPaymentAction } from "@/app/actions/subscriptions";
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
+import { PaymentProviderField } from "@/components/payment-provider-field";
 import { AGENT_CATALOG, isAgentId } from "@/lib/catalog";
 import { flowIsConfigured } from "@/lib/flow/client";
 import { canActivateMockPlan } from "@/lib/flow/mock-checkout";
 import { planFor } from "@/lib/flow/plans";
 import { formatClp } from "@/lib/format";
+import { mercadoPagoIsConfigured } from "@/lib/mercadopago/client";
 import { paymentReturnPath } from "@/lib/paths";
+import { flowIsTestMode, mercadoPagoIsTestMode } from "@/lib/payments/mode";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -23,6 +26,9 @@ export default async function MockCheckoutPage({
   const agentRaw = firstParam(params.agente) ?? "";
   const agent = isAgentId(agentRaw) ? agentRaw : null;
   const flow = flowIsConfigured();
+  const mercadoPago = mercadoPagoIsConfigured();
+  const flowTest = flowIsTestMode();
+  const mercadoPagoTest = mercadoPagoIsTestMode();
   const subscription = agent
     ? await prisma.subscription.findUnique({
         where: { organizationId_agent: { organizationId: session.organizationId, agent } },
@@ -61,27 +67,36 @@ export default async function MockCheckoutPage({
         {flow ? (
           <p>Flow está configurado en este servidor. El pago de prueba no se usa: el cobro lo hace Flow.</p>
         ) : null}
+        {mercadoPago && !flow ? (
+          <p>Mercado Pago está configurado. Si lo eliges, el pago lo hace Mercado Pago. Flow, en esta pantalla, sigue en modo prueba.</p>
+        ) : null}
         {!flow && agent && !ready ? (
           <p>Primero activa la prueba de 14 días. Desde ahí puedes pasar al plan con este pago de prueba.</p>
         ) : null}
         {ready && agent ? (
-          <form action={confirmMockPaymentAction} className="inline">
+          <form action={confirmMockPaymentAction} className="stack">
             <CsrfField />
+            <PaymentProviderField flowTest={flowTest} mercadoPagoTest={mercadoPagoTest} />
             <input type="hidden" name="agent" value={agent} />
             <input type="hidden" name="back" value={back} />
-            <button className="button" type="submit">
-              Confirmar pago de prueba
-            </button>
-            <Link className="button-link secondary" href={`${back}?ok=pago_cancelado`}>
-              Cancelar
-            </Link>
+            <div className="inline">
+              <button className="button" type="submit">
+                {mercadoPago && !flow ? "Continuar al pago" : "Confirmar pago de prueba"}
+              </button>
+              <Link className="button-link secondary" href={`${back}?ok=pago_cancelado`}>
+                Cancelar
+              </Link>
+            </div>
           </form>
         ) : (
-          <p>
-            <Link className="button-link secondary" href={back}>
-              Volver al panel
-            </Link>
-          </p>
+          <>
+            {agent ? <PaymentProviderField flowTest={flowTest} mercadoPagoTest={mercadoPagoTest} /> : null}
+            <p>
+              <Link className="button-link secondary" href={back}>
+                Volver al panel
+              </Link>
+            </p>
+          </>
         )}
       </article>
     </>

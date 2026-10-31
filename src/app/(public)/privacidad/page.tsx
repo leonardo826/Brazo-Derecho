@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           <strong>Datos de tu cuenta:</strong> nombre, correo, teléfono, empresa, RUT de facturación.
         </li>
         <li>
-          <strong>Datos de pago:</strong> los procesa Flow (u otra pasarela). Brazo Derecho no guarda números de tarjeta.
+          <strong>Datos de pago:</strong> los procesa Flow o Mercado Pago. Brazo Derecho no guarda números de tarjeta. Si pagas con Mercado Pago, guardamos el correo del pagador y el id de la suscripción.
         </li>
         <li>
           <strong>Contenido que entregas a los agentes:</strong> mensajes, documentos, listas de precios, información de tu
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
           <strong>Proveedor de WhatsApp</strong> (Meta), para enviar y recibir mensajes.
         </li>
         <li>
-          <Marked text="Flow (pagos) y [proveedor de hosting y base de datos]." />
+          <Marked text="Flow y Mercado Pago (pagos) y [proveedor de hosting y base de datos]." />
         </li>
         <li>
           <Marked text="Servicio de facturación electrónica [por definir]." />

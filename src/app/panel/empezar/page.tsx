@@ -3,7 +3,9 @@ import { saveOnboardingCompanyAction } from "@/app/actions/onboarding";
 import { activateTrialAction } from "@/app/actions/subscriptions";
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
+import { PaymentProviderField } from "@/components/payment-provider-field";
 import { AGENT_CATALOG, AGENT_ORDER, isAgentId, type AgentId } from "@/lib/catalog";
+import { flowIsTestMode, mercadoPagoIsTestMode } from "@/lib/payments/mode";
 import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
@@ -114,9 +116,12 @@ export default async function OnboardingPage({
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-              <p className="muted">En la beta no hay cobro. Si más adelante conectas Flow, la tarjeta se pide aparte.</p>
-              <form action={activateTrialAction}>
+              <p className="muted">
+                En la beta no hay cobro. Elige con qué medio vas a pagar el plan. Flow queda marcado. Si ese medio está en modo prueba, no pedimos tarjeta.
+              </p>
+              <form action={activateTrialAction} className="stack">
                 <CsrfField />
+                <PaymentProviderField flowTest={flowIsTestMode()} mercadoPagoTest={mercadoPagoIsTestMode()} />
                 <input type="hidden" name="agent" value={agent} />
                 <input type="hidden" name="back" value={HREF[agent]} />
                 <input type="hidden" name="guia" value="1" />

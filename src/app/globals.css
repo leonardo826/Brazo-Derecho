@@ -423,6 +423,14 @@ mark.placeholder {
 .chat-card header { gap: 0.45rem; flex-wrap: wrap; }
 .faq summary, .mail-list summary { min-height: 44px; cursor: pointer; }
 .check input { width: 1.15rem; height: 1.15rem; accent-color: var(--copper); }
+.pay-with {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.pay-with legend { font-weight: 650; padding: 0; }
 .nav-links a[aria-current="page"] { text-decoration: underline; text-underline-offset: 0.25em; }
 
 :focus-visible { outline: 3px solid var(--copper); outline-offset: 2px; }

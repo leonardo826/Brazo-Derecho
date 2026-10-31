@@ -82,3 +82,5 @@ export const suspensionSchema = z.object({
 });
 
 export const agentFieldSchema = z.enum(["WHATSAPP", "QUOTES", "MARKETING"]);
+
+export const paymentProviderSchema = z.enum(["flow", "mercadopago"]);

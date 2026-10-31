@@ -55,6 +55,9 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
 | `FLOW_SECRET_KEY` | Secreto para firmar cada llamada (HMAC-SHA256). | Igual que sin api key: no hay cobro. |
 | `FLOW_API_URL` | Base del API. | `https://sandbox.flow.cl/api`. |
+| `MERCADOPAGO_ACCESS_TOKEN` | Access token de Mercado Pago para suscripciones. | Mismo pago de prueba que sin Flow. No se llama a la API. |
+| `MERCADOPAGO_WEBHOOK_SECRET` | Secreto para validar `x-signature` en `POST /api/mercadopago/webhook`. | El aviso responde 503. |
+| `MERCADOPAGO_PUBLIC_KEY` | Clave pública, opcional. El cobro del servidor no la usa. | No cambia el comportamiento. |
 | `WHATSAPP_TOKEN` | Token de la app de Meta para enviar respuestas. | El hilo se guarda en el panel y no sale al celular. |
 | `WHATSAPP_PHONE_NUMBER_ID` | Id de referencia del número. Igual hay que vincularlo a una empresa. | No se muestra la referencia. El enrutado usa el id guardado en la empresa. |
 | `WHATSAPP_VERIFY_TOKEN` | Token que Meta envía al verificar el webhook. | `GET /api/whatsapp` responde 503. |
@@ -92,9 +95,10 @@ La primera vez que entras al panel aparece el recorrido **Prueba la demo**: cinc
 - Al entrar al panel se vuelve a comprobar que la persona pertenece a esa empresa.
 - xAI: `POST /v1/responses`. Sin clave, el simulador redacta a partir de la ficha, la lista o el perfil. Un rechazo de atención (descuento, cobro, asesoría, publicidad masiva) no llama al modelo.
 - Flow: planes mensuales `brazo-whatsapp`, `brazo-cotizador` y `brazo-marketing`, con 14 días de prueba la primera vez. El webhook `POST /api/flow/confirmacion` recibe el `token`, consulta el estado firmado y deja el agente activo o lo detiene. Sin claves, «Activar plan» abre `/panel/pago`, marcado como pago de prueba: confirmar deja el plan activo y cancelar deja la prueba como estaba.
+- Mercado Pago: segundo medio, en `/panel/pago` y `/panel/empezar`, con Flow marcado por defecto. Sin `MERCADOPAGO_ACCESS_TOKEN` usa el mismo pago de prueba. Con token, crea una preapproval y redirige a `init_point`. El webhook `POST /api/mercadopago/webhook` valida `x-signature` y consulta el estado en la API.
 - WhatsApp: `GET/POST /api/whatsapp`. El mensaje se enruta por `phone_number_id` a la empresa vinculada. Salud: `GET /api/health` revisa la base. El chequeo de uptime, con opciones gratis, está en `docs/MONITOREO.md`.
 - Cada formulario lleva un token de CSRF y se compara el origen con el host. El ingreso, el registro y el chat del agente tienen un límite de intentos en memoria del proceso.
-- Los webhooks de Flow y WhatsApp escriben un log en JSON, sin el texto del mensaje ni el token de pago. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
+- Los webhooks de Flow, Mercado Pago y WhatsApp escriben un log en JSON, sin el texto del mensaje, el token de pago ni el access token. El de Mercado Pago no usa CSRF, igual que el de Flow, y tiene límite de intentos. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
 - Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos. También muestra los correos del simulador, con el enlace para confirmar el correo o cambiar la clave.
 - Al crear la cuenta se pide confirmar el correo. El aviso del panel no bloquea el uso. Las cuentas del seed de demostración ya quedan confirmadas. En Ingresar, «¿Olvidaste tu contraseña?» manda un enlace de un solo uso que dura una hora. Hay un límite de intentos por IP y por correo. Cambiar la contraseña cierra las sesiones anteriores.
 - El catálogo público está en `/agentes` y `/precios`: qué hace y qué no hace cada agente, el precio neto más IVA, la prueba de 14 días, preguntas frecuentes y el enlace para crear la cuenta. El menú de la portada apunta ahí.
@@ -108,7 +112,7 @@ Acciones del servidor  -- filtran por empresa de la sesión
     +--> Postgres
     +--> Reglas (conocimiento, lista, límites)
     +--> xAI si hay XAI_API_KEY; si no, simulador
-    +--> Flow si hay claves; si no, prueba local y pago de prueba
+    +--> Flow o Mercado Pago si hay claves; si no, prueba local y pago de prueba
     +--> WhatsApp Cloud API si hay token y número vinculado
 ```
 
@@ -118,7 +122,7 @@ Acciones del servidor  -- filtran por empresa de la sesión
 2. En Vercel, importa el repositorio y define todas las variables de `.env.example`. `SESSION_SECRET` de al menos 32 caracteres. `APP_URL` con la URL pública (`https://tu-dominio.cl`), sin barra final.
 3. El build (`vercel.json` y `npm run build`) corre `prisma generate`, después `prisma migrate deploy` y al final `next build`. Las migraciones tienen que poder conectar durante el build.
 4. En Meta, la URL de devolución es `https://tu-dominio.cl/api/whatsapp`. El token de verificación es `WHATSAPP_VERIFY_TOKEN`.
-5. En Flow (sandbox o producción), las claves van en `FLOW_API_KEY` y `FLOW_SECRET_KEY`. El plan avisa los pagos a `https://tu-dominio.cl/api/flow/confirmacion`.
+5. En Flow (sandbox o producción), las claves van en `FLOW_API_KEY` y `FLOW_SECRET_KEY`. El plan avisa los pagos a `https://tu-dominio.cl/api/flow/confirmacion`. Mercado Pago, si lo usas, va en `MERCADOPAGO_ACCESS_TOKEN` y `MERCADOPAGO_WEBHOOK_SECRET`. El aviso es `https://tu-dominio.cl/api/mercadopago/webhook`.
 6. Revisa `GET /api/health`. Responde `{ "ok": true, "base": "ok" }` cuando la base contesta. Las opciones gratis de uptime están en `docs/MONITOREO.md`.
 7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número y, si hace falta, suspéndela. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
 8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN`, `SENTRY_DSN` o `RESEND_API_KEY` el panel sigue en modo simulado y no sale ningún aviso externo. Los correos de la demo se leen en Administración.

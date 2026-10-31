@@ -11,6 +11,7 @@ export const ERRORS: Record<string, string> = {
   consentimiento: "Para crear la cuenta tienes que aceptar los términos y confirmar que leíste el aviso de privacidad.",
   ia: "El asistente no alcanzó a responder. No descontamos esta vez.",
   flow: "No pudimos completar la operación con Flow. Intenta de nuevo en un rato.",
+  mercadopago: "No pudimos completar la operación con Mercado Pago. Intenta de nuevo en un rato.",
   numero: "Revisa el id del número. Son solo dígitos, los que muestra Meta.",
   numero_tomado: "Ese id ya está vinculado a otra empresa.",
   admin: "Solo el dueño de la empresa puede vincular el número.",
