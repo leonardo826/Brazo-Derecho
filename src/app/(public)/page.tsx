@@ -109,7 +109,7 @@ export default function HomePage() {
             <article className="step">
               <b>2</b>
               <h3>Activa una prueba</h3>
-              <p>14 días por agente. Si el cobro con Flow está activo, después se cobra el plan. Si no, la prueba no tiene cargo.</p>
+              <p>14 días por agente. Si el cobro con Flow o Mercado Pago está activo, después se cobra el plan. Si no, la prueba no tiene cargo.</p>
             </article>
             <article className="step">
               <b>3</b>
@@ -153,9 +153,9 @@ export default function HomePage() {
           <details>
             <summary>¿Cómo se va a cobrar?</summary>
             <p>
-              Cada agente tiene un plan mensual en pesos chilenos, neto, más IVA. La prueba dura 14 días. Con Flow
-              activo, registras la tarjeta y el aviso de pago deja el agente activo o lo detiene. Si Flow no está
-              conectado, la prueba se activa en el panel y no hay cargo. La boleta electrónica sigue pendiente.
+              Cada agente tiene un plan mensual en pesos chilenos, neto, más IVA. La prueba dura 14 días. Con Flow o
+              Mercado Pago activo, registras la tarjeta y el aviso de pago deja el agente activo o lo detiene. Si ese
+              medio no está conectado, la prueba se activa en el panel y no hay cargo. La boleta electrónica sigue pendiente.
             </p>
           </details>
         </div>

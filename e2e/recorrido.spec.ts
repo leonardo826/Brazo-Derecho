@@ -139,8 +139,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
 
   await ensureAdmin(page);
   await page.goto("/panel/admin");
-  await expect(page.getByRole("heading", { name: "Correos" })).toBeVisible();
-  await expect(page.getByText("No hay clave de Resend")).toBeVisible();
+  const correos = page.locator("section").filter({ has: page.getByRole("heading", { name: "Correos" }) });
+  await expect(correos.getByText("No hay clave de Resend")).toBeVisible();
   const verifyUrl = await mailLink(page, email, "Confirma tu correo en Brazo Derecho");
   const resetUrl = await mailLink(page, email, "Recupera tu contraseña de Brazo Derecho");
   await logout(page);
