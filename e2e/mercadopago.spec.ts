@@ -19,8 +19,10 @@ test("elige Mercado Pago en el pago de prueba y activa el plan", async ({ page }
   await expect(page.getByRole("radio", { name: /Flow/ })).toBeChecked();
   await expect(page.getByText("modo prueba").first()).toBeVisible();
   await page.getByRole("radio", { name: /Mercado Pago/ }).check();
-  await page.getByRole("button", { name: "Activar prueba y probar" }).click();
-  await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
+  await clickHydrated(page, page.getByRole("button", { name: "Activar prueba y probar" }), async () => {
+    await expect(page.getByRole("heading", { name: "Atención WhatsApp", exact: true })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText("La prueba de 14 días quedó activa")).toBeVisible();
+  });
 
   await page.goto("/panel");
   await page.locator("article.panel-card", { hasText: "Atención WhatsApp" }).getByRole("link", { name: "Activar plan" }).click();
