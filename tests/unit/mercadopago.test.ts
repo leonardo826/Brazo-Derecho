@@ -25,6 +25,7 @@ afterEach(() => {
   delete process.env.MERCADOPAGO_ACCESS_TOKEN;
   delete process.env.MERCADOPAGO_WEBHOOK_SECRET;
   delete process.env.MERCADOPAGO_PUBLIC_KEY;
+  delete process.env.MERCADOPAGO_TEST_PAYER_EMAIL;
   delete process.env.FLOW_API_KEY;
   delete process.env.FLOW_SECRET_KEY;
 });
@@ -170,7 +171,101 @@ describe("creación y proveedor", () => {
     expect(headers.Authorization).toBe("Bearer TEST-access-token");
     expect(String(init?.body)).not.toContain("TEST-access-token");
     expect(logs.join("\n")).not.toContain("TEST-access-token");
+    expect(logs.join("\n")).not.toContain("mercadopago.api");
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("TEST-access-token");
+  });
+
+  test("payer_email de prueba solo reemplaza al de la sesión con token TEST-", () => {
+    const input = {
+      subscriptionId: "sub_1",
+      payerEmail: "ana@ejemplo.cl",
+      reason: "Atención WhatsApp",
+      amountClp: 47588,
+    };
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-access-token";
+    process.env.MERCADOPAGO_TEST_PAYER_EMAIL = " comprador.prueba@testuser.com ";
+    expect(buildPreapprovalPayload(input).payer_email).toBe("comprador.prueba@testuser.com");
+
+    process.env.MERCADOPAGO_TEST_PAYER_EMAIL = "   ";
+    expect(buildPreapprovalPayload(input).payer_email).toBe("ana@ejemplo.cl");
+    delete process.env.MERCADOPAGO_TEST_PAYER_EMAIL;
+    expect(buildPreapprovalPayload(input).payer_email).toBe("ana@ejemplo.cl");
+
+    process.env.MERCADOPAGO_TEST_PAYER_EMAIL = "comprador.prueba@testuser.com";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "APP_USR-produccion";
+    expect(buildPreapprovalPayload(input).payer_email).toBe("ana@ejemplo.cl");
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "test-access-token";
+    expect(buildPreapprovalPayload(input).payer_email).toBe("ana@ejemplo.cl");
+    delete process.env.MERCADOPAGO_ACCESS_TOKEN;
+    expect(buildPreapprovalPayload(input).payer_email).toBe("ana@ejemplo.cl");
+  });
+
+  test("un error de Mercado Pago anota estado, message y cause, sin token ni cabeceras", async () => {
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-access-token";
+    process.env.MERCADOPAGO_WEBHOOK_SECRET = SECRET;
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          message: "payer_email invalid",
+          error: "bad_request",
+          status: 400,
+          cause: [
+            {
+              code: 4050,
+              description: "El correo no es un comprador de prueba",
+              data: "Bearer TEST-access-token",
+            },
+            { code: "403", description: `secreto ${SECRET}` },
+          ],
+          headers: { Authorization: "Bearer TEST-access-token" },
+          access_token: "TEST-access-token",
+        },
+        { status: 400 },
+      ),
+    );
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    await expect(
+      mercadoPagoCall("/preapproval", { method: "POST", body: { payer_email: "ana@ejemplo.cl" } }, fetchMock),
+    ).rejects.toMatchObject({ name: "MercadoPagoApiError", status: 400 });
+    spy.mockRestore();
+
+    const line = logs.find((entry) => entry.includes('"event":"mercadopago.api"'));
+    expect(line).toBeTruthy();
+    const logged = JSON.parse(line ?? "{}") as Record<string, unknown>;
+    expect(logged.status).toBe(400);
+    expect(logged.message).toBe("payer_email invalid");
+    expect(logged.cause).toContain("4050: El correo no es un comprador de prueba");
+    expect(logged.cause).toContain("data=Bearer [redacted]");
+    expect(logged.cause).toContain(`403: secreto [redacted]`);
+    expect(logged).not.toHaveProperty("headers");
+    expect(logged).not.toHaveProperty("access_token");
+    expect(line).not.toContain("TEST-access-token");
+    expect(line).not.toContain(SECRET);
+    expect(line).not.toContain("Authorization");
+  });
+
+  test("un error que no es JSON anota el estado y no el cuerpo", async () => {
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-access-token";
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response("<html>TEST-access-token Authorization: Bearer TEST-access-token</html>", { status: 502 }),
+    );
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    await expect(mercadoPagoCall("/preapproval", { method: "GET" }, fetchMock)).rejects.toThrow(/formato/);
+    spy.mockRestore();
+    const line = logs.find((entry) => entry.includes('"event":"mercadopago.api"'));
+    const logged = JSON.parse(line ?? "{}") as Record<string, unknown>;
+    expect(logged.status).toBe(502);
+    expect(logged).not.toHaveProperty("message");
+    expect(logged).not.toHaveProperty("cause");
+    expect(line).not.toContain("TEST-access-token");
+    expect(line).not.toContain("Authorization");
+    expect(line).not.toContain("<html>");
   });
 
   test("el registro elige Flow o Mercado Pago y Zod rechaza otro medio", () => {

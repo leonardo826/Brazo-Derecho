@@ -6,7 +6,7 @@ La beta sigue en simulador mientras falte una clave. Este es el checklist para c
 
 1. **Clave de xAI.** Crear la clave en la consola de xAI y pegarla en `XAI_API_KEY`. Sacar `XAI_MODE=mock` (déjalo vacío). Sin eso el panel sigue en el simulador y no gasta API.
 2. **Cuenta de Flow.** Registrarse en [sandbox.flow.cl](https://sandbox.flow.cl) para probar y en [www.flow.cl](https://www.flow.cl) para cobrar. En Mis datos → Integraciones copiar API Key y Secret Key. El aviso de pago del plan tiene que apuntar a `https://TU-DOMINIO/api/flow/confirmacion`. Probar un pago de sandbox antes de pasar a producción.
-3. **Cuenta de Mercado Pago.** Crear una aplicación en el panel de desarrolladores. Para probar, usar credenciales de prueba (`MERCADOPAGO_ACCESS_TOKEN` empieza con `TEST-`). Para cobrar, las de producción. El secreto del webhook va en `MERCADOPAGO_WEBHOOK_SECRET`. Al crear la suscripción enviamos `notification_url` = `https://TU-DOMINIO/api/mercadopago/webhook`. `MERCADOPAGO_PUBLIC_KEY` es opcional y el servidor no la usa. Sin access token, Mercado Pago usa el mismo pago de prueba que Flow y no llama a la API.
+3. **Cuenta de Mercado Pago.** Crear una aplicación en el panel de desarrolladores. Para probar, usar credenciales de prueba (`MERCADOPAGO_ACCESS_TOKEN` empieza con `TEST-`). Para cobrar, las de producción. El secreto del webhook va en `MERCADOPAGO_WEBHOOK_SECRET`. Al crear la suscripción enviamos `notification_url` = `https://TU-DOMINIO/api/mercadopago/webhook`. `MERCADOPAGO_PUBLIC_KEY` es opcional y el servidor no la usa. En la prueba, `MERCADOPAGO_TEST_PAYER_EMAIL` puede ser el correo de un comprador de prueba: solo se manda como `payer_email` si el access token empieza con `TEST-`. En producción se ignora. Sin access token, Mercado Pago usa el mismo pago de prueba que Flow y no llama a la API. Si la API rechaza la llamada, el log anota el código HTTP y los campos `message` y `cause`, sin el token ni las cabeceras.
 4. **Número de WhatsApp.** En Meta Business, un número de WhatsApp Cloud API, el token, el id del número, el verify token y el app secret. La URL del webhook es `https://TU-DOMINIO/api/whatsapp`. Después, en Administración, vincular ese id a la empresa. No hay integración con Twilio.
 5. **Dominio.** Comprar el dominio y apuntar el DNS a Vercel. `APP_URL` tiene que ser esa URL, con `https`, sin barra final.
 6. **Vercel Pro.** El plan Hobby corta las funciones a los 10 segundos. La llamada a xAI espera hasta 45. Hace falta Vercel Pro (o un plan con el mismo tiempo de función) antes de quitar el simulador.
@@ -36,6 +36,7 @@ FLOW_API_URL="https://www.flow.cl/api"
 MERCADOPAGO_ACCESS_TOKEN="TEST-o-produccion-sin-pegar-una-clave-real"
 MERCADOPAGO_WEBHOOK_SECRET="secreto-del-webhook-de-mercadopago"
 MERCADOPAGO_PUBLIC_KEY=""
+MERCADOPAGO_TEST_PAYER_EMAIL=""
 
 WHATSAPP_TOKEN="token-de-meta"
 WHATSAPP_PHONE_NUMBER_ID="id-de-referencia"
@@ -58,6 +59,7 @@ RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 | `MERCADOPAGO_ACCESS_TOKEN` | Mismo pago de prueba que sin Flow. No se llama a `api.mercadopago.com`. |
 | `MERCADOPAGO_WEBHOOK_SECRET` | `POST /api/mercadopago/webhook` responde 503 y no procesa avisos. |
 | `MERCADOPAGO_PUBLIC_KEY` | No cambia el cobro. El servidor crea la suscripción con el access token. |
+| `MERCADOPAGO_TEST_PAYER_EMAIL` | `payer_email` es el correo de la sesión. Con un token que no empieza con `TEST-` la variable no se usa. |
 | `WHATSAPP_TOKEN` | El hilo queda en el panel y no sale al celular. |
 | `WHATSAPP_APP_SECRET` | `POST /api/whatsapp` responde 503. |
 | `WHATSAPP_VERIFY_TOKEN` | `GET /api/whatsapp` responde 503 y Meta no verifica el webhook. |
