@@ -60,6 +60,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.MERCADOPAGO_ACCESS_TOKEN;
   delete process.env.MERCADOPAGO_WEBHOOK_SECRET;
+  delete process.env.MERCADOPAGO_TEST_PAYER_EMAIL;
   if (previousAppUrl === undefined) delete process.env.APP_URL;
   else process.env.APP_URL = previousAppUrl;
 });
@@ -215,5 +216,47 @@ describe("webhook de Mercado Pago", () => {
     expect(saved.provider).toBe("MERCADOPAGO");
     expect(saved.mpPreapprovalId).toBe("pre-nueva");
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.mercadopago.com/preapproval");
+  });
+
+  test("en modo prueba payer_email usa el comprador de prueba y en producción el de la sesión", async () => {
+    process.env.APP_URL = "http://localhost:3000";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = TOKEN;
+    process.env.MERCADOPAGO_TEST_PAYER_EMAIL = " comprador.prueba@testuser.com ";
+    const { organizationId, email } = await makeOrg();
+    let sent = "";
+    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+      sent = String(init?.body ?? "");
+      return Response.json({
+        id: "pre-test-payer",
+        init_point: "https://www.mercadopago.cl/subscriptions/checkout?preapproval_id=pre-test-payer",
+      });
+    });
+    await startMercadoPagoSubscription(
+      { organizationId, agent: "WHATSAPP", payerEmail: email, amountClp: 47588 },
+      fetchMock,
+    );
+    expect(JSON.parse(sent).payer_email).toBe("comprador.prueba@testuser.com");
+    expect(sent).not.toContain(TOKEN);
+    const saved = await prisma.subscription.findUniqueOrThrow({
+      where: { organizationId_agent: { organizationId, agent: "WHATSAPP" } },
+    });
+    expect(saved.mpPayerEmail).toBe(email);
+
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "APP_USR-produccion-token";
+    const { organizationId: otherOrg, email: otherEmail } = await makeOrg();
+    let productionSent = "";
+    const productionFetch = vi.fn<typeof fetch>(async (_url, init) => {
+      productionSent = String(init?.body ?? "");
+      return Response.json({
+        id: "pre-prod",
+        init_point: "https://www.mercadopago.cl/subscriptions/checkout?preapproval_id=pre-prod",
+      });
+    });
+    await startMercadoPagoSubscription(
+      { organizationId: otherOrg, agent: "QUOTES", payerEmail: otherEmail, amountClp: 59488 },
+      productionFetch,
+    );
+    expect(JSON.parse(productionSent).payer_email).toBe(otherEmail);
+    expect(productionSent).not.toContain("comprador.prueba@testuser.com");
   });
 });

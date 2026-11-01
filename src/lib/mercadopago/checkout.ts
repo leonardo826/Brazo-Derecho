@@ -2,11 +2,22 @@ import type { AgentId } from "@/lib/catalog";
 import { appUrl } from "@/lib/env";
 import { planFor } from "@/lib/flow/plans";
 import { logEvent } from "@/lib/log";
-import { mercadoPagoCall, mercadoPagoIsConfigured, MercadoPagoApiError } from "@/lib/mercadopago/client";
+import {
+  mercadoPagoAccessToken,
+  mercadoPagoCall,
+  mercadoPagoIsConfigured,
+  MercadoPagoApiError,
+} from "@/lib/mercadopago/client";
 import { prisma } from "@/lib/prisma";
 import { trialEnd } from "@/lib/subscription";
 
 type PreapprovalResponse = { id?: string | number; init_point?: string };
+
+export function preapprovalPayerEmail(signedInEmail: string) {
+  const override = process.env.MERCADOPAGO_TEST_PAYER_EMAIL?.trim() ?? "";
+  if (mercadoPagoAccessToken().startsWith("TEST-") && override) return override;
+  return signedInEmail;
+}
 
 export function buildPreapprovalPayload(input: {
   subscriptionId: string;
@@ -15,7 +26,7 @@ export function buildPreapprovalPayload(input: {
   amountClp: number;
 }) {
   return {
-    payer_email: input.payerEmail,
+    payer_email: preapprovalPayerEmail(input.payerEmail),
     reason: input.reason,
     external_reference: input.subscriptionId,
     back_url: `${appUrl()}/panel/pago`,
