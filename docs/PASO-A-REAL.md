@@ -74,12 +74,42 @@ La CSP de producción no incluye `unsafe-eval`. Next 16 no lo usa fuera de `npm 
 
 ## Antes de abrir el cobro
 
+Lo que se puede mirar desde afuera, sin secretos y sin escribir en la base, lo corre el chequeo de la sección siguiente. Lo que exige una cuenta, un pago de sandbox o una persona sigue en esta lista.
+
 - Un pago de sandbox llega a `/api/flow/confirmacion`, la firma inválida responde 401 y un token real deja el agente activo.
 - Un aviso de Mercado Pago con firma inválida o `ts` vencido responde 401. Con firma válida, el estado se lee de la API (no del cuerpo) y deja el agente activo, cancelado o vencido.
 - Un POST a `/api/whatsapp` sin `X-Hub-Signature-256` válida responde 401.
 - El cupo del plan corta la llamada a xAI y el panel avisa desde el 80%.
 - `GET /api/health` responde `{ "ok": true, "base": "ok" }`. El chequeo de uptime está en `docs/MONITOREO.md`.
-- Las cuentas `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` no están cargadas, o `SEED_DEMO` no está en `1`.
+- Las cuentas `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` no están cargadas, o `SEED_DEMO` no está en `1`. Si todavía entran con la clave del seed, el chequeo lo deja en advertencia: hoy existen a propósito para la demo.
+
+## Chequeo de solo lectura
+
+```bash
+npm run verificar:produccion -- --url https://TU-DOMINIO
+```
+
+Si omites `--url`, usa `APP_URL` (del entorno o, si no está, la línea `APP_URL` de `.env`). No lee el resto de las claves. `--ayuda` muestra el uso.
+
+El comando no crea cobros, suscripciones ni usuarios, no llama a xAI y no escribe en la base. Los avisos de prueba llevan una firma inválida o un cuerpo vacío, para que el servidor los rechace antes de consultar a Flow, a Mercado Pago o a la base. En Flow siempre va el parámetro `s`: un POST con solo `token` sí se acepta y consultaría el estado.
+
+La salida es en español de Chile. Cada ítem queda en `PASA`, `FALLA` o `ADVERTENCIA`. El código de salida es 1 si hay una falla crítica y 0 si solo hay advertencias. Una URL que no sirve termina con código 2.
+
+| Ítem | Qué se espera |
+| --- | --- |
+| Salud | `GET /api/health` responde 200 con `ok` verdadero y `base` en `ok`. |
+| Mercado Pago | `POST /api/mercadopago/webhook` sin firma y con `ts` vencido responde 401. El cuerpo no trae un tópico de pago. |
+| Flow | `POST /api/flow/confirmacion` con `s` inválido responde 401. Un 503 (Flow sin claves) es falla: no se llegó a revisar la firma. |
+| WhatsApp | `POST /api/whatsapp` sin `X-Hub-Signature-256` válida responde 401 o 503, y el informe dice cuál. |
+| Verificación de Meta | `GET /api/whatsapp` con un verify token inventado responde 403. Un 503 queda como advertencia. Un 200 es falla. |
+| Cabeceras | CSP sin `unsafe-eval`, HSTS, `X-Frame-Options: DENY`, `nosniff` y sin `X-Powered-By`. |
+| Cookie | `bd_csrf` sale `HttpOnly`, `Secure` y `SameSite`. |
+| Panel | `/panel` sin sesión redirige a `/ingresar`. |
+| Textos legales | Si términos o privacidad siguen en borrador, es advertencia. La revisión legal (Ley 21.719) sigue siendo de una persona. |
+| Observabilidad | Un cuerpo inválido en `POST /api/observabilidad` responde 400. No se envía un error de verdad, para no gastar Sentry. |
+| Cuentas demo | `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` con la clave del seed. Si entran, es advertencia. La cookie de sesión se descarta y no se usa. |
+
+Contra un `http://localhost` van a fallar HSTS y la cookie `Secure`: esas cabeceras son las de producción. Las pruebas de la evaluación están en `tests/unit/verificar-produccion.test.ts` y corren con `npm test`, sin red.
 
 ## Pendiente de verificar con Mercado Pago
 
