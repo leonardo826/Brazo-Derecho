@@ -45,7 +45,7 @@ export default async function MarketingPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobró nada. Guarda la voz de tu marca y prepara un borrador. No se publica solo.
+          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Guarda la voz de tu marca y prepara un borrador. No se publica solo.
         </p>
       ) : null}
       <div className="grid-2">

@@ -68,7 +68,7 @@ export default async function WhatsappPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobró nada. Escribe el horario o la dirección y haz una pregunta de prueba.
+          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Escribe el horario o la dirección y haz una pregunta de prueba.
         </p>
       ) : null}
       <UsageBar used={responses} limit={responseLimit} label="Respuestas de este mes" />

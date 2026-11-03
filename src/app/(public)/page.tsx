@@ -99,7 +99,7 @@ export default function HomePage() {
       <section className="section">
         <div className="wrap">
           <p className="eyebrow">Cómo parte</p>
-          <h2>Cuatro pasos, sin tarjeta en la beta.</h2>
+          <h2>Cuatro pasos, 14 días de prueba sin cobro.</h2>
           <div className="steps">
             <article className="step">
               <b>1</b>

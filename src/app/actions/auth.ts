@@ -69,7 +69,11 @@ export async function registerAction(formData: FormData) {
       role: membership.role,
       authVersion: user.authVersion,
     });
-    await issueEmailVerification({ id: user.id, email: user.email, name: user.name });
+    try {
+      await issueEmailVerification({ id: user.id, email: user.email, name: user.name });
+    } catch {
+      logEvent("email.error", { kind: "verificacion", to: user.email, message: "registro" });
+    }
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const target = String(error.meta?.target ?? "");

@@ -118,7 +118,7 @@ export default async function OnboardingPage({
                 ))}
               </ul>
               <p className="muted">
-                En la beta no hay cobro. Elige con qué medio vas a pagar el plan. Flow queda marcado. Si ese medio está en modo prueba, no pedimos tarjeta.
+                Elige con qué medio vas a pagar el plan. Con Mercado Pago registras tu tarjeta ahora, pero el primer cobro se hace al terminar los 14 días de prueba. Si cancelas antes, no se cobra.
               </p>
               <form action={activateTrialAction} className="stack">
                 <CsrfField />
