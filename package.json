@@ -11,6 +11,7 @@
     "test": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
+    "desactivar:demo": "tsx scripts/desactivar-demo.ts",
     "verificar:produccion": "tsx scripts/verificar-produccion.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

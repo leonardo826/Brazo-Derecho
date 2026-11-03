@@ -191,15 +191,18 @@ describe("evaluación", () => {
     expect(porId(evaluarSondeo(sondeoListo({ mercadoPagoSinFirma: ok(200, "{}") })), "mercadopago").nivel).toBe("falla");
   });
 
-  test("Flow con firma inválida exige 401 y un 503 es falla", () => {
+  test("Flow sin configurar es advertencia y una firma inválida exige 401", () => {
     expect(porId(evaluarSondeo(sondeoListo()), "flow").nivel).toBe("pasa");
     const sinClaves = evaluarSondeo(
       sondeoListo({ flow: ok(503, JSON.stringify({ ok: false, error: "Flow no está configurado" })) }),
     );
-    expect(porId(sinClaves, "flow").nivel).toBe("falla");
+    expect(porId(sinClaves, "flow").nivel).toBe("advertencia");
     expect(porId(sinClaves, "flow").detalle).toContain("Flow no está configurado");
+    expect(porId(sinClaves, "flow").detalle).toContain("Mercado Pago");
+    expect(codigoSalida(sinClaves)).toBe(0);
     expect(porId(evaluarSondeo(sondeoListo({ flow: ok(200, JSON.stringify({ ok: true })) })), "flow").nivel).toBe("falla");
     const raro = evaluarSondeo(sondeoListo({ flow: ok(503, JSON.stringify({ error: "token secreto de flow" })) }));
+    expect(porId(raro, "flow").nivel).toBe("falla");
     expect(porId(raro, "flow").detalle).not.toContain("token secreto");
   });
 

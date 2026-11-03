@@ -335,13 +335,21 @@ function evaluarFlow(respuesta: RespuestaSondeo): Chequeo {
     return item("flow", "Flow", "pasa", "POST /api/flow/confirmacion con firma inválida respondió 401.");
   }
   const publico = errorPublico(respuesta.body);
+  if (respuesta.status === 503 && publico === "Flow no está configurado") {
+    return item(
+      "flow",
+      "Flow",
+      "advertencia",
+      "POST /api/flow/confirmacion respondió 503: Flow no está configurado. Hoy el cobro es con Mercado Pago, así que esto no es una falla crítica. Cuando cobres con Flow, este aviso tiene que responder 401.",
+    );
+  }
   const extra = publico ? ` ${publico}.` : "";
   if (respuesta.status === 503) {
     return item(
       "flow",
       "Flow",
       "falla",
-      `POST /api/flow/confirmacion con firma inválida respondió 503.${extra} Se esperaba 401: sin las claves de Flow el aviso no llega a la revisión de la firma.`,
+      `POST /api/flow/confirmacion con firma inválida respondió 503.${extra} Se esperaba 401.`,
     );
   }
   return item(

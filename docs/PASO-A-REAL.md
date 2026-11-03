@@ -44,7 +44,7 @@ WHATSAPP_VERIFY_TOKEN="un-token-que-tu-inventas-y-pegas-en-meta"
 WHATSAPP_APP_SECRET="app-secret-de-meta"
 
 ADMIN_EMAILS="dueno@tu-dominio"
-SEED_DEMO=""
+DEMO_SEED=""
 SENTRY_DSN=""
 RESEND_API_KEY="re_..."
 RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
@@ -65,7 +65,7 @@ RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 | `WHATSAPP_VERIFY_TOKEN` | `GET /api/whatsapp` responde 503 y Meta no verifica el webhook. |
 | `RESEND_API_KEY` | El correo se anota en Administración y no se envía. |
 | `SENTRY_DSN` | No se reporta nada fuera del log. Con DSN, el servidor y el navegador (vía `/api/observabilidad`) envían el error a Sentry. |
-| `SEED_DEMO` | En producción el seed se niega. No lo pongas en `1` en el servidor público. |
+| `DEMO_SEED` | En producción el seed no crea ni actualiza las cuentas demo. Solo el valor exacto `true` las carga. `SEED_DEMO=1` ya no alcanza. No lo pongas en el servidor público. |
 | `ADMIN_EMAILS` | Nadie ve el costo por empresa ni puede suspender. |
 
 ## Cabeceras
@@ -76,12 +76,35 @@ La CSP de producción no incluye `unsafe-eval`. Next 16 no lo usa fuera de `npm 
 
 Lo que se puede mirar desde afuera, sin secretos y sin escribir en la base, lo corre el chequeo de la sección siguiente. Lo que exige una cuenta, un pago de sandbox o una persona sigue en esta lista.
 
-- Un pago de sandbox llega a `/api/flow/confirmacion`, la firma inválida responde 401 y un token real deja el agente activo.
+- Un pago de sandbox llega a `/api/flow/confirmacion`, la firma inválida responde 401 y un token real deja el agente activo. Si hoy solo cobras con Mercado Pago y Flow no tiene claves, el chequeo lo deja en advertencia.
 - Un aviso de Mercado Pago con firma inválida o `ts` vencido responde 401. Con firma válida, el estado se lee de la API (no del cuerpo) y deja el agente activo, cancelado o vencido.
 - Un POST a `/api/whatsapp` sin `X-Hub-Signature-256` válida responde 401.
 - El cupo del plan corta la llamada a xAI y el panel avisa desde el 80%.
 - `GET /api/health` responde `{ "ok": true, "base": "ok" }`. El chequeo de uptime está en `docs/MONITOREO.md`.
-- Las cuentas `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` no están cargadas, o `SEED_DEMO` no está en `1`. Si todavía entran con la clave del seed, el chequeo lo deja en advertencia: hoy existen a propósito para la demo.
+- Las cuentas `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` no se crean en producción salvo `DEMO_SEED=true`. Si ya están y todavía entran con la clave del seed, el chequeo lo deja en advertencia. `npm run desactivar:demo` las bloquea sin borrar datos.
+
+## Cuentas de demostración
+
+El seed crea `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` con la clave que imprime al terminar. En local (`NODE_ENV` distinto de `production`) se cargan como siempre.
+
+En producción el seed no las crea ni las actualiza, salvo que `DEMO_SEED` sea exactamente `true`. `SEED_DEMO=1` ya no alcanza. No definas `DEMO_SEED` en Vercel.
+
+Si esas cuentas ya están en la base pública, bloquéalas sin borrar datos:
+
+```bash
+npm run desactivar:demo
+```
+
+El script usa `DATABASE_URL`. Para cada una de esas dos cuentas:
+
+- Pone `suspendedAt` en la empresa si todavía no estaba suspendida. Los agentes quedan detenidos. Hilos, cotizaciones, lista, uso y la ficha siguen en la base.
+- Si la contraseña sigue siendo la del seed, la reemplaza por una clave aleatoria que no se imprime y sube `authVersion`, así las sesiones abiertas dejan de servir.
+- Si la contraseña ya no es la del seed, no la cambia. Igual cierra las sesiones cuando suspende la empresa.
+- No ejecuta ningún borrado.
+
+Correrlo otra vez no escribe si la empresa ya está suspendida y la clave ya no es la del seed. Si la cuenta no existe, lo anota y sigue. Sin `DATABASE_URL` termina con código 1 y no abre la base.
+
+Para dejarlas otra vez utilizables hay que correr el seed con `DEMO_SEED=true`. Eso devuelve la clave del seed y levanta la suspensión. No lo hagas en el servidor público.
 
 ## Chequeo de solo lectura
 
@@ -99,7 +122,7 @@ La salida es en español de Chile. Cada ítem queda en `PASA`, `FALLA` o `ADVERT
 | --- | --- |
 | Salud | `GET /api/health` responde 200 con `ok` verdadero y `base` en `ok`. |
 | Mercado Pago | `POST /api/mercadopago/webhook` sin firma y con `ts` vencido responde 401. El cuerpo no trae un tópico de pago. |
-| Flow | `POST /api/flow/confirmacion` con `s` inválido responde 401. Un 503 (Flow sin claves) es falla: no se llegó a revisar la firma. |
+| Flow | `POST /api/flow/confirmacion` con `s` inválido responde 401 si Flow está configurado. Un 503 con «Flow no está configurado» es advertencia, no falla crítica: hoy el cobro es con Mercado Pago. Otro código sigue siendo falla. |
 | WhatsApp | `POST /api/whatsapp` sin `X-Hub-Signature-256` válida responde 401 o 503, y el informe dice cuál. |
 | Verificación de Meta | `GET /api/whatsapp` con un verify token inventado responde 403. Un 503 queda como advertencia. Un 200 es falla. |
 | Cabeceras | CSP sin `unsafe-eval`, HSTS, `X-Frame-Options: DENY`, `nosniff` y sin `X-Powered-By`. |
@@ -107,7 +130,7 @@ La salida es en español de Chile. Cada ítem queda en `PASA`, `FALLA` o `ADVERT
 | Panel | `/panel` sin sesión redirige a `/ingresar`. |
 | Textos legales | Si términos o privacidad siguen en borrador, es advertencia. La revisión legal (Ley 21.719) sigue siendo de una persona. |
 | Observabilidad | Un cuerpo inválido en `POST /api/observabilidad` responde 400. No se envía un error de verdad, para no gastar Sentry. |
-| Cuentas demo | `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` con la clave del seed. Si entran, es advertencia. La cookie de sesión se descarta y no se usa. |
+| Cuentas demo | `maria@losaromos.cl` y `pedro@cafedelpuerto.cl` con la clave del seed. Si entran, es advertencia. La cookie de sesión se descarta y no se usa. Para bloquearlas sin borrar datos, `npm run desactivar:demo`. |
 
 Contra un `http://localhost` van a fallar HSTS y la cookie `Secure`: esas cabeceras son las de producción. Las pruebas de la evaluación están en `tests/unit/verificar-produccion.test.ts` y corren con `npm test`, sin red.
 
