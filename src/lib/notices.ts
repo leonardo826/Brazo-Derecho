@@ -31,6 +31,7 @@ export const ERRORS: Record<string, string> = {
 };
 
 export const OKS: Record<string, string> = {
+  consulta: "Respuesta lista. No reemplaza a un contador certificado.",
   cuenta: "Listo. Tu empresa quedó creada y ya puedes activar un agente.",
   prueba: "Prueba activada por 14 días.",
   plan: "Plan activo. El pago fue de prueba: no hubo cobro ni se pidió una tarjeta.",

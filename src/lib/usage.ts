@@ -130,7 +130,7 @@ export function monthQueryDate(raw: string | undefined, now = new Date()) {
 }
 
 export function summarizeUsage(events: UsageSlice[]) {
-  const totals: Record<MetricId, number> = { RESPONSES: 0, QUOTES: 0, TEXTS: 0, IMAGES: 0 };
+  const totals: Record<MetricId, number> = { RESPONSES: 0, QUOTES: 0, TEXTS: 0, IMAGES: 0, CONSULTS: 0 };
   const byModel: Record<ModelId, TokenUsage> = {
     "grok-4.3": { ...EMPTY_USAGE },
     "grok-4.7": { ...EMPTY_USAGE },

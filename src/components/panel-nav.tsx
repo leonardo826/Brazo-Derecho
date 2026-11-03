@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/panel/whatsapp", label: "Atención WhatsApp" },
   { href: "/panel/cotizador", label: "Cotizador" },
   { href: "/panel/marketing", label: "Marketing" },
+  { href: "/panel/contador", label: "Contador Auditor" },
   { href: "/panel/uso", label: "Uso del mes" },
   { href: "/panel/cuenta", label: "Cuenta" },
 ];

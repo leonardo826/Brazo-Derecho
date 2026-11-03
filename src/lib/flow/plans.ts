@@ -8,7 +8,11 @@ export function priceWithIva(netClp: number) {
 export function planFor(agent: AgentId) {
   const definition = AGENT_CATALOG[agent];
   const planId =
-    agent === "WHATSAPP" ? "brazo-whatsapp" : agent === "QUOTES" ? "brazo-cotizador" : "brazo-marketing";
+    agent === "WHATSAPP" ? "brazo-whatsapp" : agent === "QUOTES"
+        ? "brazo-cotizador"
+        : agent === "MARKETING"
+          ? "brazo-marketing"
+          : "brazo-contador";
   return {
     agent,
     planId,

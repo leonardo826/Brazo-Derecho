@@ -26,7 +26,7 @@ export function panelReturnPath(referer: string | null | undefined) {
   const paso = url.searchParams.get("paso");
   if (paso === "empresa" || paso === "agente" || paso === "probar") params.set("paso", paso);
   const agente = url.searchParams.get("agente");
-  if (agente === "WHATSAPP" || agente === "QUOTES" || agente === "MARKETING") params.set("agente", agente);
+  if (agente === "WHATSAPP" || agente === "QUOTES" || agente === "MARKETING" || agente === "ACCOUNTING") params.set("agente", agente);
   const query = params.toString();
   return query ? `${path}?${query}` : path;
 }

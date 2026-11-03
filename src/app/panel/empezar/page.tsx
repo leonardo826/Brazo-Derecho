@@ -15,6 +15,7 @@ const HREF: Record<AgentId, string> = {
   WHATSAPP: "/panel/whatsapp",
   QUOTES: "/panel/cotizador",
   MARKETING: "/panel/marketing",
+  ACCOUNTING: "/panel/contador",
 };
 
 const STEPS = [
