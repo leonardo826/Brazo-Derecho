@@ -5,6 +5,7 @@ import { channelFor, draftImageSvg, toMarketingRecord } from "../src/lib/agents/
 import { buildQuoteLines, matchFreeText, quoteTotal } from "../src/lib/agents/quotes";
 import { decideWhatsappReply, withAssistantDisclosure } from "../src/lib/agents/whatsapp";
 import { AGENT_CATALOG } from "../src/lib/catalog";
+import { MENSAJE_SEED_BLOQUEADO, permiteCargarSeedDemo } from "../src/lib/demo-cuentas";
 import { hashPassword } from "../src/lib/password";
 import { USAGE_PRESETS } from "../src/lib/pricing";
 import { trialEnd } from "../src/lib/subscription";
@@ -15,8 +16,8 @@ const DEMO_PASSWORD = "Clave-demo-2026";
 const AGENTS = ["WHATSAPP", "QUOTES", "MARKETING"] as const satisfies readonly AgentKind[];
 
 async function main() {
-  if (process.env.NODE_ENV === "production" && process.env.SEED_DEMO !== "1") {
-    throw new Error("El seed de demostración no corre en producción. Define SEED_DEMO=1 si de verdad quieres cargarlo.");
+  if (!permiteCargarSeedDemo(process.env)) {
+    throw new Error(MENSAJE_SEED_BLOQUEADO);
   }
 
   const passwordHash = await hashPassword(DEMO_PASSWORD);
@@ -245,6 +246,10 @@ async function ensureOwner(input: {
     if (!organizationId) {
       throw new Error(`La cuenta de demostración ${input.email} no tiene empresa.`);
     }
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { suspendedAt: null },
+    });
     await ensureTrials(organizationId);
     return organizationId;
   }

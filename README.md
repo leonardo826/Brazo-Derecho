@@ -64,7 +64,7 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `WHATSAPP_VERIFY_TOKEN` | Token que Meta envía al verificar el webhook. | `GET /api/whatsapp` responde 503. |
 | `WHATSAPP_APP_SECRET` | Secreto de la app para revisar `X-Hub-Signature-256`. | `POST /api/whatsapp` responde 503 y no procesa mensajes. |
 | `ADMIN_EMAILS` | Correos, separados por coma, que entran a Administración: ven empresas, uso, costo estimado y pueden suspender o reactivar. También vinculan el número de cualquier empresa. | Esa pantalla no aparece. El dueño igual vincula el número de su empresa en Atención WhatsApp. |
-| `SEED_DEMO` | En producción, `1` permite correr el seed de demostración. | El seed se niega si `NODE_ENV=production`. |
+| `DEMO_SEED` | En producción, `true` permite correr el seed de demostración. | El seed se niega si `NODE_ENV=production`. |
 | `SENTRY_DSN` | DSN de Sentry para errores del servidor (webhooks) y del navegador. El navegador avisa a `/api/observabilidad` y el servidor reenvía solo si hay DSN. | No se envía nada. El error queda solo en el log del proceso. |
 | `RESEND_API_KEY` | Clave de Resend para correos de confirmación y de recuperación de clave. | Simulador: el correo se escribe en el log y queda en Administración. No sale ningún mensaje. |
 | `RESEND_FROM` | Remitente, por ejemplo `Brazo Derecho <onboarding@resend.dev>`. | `Brazo Derecho <onboarding@resend.dev>`. En el plan gratis, ese remitente solo entrega al correo de la cuenta de Resend. |
@@ -73,7 +73,7 @@ Los tokens de cada respuesta quedan en `UsageEvent`, por empresa, con el modelo 
 
 ## Cuentas de demostración
 
-El seed es idempotente: se puede correr otra vez y no duplica fichas, hilos, cotizaciones ni borradores. Si la prueba de 14 días de una cuenta demo venció y no está pagada en Flow, la vuelve a dejar activa. La contraseña de las dos queda en `Clave-demo-2026`. Las dos cuentas quedan con el correo confirmado, así que no ven el aviso de verificación.
+El seed es idempotente: se puede correr otra vez y no duplica fichas, hilos, cotizaciones ni borradores. Si la prueba de 14 días de una cuenta demo venció y no está pagada en Flow, la vuelve a dejar activa. También devuelve la clave del seed y levanta una suspensión hecha con `npm run desactivar:demo`. La contraseña de las dos queda en `Clave-demo-2026`. Las dos cuentas quedan con el correo confirmado, así que no ven el aviso de verificación. En producción (`NODE_ENV=production`) no corre salvo `DEMO_SEED=true`. El detalle está en `docs/PASO-A-REAL.md`.
 
 | Correo | Empresa | Qué trae |
 | --- | --- | --- |
@@ -135,6 +135,7 @@ npm test                 # pruebas unitarias, sin base
 npm run test:integration # aislamiento entre empresas; necesita Postgres
 npm run typecheck
 npm run lint
+npm run desactivar:demo  # suspende las cuentas demo; usa DATABASE_URL y no borra datos
 npm run build            # migra y construye; necesita DATABASE_URL y DIRECT_URL
 npm run test:e2e         # Playwright: registro, prueba, chat y administración, más un proyecto móvil (360–414 px) que guarda capturas en artifacts/mobile. Corre después del build.
 ```
