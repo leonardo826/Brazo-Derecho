@@ -33,7 +33,10 @@ export function buildPreapprovalPayload(input: {
   payerEmail: string;
   reason: string;
   amountClp: number;
+  /** Primer cobro: al terminar la prueba de 14 días (o el período ya pagado). */
+  firstChargeAt?: Date;
 }) {
+  const firstCharge = input.firstChargeAt && input.firstChargeAt.getTime() > Date.now() ? input.firstChargeAt : null;
   return {
     payer_email: preapprovalPayerEmail(input.payerEmail),
     reason: input.reason,
@@ -46,6 +49,7 @@ export function buildPreapprovalPayload(input: {
       frequency_type: "months" as const,
       transaction_amount: input.amountClp,
       currency_id: "CLP" as const,
+      ...(firstCharge ? { start_date: firstCharge.toISOString() } : {}),
     },
   };
 }
@@ -103,6 +107,7 @@ export async function startMercadoPagoSubscription(
         payerEmail: input.payerEmail,
         reason: plan.name,
         amountClp: input.amountClp,
+        firstChargeAt: subscription.periodEnd,
       }),
     },
     fetchImpl,

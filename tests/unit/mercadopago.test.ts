@@ -345,3 +345,12 @@ describe("POST /api/mercadopago/webhook", () => {
     expect((await request()).status).toBe(429);
   });
 });
+
+describe("prueba de 14 días en Mercado Pago", () => {
+  test("fija el primer cobro al final de la prueba", async () => {
+    const { buildPreapprovalPayload } = await import("@/lib/mercadopago/checkout");
+    const end = new Date(Date.now() + 14 * 86_400_000);
+    const payload = buildPreapprovalPayload({ subscriptionId: "s1", payerEmail: "a@b.cl", reason: "x", amountClp: 1000, firstChargeAt: end });
+    expect(payload.auto_recurring).toMatchObject({ start_date: end.toISOString() });
+  });
+});
