@@ -16,7 +16,16 @@ type PreapprovalResponse = { id?: string | number; init_point?: string };
 export function preapprovalPayerEmail(signedInEmail: string) {
   const override = process.env.MERCADOPAGO_TEST_PAYER_EMAIL?.trim() ?? "";
   if (mercadoPagoAccessToken().startsWith("TEST-") && override) return override;
-  return signedInEmail;
+  return mercadoPagoSafeEmail(signedInEmail);
+}
+
+// Mercado Pago rechaza payer_email con alias "+" ("User bad request"); se envía la dirección base.
+export function mercadoPagoSafeEmail(email: string) {
+  const trimmed = email.trim();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0) return trimmed;
+  const local = trimmed.slice(0, at).split("+")[0];
+  return local ? `${local}${trimmed.slice(at)}` : trimmed;
 }
 
 export function buildPreapprovalPayload(input: {
