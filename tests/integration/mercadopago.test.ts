@@ -78,7 +78,7 @@ afterAll(async () => {
 });
 
 describe("webhook de Mercado Pago", () => {
-  test("la firma válida consulta la API y deja el agente activo, sin creer el cuerpo", async () => {
+  test("la firma válida consulta la API y, en prueba, no activa el plan ni cree el cuerpo", async () => {
     process.env.MERCADOPAGO_ACCESS_TOKEN = TOKEN;
     process.env.MERCADOPAGO_WEBHOOK_SECRET = SECRET;
     const { organizationId } = await makeOrg();
@@ -119,11 +119,12 @@ describe("webhook de Mercado Pago", () => {
     expect(headers.Authorization).toBe(`Bearer ${TOKEN}`);
 
     const updated = await prisma.subscription.findUniqueOrThrow({ where: { id: subscription.id } });
-    expect(updated.status).toBe("ACTIVE");
+    expect(updated.status).toBe("TRIAL");
     expect(updated.provider).toBe("MERCADOPAGO");
     expect(updated.mpPreapprovalId).toBe(preapprovalId);
     expect(updated.mpPayerEmail).toBe("ana@ejemplo.cl");
     const periodEnd = updated.periodEnd.getTime();
+    expect(periodEnd).toBe(subscription.periodEnd.getTime());
 
     const again = await mercadoPagoPost(
       webhookRequest({
@@ -133,10 +134,10 @@ describe("webhook de Mercado Pago", () => {
       }),
     );
     expect(again.status).toBe(200);
-    expect(await again.json()).toMatchObject({ ok: true, repetido: true });
+    expect(await again.json()).toMatchObject({ ok: true, repetido: false });
     const second = await prisma.subscription.findUniqueOrThrow({ where: { id: subscription.id } });
     expect(second.periodEnd.getTime()).toBe(periodEnd);
-    expect(second.status).toBe("ACTIVE");
+    expect(second.status).toBe("TRIAL");
   });
 
   test("un pago rechazado deja la suscripción vencida y una firma inválida no la toca", async () => {
