@@ -147,7 +147,7 @@ export default async function AdminPage({
                       })}
                     </td>
                     <td>
-                      {(["RESPONSES", "QUOTES", "TEXTS", "IMAGES"] as MetricId[]).map((metric) => (
+                      {(["RESPONSES", "QUOTES", "TEXTS", "IMAGES", "CONSULTS"] as MetricId[]).map((metric) => (
                         <div key={metric}>
                           {METRIC_LABEL[metric]}: {(summary?.totals[metric] ?? 0).toLocaleString("es-CL")}
                         </div>

@@ -19,7 +19,8 @@ export type XaiTask =
       summary: string;
       index: number;
     }
-  | { type: "marketing_image"; summary: string; channel: string };
+  | { type: "marketing_image"; summary: string; channel: string }
+  | { type: "accounting_question"; question: string; today: string };
 
 export type XaiRequest = {
   model: string;

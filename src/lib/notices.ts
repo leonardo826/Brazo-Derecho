@@ -1,6 +1,9 @@
 import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
 
 export const ERRORS: Record<string, string> = {
+  google: "No pudimos ingresar con Google. Intenta de nuevo o usa tu contraseña.",
+  google_sin_cuenta: "Ese correo de Google no tiene una cuenta en Brazo Derecho. Crea una cuenta o usa otro correo.",
+  google_no_configurado: "El ingreso con Google todavía no está activo. Usa tu correo y contraseña.",
   credenciales: "El correo o la contraseña no coinciden.",
   correo: "Ese correo ya tiene una cuenta.",
   datos: "Revisa los datos del formulario.",
@@ -31,6 +34,7 @@ export const ERRORS: Record<string, string> = {
 };
 
 export const OKS: Record<string, string> = {
+  consulta: "Respuesta lista. No reemplaza a un contador certificado.",
   cuenta: "Listo. Tu empresa quedó creada y ya puedes activar un agente.",
   prueba: "Prueba activada por 14 días.",
   plan: "Plan activo. El pago fue de prueba: no hubo cobro ni se pidió una tarjeta.",

@@ -66,6 +66,18 @@ export class LiveXaiClient implements XaiClient {
     }
 
     const effort = request.model === "grok-4.3" ? "low" : "medium";
+    const accounting = request.task.type === "accounting_question";
+    const input =
+      request.task.type === "accounting_question"
+        ? [
+            request.businessName?.trim() ? `Cliente: ${request.businessName.trim()}.` : "",
+            `Fecha de hoy: ${request.task.today}.`,
+            "Consulta:",
+            request.task.question,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : taskInput(request.task, request.businessName);
     const response = await (this.options.fetchImpl ?? fetch)(`${this.options.baseUrl}/responses`, {
       method: "POST",
       headers: {
@@ -75,11 +87,12 @@ export class LiveXaiClient implements XaiClient {
       body: JSON.stringify({
         model: request.model,
         instructions: request.instructions,
-        input: taskInput(request.task, request.businessName),
+        input,
         max_output_tokens: request.maxOutputTokens ?? 800,
         reasoning: { effort },
+        ...(accounting ? { tools: [{ type: "web_search" }] } : {}),
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(accounting ? 240_000 : 45_000),
     });
 
     const text = await response.text();

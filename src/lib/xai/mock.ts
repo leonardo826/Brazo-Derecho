@@ -30,6 +30,8 @@ export function renderMockTask(task: XaiTask) {
     }
     case "marketing_image":
       return `Imagen cuadrada, luz natural, negocio local en Chile, sin logos de terceros ni texto pequeño. Tema: ${task.summary}. Canal: ${task.channel}.`;
+    case "accounting_question":
+      return `CONCLUSIÓN\nRespuesta de prueba para: ${task.question}\n\nNormativa verificada al: ${task.today}\n\nNo reemplaza a un contador certificado.`;
     default: {
       const never: never = task;
       return never;

@@ -117,6 +117,14 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
             </p>
           </details>
           <details>
+            <summary>¿El Contador Auditor Chile hace trámites en el SII?</summary>
+            <p>
+              No. Responde consultas contables y tributarias revisando la normativa vigente del SII y cita las fuentes,
+              pero no presenta declaraciones ni pide tus claves. No reemplaza a un contador certificado. El tope es{" "}
+              {AGENT_CATALOG.ACCOUNTING.limitLabel}.
+            </p>
+          </details>
+          <details>
             <summary>¿Los datos de mi empresa se mezclan con los de otra?</summary>
             <p>No. Cada consulta del panel filtra por la empresa de tu sesión. Otra cuenta no ve tu lista ni tus hilos.</p>
           </details>

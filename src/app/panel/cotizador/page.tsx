@@ -61,7 +61,7 @@ export default async function QuotesPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobró nada. Agrega un producto con su precio neto y arma una cotización de prueba.
+          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Agrega un producto con su precio neto y arma una cotización de prueba.
         </p>
       ) : null}
       <UsageBar used={usage.totals.QUOTES} limit={quoteLimit} label="Cotizaciones de este mes" />
@@ -159,7 +159,7 @@ export default async function QuotesPage({
                 />
               )
             ) : (
-              <p>Activa la prueba para armar cotizaciones. No hay cobro en la beta.</p>
+              <p>Activa la prueba para armar cotizaciones. Los primeros 14 días no tienen cobro.</p>
             )}
           </article>
           <article className="panel-card">

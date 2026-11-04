@@ -38,6 +38,7 @@ model Organization {
   quotes        Quote[]
   brandProfile  BrandProfile?
   posts         MarketingPost[]
+  consults      AccountingConsult[]
   usageEvents   UsageEvent[]
 }
 
@@ -97,6 +98,7 @@ enum AgentKind {
   WHATSAPP
   QUOTES
   MARKETING
+  ACCOUNTING
 }
 
 enum SubscriptionStatus {
@@ -136,6 +138,7 @@ enum UsageMetric {
   QUOTES
   TEXTS
   IMAGES
+  CONSULTS
 }
 
 model UsageEvent {
@@ -297,6 +300,17 @@ model MarketingPost {
   imagePrompt    String       @default("")
   imageSvg       String       @default("")
   status         PostStatus   @default(DRAFT)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+model AccountingConsult {
+  id             String       @id @default(cuid())
+  organizationId String
+  question       String
+  answer         String
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 

@@ -42,6 +42,20 @@ export async function applyMercadoPagoResource(input: {
     if (seen) return { repeated: true, status: subscription.status as SubStatus, updated: false };
   }
 
+  // Con prueba gratis MP autoriza la suscripción sin cobrar: la prueba sigue hasta su fin.
+  const trialNow = subscription.status === "TRIAL" && subscription.periodEnd.getTime() > now.getTime();
+  if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && trialNow) {
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        provider: "MERCADOPAGO",
+        mpPreapprovalId: refs.preapprovalId || subscription.mpPreapprovalId,
+        mpPayerEmail: refs.payerEmail || subscription.mpPayerEmail,
+      },
+    });
+    return { repeated: false, status: subscription.status as SubStatus, updated: false };
+  }
+
   const activeNow = subscription.status === "ACTIVE" && subscription.periodEnd.getTime() > now.getTime();
   if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && activeNow) {
     return { repeated: true, status: subscription.status as SubStatus, updated: false };

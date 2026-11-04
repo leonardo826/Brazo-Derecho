@@ -26,6 +26,10 @@ export default async function LoginPage({
         <p className="eyebrow">Cuenta</p>
         <h1>Ingresar</h1>
         <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+        <a className="button" href={`/api/auth/google?siguiente=${encodeURIComponent(siguiente)}`}>
+          Ya tengo una cuenta: entrar con Google
+        </a>
+        <p className="muted">O ingresa con tu correo y contraseña:</p>
         <form action={loginAction} className="stack">
           <CsrfField />
           <input type="hidden" name="siguiente" value={siguiente} />

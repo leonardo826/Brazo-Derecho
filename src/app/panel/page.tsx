@@ -15,6 +15,7 @@ const HREF: Record<AgentId, string> = {
   WHATSAPP: "/panel/whatsapp",
   QUOTES: "/panel/cotizador",
   MARKETING: "/panel/marketing",
+  ACCOUNTING: "/panel/contador",
 };
 
 export default async function PanelHome({
@@ -44,7 +45,7 @@ export default async function PanelHome({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {AGENT_ORDER.every((agentId) => !isSubscriptionOpen(byAgent.get(agentId) ?? null)) ? (
         <EmptyState title="Todavía no tienes un agente en prueba">
-          <p>En tres pasos dejas uno listo, sin tarjeta. La prueba dura 14 días y cada agente se activa por separado.</p>
+          <p>En tres pasos dejas uno listo. La prueba dura 14 días y cada agente se activa por separado.</p>
           <p>
             <Link className="button-link" href="/panel/empezar">
               Empezar

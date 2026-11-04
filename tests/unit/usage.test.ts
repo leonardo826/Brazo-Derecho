@@ -83,13 +83,13 @@ describe("mes en Chile", () => {
 
 describe("aviso de cupo", () => {
   test("el aviso parte en el 80% y al 100% el texto cambia", () => {
-    expect(usageAlerts({ RESPONSES: 799, QUOTES: 0, TEXTS: 0, IMAGES: 0 })).toEqual([]);
-    const [alert] = usageAlerts({ RESPONSES: 800, QUOTES: 0, TEXTS: 0, IMAGES: 0 });
+    expect(usageAlerts({ RESPONSES: 799, QUOTES: 0, TEXTS: 0, IMAGES: 0, CONSULTS: 0 })).toEqual([]);
+    const [alert] = usageAlerts({ RESPONSES: 800, QUOTES: 0, TEXTS: 0, IMAGES: 0, CONSULTS: 0 });
     expect(alert).toMatchObject({ agent: "WHATSAPP", metric: "RESPONSES", percent: 80 });
     expect(usageAlertMessage(alert)).toBe(
       "Vas al 80% del cupo de respuestas de Atención WhatsApp. Si llegas al 100%, ese agente se pausa hasta el próximo mes para no seguir gastando.",
     );
-    const full = usageAlerts({ RESPONSES: 1000, QUOTES: 240, TEXTS: 0, IMAGES: 0 });
+    const full = usageAlerts({ RESPONSES: 1000, QUOTES: 240, TEXTS: 0, IMAGES: 0, CONSULTS: 0 });
     expect(full.map((item) => item.metric)).toEqual(["RESPONSES", "QUOTES"]);
     expect(usageAlertMessage(full[0])).toMatch(/Ya usaste el cupo de respuestas/);
   });
