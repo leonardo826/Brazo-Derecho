@@ -33,7 +33,7 @@ export function buildPreapprovalPayload(input: {
   payerEmail: string;
   reason: string;
   amountClp: number;
-  /** Primer cobro: al terminar la prueba de 14 días (o el período ya pagado). */
+  /** Primer cobro: al terminar la prueba (TRIAL_DAYS) o el período ya pagado. */
   firstChargeAt?: Date;
 }) {
   const firstCharge = input.firstChargeAt && input.firstChargeAt.getTime() > Date.now() ? input.firstChargeAt : null;

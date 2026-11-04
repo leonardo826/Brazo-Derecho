@@ -3,7 +3,7 @@ import { activateTrialAction, cancelSubscriptionAction } from "@/app/actions/sub
 import { CsrfField } from "@/components/csrf-field";
 import { SubscriptionBadge } from "@/components/subscription-status";
 import { flowIsConfigured } from "@/lib/flow/client";
-import { isSubscriptionOpen } from "@/lib/subscription";
+import { isSubscriptionOpen, TRIAL_DAYS } from "@/lib/subscription";
 
 type SubscriptionView = {
   status: "TRIAL" | "ACTIVE" | "EXPIRED" | "CANCELED";
@@ -23,9 +23,9 @@ export function SubscribeActions({
   const flow = flowIsConfigured();
   const open = isSubscriptionOpen(subscription);
   const needsCard = Boolean(flow && subscription?.status === "TRIAL" && !subscription.flowSubscriptionId);
-  let label = "Activar prueba de 14 días";
+  let label = `Activar prueba de ${TRIAL_DAYS} días`;
   if (needsCard) label = "Registrar tarjeta en Flow";
-  else if (flow && !subscription) label = "Empezar prueba de 14 días";
+  else if (flow && !subscription) label = `Empezar prueba de ${TRIAL_DAYS} días`;
   else if (flow) label = "Suscribir con Flow";
 
   return (

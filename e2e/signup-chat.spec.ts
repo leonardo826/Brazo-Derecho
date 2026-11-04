@@ -26,7 +26,7 @@ test("registro, prueba y conversación con el agente", async ({ page }) => {
   await page.getByRole("button", { name: "Activar prueba y probar" }).click();
 
   await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
-  await expect(page.getByText("La prueba de 14 días quedó activa")).toBeVisible();
+  await expect(page.getByText("La prueba de 7 días quedó activa")).toBeVisible();
 
   await page.getByLabel("Título").fill("Horario de atención");
   await page.getByLabel("Texto que puede usar").fill("Abrimos de lunes a viernes de 9:00 a 19:00 y los sábados de 9:00 a 14:00.");

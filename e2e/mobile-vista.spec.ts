@@ -40,8 +40,8 @@ test("la beta cabe en 360, 390 y 414 px y deja capturas", async ({ page }) => {
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tu brazo derecho, con reglas claras." })).toBeVisible();
-    const cta = page.getByRole("link", { name: "Crear la cuenta de mi empresa" }).first();
+    await expect(page.getByRole("heading", { name: "Tu oficina, ordenada por IA." })).toBeVisible();
+    const cta = page.getByRole("link", { name: "Probar gratis 7 días" }).first();
     await expect(cta).toBeVisible();
     const box = await cta.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

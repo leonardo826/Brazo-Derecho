@@ -15,6 +15,14 @@
   --bad-bg: #f8e6e0;
   --warn-bg: #f6ecd8;
   --shadow: 0 18px 50px rgba(28, 25, 21, 0.08);
+  --navy: #0b3a6e;
+  --navy-deep: #082c55;
+  --action: #1e6fd9;
+  --accent: #22c3e6;
+  --highlight: #ffc233;
+  --bg: #f7f9fc;
+  --text: #1f2933;
+  --muted: #6b7280;
 }
 
 * { box-sizing: border-box; }
@@ -491,4 +499,225 @@ mark.placeholder {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+}
+
+.iabot {
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-poppins), "Poppins", "Segoe UI", sans-serif;
+}
+.iabot h1,
+.iabot h2,
+.iabot p,
+.iabot li,
+.iabot a {
+  font-family: inherit;
+}
+.iabot-wrap { width: min(1080px, calc(100% - 2rem)); margin: 0 auto; }
+.iabot-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.iabot-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(247, 249, 252, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(11, 58, 110, 0.08);
+}
+.iabot-header .iabot-bar { min-height: 4.25rem; }
+.iabot-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--navy);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+.iabot-mark {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 0.28rem;
+  background: linear-gradient(135deg, var(--accent), var(--action));
+}
+.iabot-account {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.iabot-account:hover { color: var(--navy); }
+.iabot-hero { padding: 4.5rem 0 3.5rem; }
+.iabot-hero h1 {
+  max-width: 16ch;
+  margin: 0.9rem 0 1rem;
+  color: var(--navy);
+  font-size: clamp(2.6rem, 7vw, 4.6rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+.iabot-lead {
+  max-width: 38rem;
+  margin: 0 0 1.6rem;
+  color: var(--text);
+  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  line-height: 1.45;
+}
+.iabot-badge {
+  display: inline-flex;
+  margin: 0;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  background: var(--highlight);
+  color: var(--navy-deep);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.iabot-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 0.85rem 1.4rem;
+  border-radius: 16px;
+  background: var(--action);
+  color: white;
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-decoration: none;
+  box-shadow: 0 10px 24px rgba(30, 111, 217, 0.22);
+}
+.iabot-cta:hover { background: var(--navy-deep); }
+.iabot-note { margin: 0.85rem 0 0; color: var(--muted); font-size: 0.95rem; }
+.iabot-section { padding: 3.2rem 0; }
+.iabot h2 {
+  margin: 0 0 1.2rem;
+  color: var(--navy);
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.iabot-functions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.iabot-functions li {
+  margin: 0;
+  padding: 1.05rem 1rem;
+  border: 1px solid rgba(11, 58, 110, 0.08);
+  border-radius: 16px;
+  background: white;
+  color: var(--navy);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.iabot-functions li::before {
+  content: "";
+  display: block;
+  width: 1.6rem;
+  height: 3px;
+  margin-bottom: 0.7rem;
+  border-radius: 99px;
+  background: var(--accent);
+}
+.iabot-control {
+  padding: 3.4rem 0;
+  background: var(--navy);
+  color: white;
+}
+.iabot-kicker {
+  margin: 0 0 0.45rem;
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.iabot-control h2 {
+  max-width: 16ch;
+  margin: 0;
+  color: white;
+  font-size: clamp(2rem, 4vw, 3.1rem);
+}
+.iabot-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: paso;
+}
+.iabot-steps li {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 1.15rem 1rem 1.25rem;
+  border-radius: 16px;
+  background: white;
+  color: var(--navy);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.iabot-steps li span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--action);
+  font-weight: 700;
+}
+.iabot-plan {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+  padding: 1.6rem;
+  border-radius: 22px;
+  background: white;
+  box-shadow: 0 16px 40px rgba(11, 58, 110, 0.06);
+}
+.iabot-plan h2 { margin-bottom: 0.4rem; }
+.iabot-soon, .iabot-price { margin: 0 0 1.1rem; font-size: 1.35rem; font-weight: 600; color: var(--navy); }
+.iabot-price span { display: block; color: var(--muted); font-size: 0.95rem; font-weight: 500; }
+.iabot-footer {
+  background: var(--navy-deep);
+  color: rgba(247, 249, 252, 0.86);
+}
+.iabot-footer .iabot-bar { min-height: 4.5rem; padding: 0.8rem 0; }
+.iabot-footer p { margin: 0; font-weight: 600; color: white; }
+.iabot-footer nav { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.iabot-footer a {
+  color: rgba(247, 249, 252, 0.86);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.iabot-footer a:hover { color: white; }
+.iabot :focus-visible { outline-color: var(--accent); }
+
+@media (max-width: 800px) {
+  .iabot-functions, .iabot-steps { grid-template-columns: 1fr; }
+  .iabot-hero { padding: 2.4rem 0 2.2rem; }
+  .iabot-section { padding: 2.2rem 0; }
+  .iabot-cta { width: 100%; }
+  .iabot-plan { padding: 1.2rem; }
+  .iabot-footer .iabot-bar { align-items: flex-start; flex-direction: column; gap: 0.2rem; }
 }

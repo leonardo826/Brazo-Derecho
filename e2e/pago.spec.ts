@@ -28,7 +28,7 @@ test("registro, agente, pago de prueba, chat y panel", async ({ page }) => {
   await waitForHydration(page);
   await page.getByRole("button", { name: "Activar prueba y probar" }).click();
   await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
-  await expect(page.getByText("La prueba de 14 días quedó activa")).toBeVisible();
+  await expect(page.getByText("La prueba de 7 días quedó activa")).toBeVisible();
 
   await page.goto("/panel");
   await whatsappCard(page).getByRole("link", { name: "Activar plan" }).click();
@@ -36,7 +36,7 @@ test("registro, agente, pago de prueba, chat y panel", async ({ page }) => {
   await expect(page.getByText("No se cobra, no pedimos tarjeta")).toBeVisible();
   await expect(page.getByLabel(/tarjeta/i)).toHaveCount(0);
   await page.getByRole("link", { name: "Cancelar" }).click();
-  await expect(page.getByText("Cancelaste el pago de prueba. La prueba de 14 días sigue activa.")).toBeVisible();
+  await expect(page.getByText("Cancelaste el pago de prueba. La prueba de 7 días sigue activa.")).toBeVisible();
   await expect(whatsappCard(page).getByText(/Prueba hasta/)).toBeVisible();
 
   await whatsappCard(page).getByRole("link", { name: "Activar plan" }).click();

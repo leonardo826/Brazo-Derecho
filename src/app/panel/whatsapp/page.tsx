@@ -19,6 +19,7 @@ import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 export default async function WhatsappPage({
@@ -68,7 +69,7 @@ export default async function WhatsappPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Escribe el horario o la dirección y haz una pregunta de prueba.
+          La prueba de {TRIAL_DAYS} días quedó activa. No se cobra nada durante la prueba. Escribe el horario o la dirección y haz una pregunta de prueba.
         </p>
       ) : null}
       <UsageBar used={responses} limit={responseLimit} label="Respuestas de este mes" />
@@ -108,7 +109,7 @@ export default async function WhatsappPage({
       {!open ? (
         <article className="panel-card" style={{ marginTop: "1rem" }}>
           <h2>Activa la prueba para atender</h2>
-          <p>Son 14 días de prueba. El agente solo responde con la información que cargues aquí.</p>
+          <p>Son {TRIAL_DAYS} días de prueba. El agente solo responde con la información que cargues aquí.</p>
           <ul className="plain no">
             {AGENT_CATALOG.WHATSAPP.doesNot.map((item) => (
               <li key={item}>{item}</li>

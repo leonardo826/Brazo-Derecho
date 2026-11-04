@@ -14,6 +14,7 @@ import { flowIsTestMode, mercadoPagoIsTestMode } from "@/lib/payments/mode";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 export default async function MockCheckoutPage({
   searchParams,
@@ -71,7 +72,7 @@ export default async function MockCheckoutPage({
           <p>Mercado Pago está configurado. Si lo eliges, el pago lo hace Mercado Pago. Flow, en esta pantalla, sigue en modo prueba.</p>
         ) : null}
         {!flow && agent && !ready ? (
-          <p>Primero activa la prueba de 14 días. Desde ahí puedes pasar al plan con este pago de prueba.</p>
+          <p>Primero activa la prueba de {TRIAL_DAYS} días. Desde ahí puedes pasar al plan con este pago de prueba.</p>
         ) : null}
         {ready && agent ? (
           <form action={confirmMockPaymentAction} className="stack">

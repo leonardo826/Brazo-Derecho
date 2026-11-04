@@ -1,3 +1,5 @@
+import { TRIAL_DAYS } from "@/lib/subscription";
+
 export const DEMO_TOUR_STORAGE_KEY = "brazo-prueba-demo";
 export const DEMO_TOUR_STEP_KEY = "brazo-prueba-demo-paso";
 
@@ -19,7 +21,7 @@ export const DEMO_TOUR_STEPS: readonly DemoTourStep[] = [
     href: "/panel",
     kicker: "Paso 2 de 5",
     title: "Tres agentes, por separado",
-    body: "Acá están Atención WhatsApp, el Cotizador y Marketing. Cada uno tiene su prueba de 14 días y su cupo. Los abres cuando quieras.",
+    body: `Acá están Atención WhatsApp, el Cotizador y Marketing. Cada uno tiene su prueba de ${TRIAL_DAYS} días y su cupo. Los abres cuando quieras.`,
   },
   {
     href: "/panel/whatsapp",

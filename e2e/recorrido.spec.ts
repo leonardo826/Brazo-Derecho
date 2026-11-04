@@ -17,8 +17,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   const organization = "Taller Recorrido";
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tu brazo derecho, con reglas claras." })).toBeVisible();
-  await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Agentes" }).click();
+  await expect(page.getByRole("heading", { name: "Tu oficina, ordenada por IA." })).toBeVisible();
+  await page.goto("/agentes");
   await expect(page).toHaveURL(/\/agentes$/);
   await expect(page.getByRole("heading", { name: "Tres agentes, cada uno con su trabajo." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
@@ -60,7 +60,7 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await waitForHydration(page);
   await page.getByRole("button", { name: "Activar prueba y probar" }).click();
   await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
-  await expect(page.getByText("La prueba de 14 días quedó activa")).toBeVisible();
+  await expect(page.getByText("La prueba de 7 días quedó activa")).toBeVisible();
 
   await page.getByLabel("Título").fill("Horario de atención");
   await page.getByLabel("Texto que puede usar").fill("Abrimos de lunes a viernes de 9:00 a 19:00 y los sábados de 9:00 a 14:00.");
@@ -83,8 +83,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await expect(page.locator(".thread")).toContainText("asistente virtual");
 
   await page.goto("/panel/cotizador");
-  await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 14 días" }), async () => {
-    await expect(page.getByText("Prueba activada por 14 días.")).toBeVisible({ timeout: 3_000 });
+  await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 7 días" }), async () => {
+    await expect(page.getByText("Prueba activada por 7 días.")).toBeVisible({ timeout: 3_000 });
   });
   await page.getByLabel("SKU").fill("TOR-E2E");
   await page.getByLabel("Precio neto CLP").fill("1990");
@@ -101,8 +101,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await expect(page.getByText("Pendiente de aprobación")).toBeVisible();
 
   await page.goto("/panel/marketing");
-  await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 14 días" }), async () => {
-    await expect(page.getByText("Prueba activada por 14 días.")).toBeVisible({ timeout: 3_000 });
+  await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 7 días" }), async () => {
+    await expect(page.getByText("Prueba activada por 7 días.")).toBeVisible({ timeout: 3_000 });
   });
   await page.getByLabel("Voz").fill("cercana y clara");
   await page.getByLabel("Público").fill("dueños de casa en Santiago");

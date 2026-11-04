@@ -10,6 +10,7 @@ import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 const HREF: Record<AgentId, string> = {
   WHATSAPP: "/panel/whatsapp",
@@ -82,7 +83,7 @@ export default async function OnboardingPage({
         <section className="stack">
           <div>
             <h2>Elige con cuál partir</h2>
-            <p className="muted">Cada agente se activa por separado, con su propia prueba de 14 días. Los otros los puedes abrir después.</p>
+            <p className="muted">Cada agente se activa por separado, con su propia prueba de {TRIAL_DAYS} días. Los otros los puedes abrir después.</p>
           </div>
           <div className="choice-grid">
             {AGENT_ORDER.map((agentId) => {
@@ -105,7 +106,7 @@ export default async function OnboardingPage({
         <article className="panel-card stack">
           {agent ? (
             <>
-              <h2>Prueba {AGENT_CATALOG[agent].name} por 14 días</h2>
+              <h2>Prueba {AGENT_CATALOG[agent].name} por {TRIAL_DAYS} días</h2>
               <p>{AGENT_CATALOG[agent].tagline}</p>
               <ul className="plain">
                 {AGENT_CATALOG[agent].does.map((item) => (
@@ -118,7 +119,7 @@ export default async function OnboardingPage({
                 ))}
               </ul>
               <p className="muted">
-                Elige con qué medio vas a pagar el plan. Con Mercado Pago registras tu tarjeta ahora, pero el primer cobro se hace al terminar los 14 días de prueba. Si cancelas antes, no se cobra.
+                Elige con qué medio vas a pagar el plan. Con Mercado Pago registras tu tarjeta ahora, pero el primer cobro se hace al terminar los {TRIAL_DAYS} días de prueba. Si cancelas antes, no se cobra.
               </p>
               <form action={activateTrialAction} className="stack">
                 <CsrfField />
@@ -137,7 +138,7 @@ export default async function OnboardingPage({
           ) : (
             <>
               <h2>Falta elegir el agente</h2>
-              <p>Elige uno para activar la prueba de 14 días.</p>
+              <p>Elige uno para activar la prueba de {TRIAL_DAYS} días.</p>
               <Link className="button-link" href="/panel/empezar?paso=agente">
                 Ver los agentes
               </Link>

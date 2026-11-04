@@ -1,4 +1,5 @@
 import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 export const ERRORS: Record<string, string> = {
   google: "No pudimos ingresar con Google. Intenta de nuevo o usa tu contraseña.",
@@ -36,10 +37,10 @@ export const ERRORS: Record<string, string> = {
 export const OKS: Record<string, string> = {
   consulta: "Respuesta lista. No reemplaza a un contador certificado.",
   cuenta: "Listo. Tu empresa quedó creada y ya puedes activar un agente.",
-  prueba: "Prueba activada por 14 días.",
+  prueba: `Prueba activada por ${TRIAL_DAYS} días.`,
   plan: "Plan activo. El pago fue de prueba: no hubo cobro ni se pidió una tarjeta.",
-  pago_cancelado: "Cancelaste el pago de prueba. La prueba de 14 días sigue activa.",
-  flow: "Listo. Si Flow pidió la tarjeta, termina ese paso. La prueba de 14 días queda en tu panel y el cobro se confirma cuando Flow avisa el pago.",
+  pago_cancelado: `Cancelaste el pago de prueba. La prueba de ${TRIAL_DAYS} días sigue activa.`,
+  flow: `Listo. Si Flow pidió la tarjeta, termina ese paso. La prueba de ${TRIAL_DAYS} días queda en tu panel y el cobro se confirma cuando Flow avisa el pago.`,
   cancelada: "Suscripción cancelada. El agente quedó detenido.",
   respuesta: "El agente respondió. Si el hilo es del simulador, no salió a un celular.",
   enviado: "La respuesta quedó en el hilo y se envió por WhatsApp.",

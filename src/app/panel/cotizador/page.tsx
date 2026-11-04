@@ -16,6 +16,7 @@ import { formatClp, quoteCode } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 const STATUS_LABEL = {
@@ -61,7 +62,7 @@ export default async function QuotesPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Agrega un producto con su precio neto y arma una cotización de prueba.
+          La prueba de {TRIAL_DAYS} días quedó activa. No se cobra nada durante la prueba. Agrega un producto con su precio neto y arma una cotización de prueba.
         </p>
       ) : null}
       <UsageBar used={usage.totals.QUOTES} limit={quoteLimit} label="Cotizaciones de este mes" />
@@ -159,7 +160,7 @@ export default async function QuotesPage({
                 />
               )
             ) : (
-              <p>Activa la prueba para armar cotizaciones. Los primeros 14 días no tienen cobro.</p>
+              <p>Activa la prueba para armar cotizaciones. Los primeros {TRIAL_DAYS} días no tienen cobro.</p>
             )}
           </article>
           <article className="panel-card">
