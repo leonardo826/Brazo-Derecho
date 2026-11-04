@@ -78,7 +78,7 @@ export default async function RegisterPage({
           </button>
         </form>
         <p className="muted">
-          ¿Ya tienes cuenta? <Link href="/ingresar">Ingresar</Link>
+          ¿Ya tienes cuenta? <Link href="/ingresar">Ingresa aquí</Link>
         </p>
       </div>
     </section>

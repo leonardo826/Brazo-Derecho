@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/agentes", label: "Agentes" },
   { href: "/precios", label: "Precios" },
-  { href: "/ingresar", label: "Ingresar" },
 ];
 
 export function PublicNav() {
@@ -21,6 +20,9 @@ export function PublicNav() {
           </Link>
         );
       })}
+      <Link className="button-link secondary" href="/ingresar" aria-current={pathname === "/ingresar" ? "page" : undefined}>
+        Ingresar
+      </Link>
       <Link className="button-link" href="/registro" aria-current={pathname === "/registro" ? "page" : undefined}>
         Crear cuenta
       </Link>
