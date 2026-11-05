@@ -7,7 +7,8 @@ import { isPlatformAdmin } from "@/lib/admin";
 import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type MetricId } from "@/lib/catalog";
 import { whatsappEnv } from "@/lib/env";
 import { emailIsMock } from "@/lib/email/deliver";
-import { formatClp, formatWhen } from "@/lib/format";
+import { formatClp, formatUsd, formatWhen } from "@/lib/format";
+import { metersByOrganization } from "@/lib/meter-store";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -38,10 +39,9 @@ export default async function AdminPage({
       },
     },
   });
-  const usage = await usageByOrganization(
-    organizations.map((organization) => organization.id),
-    viewedAt,
-  );
+  const organizationIds = organizations.map((organization) => organization.id);
+  const usage = await usageByOrganization(organizationIds, viewedAt);
+  const meters = await metersByOrganization(organizationIds, viewedAt);
   const selectedKey = monthKey(viewedAt);
   const totalCost = organizations.reduce(
     (sum, organization) => sum + (usage.byOrganization.get(organization.id)?.costClp ?? 0),
@@ -106,6 +106,7 @@ export default async function AdminPage({
               {organizations.map((organization) => {
                 const owner = organization.memberships[0]?.user;
                 const summary = usage.byOrganization.get(organization.id);
+                const meter = meters.get(organization.id);
                 const alerts = summary ? usageAlerts(summary.totals) : [];
                 const tokens = summary
                   ? summary.byModel["grok-4.3"].inputTokens +
@@ -156,6 +157,10 @@ export default async function AdminPage({
                     </td>
                     <td>
                       {formatClp(summary?.costClp ?? 0)}
+                      <div className="muted">
+                        {meter?.tasks.toLocaleString("es-CL") ?? "0"} tareas · estimado cliente{" "}
+                        {formatClp(meter?.clientClp ?? 0)} ({formatUsd(meter?.realUsd ?? 0)} × 2)
+                      </div>
                       {alerts.map((alert) => (
                         <div key={alert.metric} className="muted">
                           {METRIC_LABEL[alert.metric]} al {alert.percent}%

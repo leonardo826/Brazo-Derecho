@@ -1,7 +1,8 @@
 import { AGENT_CATALOG, AGENT_ORDER, METRIC_LABEL, type MetricId } from "@/lib/catalog";
 import { Flash } from "@/components/flash";
 import { UsageBar } from "@/components/usage-bar";
-import { formatClp } from "@/lib/format";
+import { formatClp, formatUsd } from "@/lib/format";
+import { companyMeter } from "@/lib/meter-store";
 import { FX_CLP_PER_USD } from "@/lib/pricing";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -15,6 +16,7 @@ export default async function UsagePage({
   const session = await requireSession();
   const params = await searchParams;
   const usage = await usageSnapshot(session.organizationId);
+  const meter = await companyMeter(session.organizationId);
   return (
     <>
       <div className="page-head">
@@ -42,11 +44,48 @@ export default async function UsagePage({
         })}
       </div>
       <article className="panel-card" style={{ marginTop: "1rem" }}>
+        <h2>Consumo para cobro</h2>
+        <p>
+          Tareas completadas: <strong>{meter.tasks.toLocaleString("es-CL")}</strong>
+        </p>
+        <p>
+          Tokens del mes: {meter.tokens.inputTokens.toLocaleString("es-CL")} de entrada,{" "}
+          {meter.tokens.cachedTokens.toLocaleString("es-CL")} en caché,{" "}
+          {meter.tokens.outputTokens.toLocaleString("es-CL")} de salida. De la API:{" "}
+          {meter.apiTokens.inputTokens.toLocaleString("es-CL")} de entrada,{" "}
+          {meter.apiTokens.cachedTokens.toLocaleString("es-CL")} en caché,{" "}
+          {meter.apiTokens.outputTokens.toLocaleString("es-CL")} de salida.
+        </p>
+        {meter.simulatorTokens.inputTokens + meter.simulatorTokens.outputTokens > 0 ? (
+          <p>
+            El simulador anotó {meter.simulatorTokens.inputTokens.toLocaleString("es-CL")} de entrada,{" "}
+            {meter.simulatorTokens.cachedTokens.toLocaleString("es-CL")} en caché y{" "}
+            {meter.simulatorTokens.outputTokens.toLocaleString("es-CL")} de salida. Esos tokens quedan marcados y no
+            entran en el costo real.
+          </p>
+        ) : null}
+        <p>
+          Costo real estimado: {formatUsd(meter.xaiUsd)} de xAI y {formatUsd(meter.computerUsd)} de computador en la
+          nube.
+        </p>
+        <p className="price">
+          {formatClp(meter.clientClp)} <small>estimado, el doble del costo real</small>
+        </p>
+        {meter.fixedPriceClp != null ? (
+          <p>El precio fijo de la vitrina sigue en {formatClp(meter.fixedPriceClp)} + IVA al mes. Este estimado no lo reemplaza.</p>
+        ) : null}
+        <p className="muted">
+          No es un cobro. Mercado Pago sigue con el monto fijo del plan. Las tarifas de grok-4.3 y grok-4.7 son
+          constantes: hay que refrescarlas desde docs.x.ai. El dólar de este cálculo ({meter.fx.toLocaleString("es-CL")}{" "}
+          pesos) no es el tipo de cambio del día.
+        </p>
+      </article>
+      <article className="panel-card" style={{ marginTop: "1rem" }}>
         <h2>Estimación de IA</h2>
         <p className="price">
           {formatClp(usage.costClp)} <small>este mes, estimado</small>
         </p>
-        <h3>Tokens del mes</h3>
+        <h3>Tokens del cupo</h3>
         <p>
           grok-4.3, tareas habituales: {usage.byModel["grok-4.3"].inputTokens.toLocaleString("es-CL")} de entrada,{" "}
           {usage.byModel["grok-4.3"].cachedTokens.toLocaleString("es-CL")} en caché,{" "}

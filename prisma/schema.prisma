@@ -40,6 +40,8 @@ model Organization {
   posts         MarketingPost[]
   consults      AccountingConsult[]
   usageEvents   UsageEvent[]
+  usageMeters   UsageMeter[]
+  usageMonths   UsageMonth[]
   computer      Computer?
 }
 
@@ -156,6 +158,44 @@ model UsageEvent {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, agent, metric, createdAt])
+}
+
+/// Consumo para cobro. El cupo del plan sigue en UsageEvent.
+enum UsageKind {
+  TASK
+  CHAT
+  COMPUTER_STEP
+}
+
+model UsageMeter {
+  id             String       @id @default(cuid())
+  organizationId String
+  kind           UsageKind
+  model          String       @default("")
+  inputTokens    Int          @default(0)
+  cachedTokens   Int          @default(0)
+  outputTokens   Int          @default(0)
+  /// true: tokens del simulador, no de la API de xAI.
+  synthetic      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, kind, createdAt])
+}
+
+model UsageMonth {
+  id             String       @id @default(cuid())
+  organizationId String
+  yearMonth      String
+  tasksCount     Int          @default(0)
+  inputTokens    Int          @default(0)
+  cachedTokens   Int          @default(0)
+  outputTokens   Int          @default(0)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, yearMonth])
+  @@index([organizationId])
 }
 
 model KnowledgeItem {

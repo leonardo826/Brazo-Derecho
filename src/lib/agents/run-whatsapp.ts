@@ -7,6 +7,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { dayStart } from "@/lib/usage";
+import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -63,6 +64,12 @@ export async function runWhatsappTurn(input: {
     return { ok: false as const, reason: "ia" as const };
   }
 
+  await recordModelCall({
+    organizationId: input.organizationId,
+    response,
+    now: input.now,
+  });
+
   const text = withAssistantDisclosure(response.outputText, input.organizationName, priorToday === 0);
   try {
     const saved = await prisma.$transaction(async (tx) => {
@@ -76,6 +83,12 @@ export async function runWhatsappTurn(input: {
         now: input.now,
       });
       if (!usage.ok) return usage;
+      await recordCompletedTask(tx, {
+        organizationId: input.organizationId,
+        model: response.model,
+        synthetic: response.mocked,
+        now: input.now,
+      });
       await tx.message.create({
         data: {
           conversationId: input.conversationId,

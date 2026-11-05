@@ -8,6 +8,7 @@ import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
+import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -44,6 +45,7 @@ export async function askAccountantAction(formData: FormData) {
   }
   if (!result.ok) redirect("/panel/contador?error=limite");
   const response = result.value;
+  await recordModelCall({ organizationId: session.organizationId, response });
 
   const saved = await prisma.$transaction(async (tx) => {
     const reserved = await reserveUsage(tx, {
@@ -55,6 +57,11 @@ export async function askAccountantAction(formData: FormData) {
       model: response.model,
     });
     if (!reserved.ok) return false;
+    await recordCompletedTask(tx, {
+      organizationId: session.organizationId,
+      model: response.model,
+      synthetic: response.mocked,
+    });
     await tx.accountingConsult.create({
       data: { organizationId: session.organizationId, question, answer: response.outputText },
     });

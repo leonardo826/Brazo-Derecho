@@ -7,6 +7,7 @@ import { decideWhatsappReply, withAssistantDisclosure } from "../src/lib/agents/
 import { AGENT_CATALOG } from "../src/lib/catalog";
 import { MENSAJE_SEED_BLOQUEADO, permiteCargarSeedDemo } from "../src/lib/demo-cuentas";
 import { hashPassword } from "../src/lib/password";
+import { recordMeter, recordModelCall } from "../src/lib/meter-store";
 import { USAGE_PRESETS } from "../src/lib/pricing";
 import { trialEnd } from "../src/lib/subscription";
 import { MockXaiClient } from "../src/lib/xai/mock";
@@ -391,6 +392,16 @@ async function ensureConversation(input: {
       ...USAGE_PRESETS.whatsapp,
     },
   });
+  await recordModelCall({
+    organizationId: input.organizationId,
+    response: { model: AGENT_CATALOG.WHATSAPP.model, usage: USAGE_PRESETS.whatsapp, mocked: true },
+  });
+  await recordMeter({
+    organizationId: input.organizationId,
+    kind: "TASK",
+    model: AGENT_CATALOG.WHATSAPP.model,
+    synthetic: true,
+  });
 }
 
 async function ensureQuote(input: {
@@ -447,6 +458,16 @@ async function ensureQuote(input: {
       model: AGENT_CATALOG.QUOTES.model,
       ...USAGE_PRESETS.quote,
     },
+  });
+  await recordModelCall({
+    organizationId: input.organizationId,
+    response: { model: AGENT_CATALOG.QUOTES.model, usage: USAGE_PRESETS.quote, mocked: true },
+  });
+  await recordMeter({
+    organizationId: input.organizationId,
+    kind: "TASK",
+    model: AGENT_CATALOG.QUOTES.model,
+    synthetic: true,
   });
 }
 
@@ -520,6 +541,24 @@ async function ensureMarketingPost(input: {
       quantity: 1,
       model: AGENT_CATALOG.MARKETING.model,
     },
+  });
+  await recordModelCall({
+    organizationId: input.organizationId,
+    response: { model: AGENT_CATALOG.MARKETING.model, usage: USAGE_PRESETS.text, mocked: true },
+  });
+  await recordModelCall({
+    organizationId: input.organizationId,
+    response: {
+      model: "grok-imagine-image-2.0",
+      usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0 },
+      mocked: true,
+    },
+  });
+  await recordMeter({
+    organizationId: input.organizationId,
+    kind: "TASK",
+    model: AGENT_CATALOG.MARKETING.model,
+    synthetic: true,
   });
 }
 

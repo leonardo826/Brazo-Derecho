@@ -9,6 +9,7 @@ import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
+import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { brandSchema, postBatchSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -61,6 +62,7 @@ export async function generatePostsAction(formData: FormData) {
   let imageTokens = { ...EMPTY_USAGE };
   let textModel: string = modelFor("MARKETING");
   let imageModel: string = routineModel();
+  let synthetic = false;
   try {
     for (let index = 0; index < count; index += 1) {
       const checks: PlanCheck[] = [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }];
@@ -91,7 +93,9 @@ export async function generatePostsAction(formData: FormData) {
       });
       if (!text.ok) break;
       textModel = text.value.model;
+      synthetic = text.value.mocked;
       textTokens = addUsage(textTokens, text.value.usage);
+      await recordModelCall({ organizationId: session.organizationId, response: text.value });
       let imagePrompt = "";
       let imageSvg = "";
       if (withImage) {
@@ -111,6 +115,7 @@ export async function generatePostsAction(formData: FormData) {
         if (!image.ok) break;
         imageModel = image.value.model;
         imageTokens = addUsage(imageTokens, image.value.usage);
+        await recordModelCall({ organizationId: session.organizationId, response: image.value });
         imagePrompt = image.value.outputText;
         imageSvg = draftImageSvg(channel, imagePrompt);
       }
@@ -140,6 +145,11 @@ export async function generatePostsAction(formData: FormData) {
       model: textModel,
     });
     if (!texts.ok) return false;
+    await recordCompletedTask(tx, {
+      organizationId: session.organizationId,
+      model: textModel,
+      synthetic,
+    });
     if (withImage) {
       const images = await reserveUsage(tx, {
         organizationId: session.organizationId,
