@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { consumeEmailVerification, consumePasswordReset, issueEmailVerification, issuePasswordReset } from "@/lib/account-mail";
 import { clientAddress, guardMutation, guardRate, withNotice } from "@/lib/guard";
 import { logEvent } from "@/lib/log";
-import { hashPassword, passwordError, verifyPassword } from "@/lib/password";
+import { authenticate } from "@/lib/login";
+import { hashPassword, passwordError } from "@/lib/password";
 import { panelReturnPath, safePanelPath } from "@/lib/paths";
 import { prisma } from "@/lib/prisma";
 import { isValidRut, formatRut } from "@/lib/rut";
@@ -98,29 +99,9 @@ export async function loginAction(formData: FormData) {
   if (!parsed.success) redirect("/ingresar?error=credenciales");
   await guardRate(`auth:login:${ip}:${parsed.data.email.toLowerCase()}`, 8, LOGIN_WINDOW_MS, "/ingresar");
 
-  const user = await prisma.user.findUnique({
-    where: { email: parsed.data.email.toLowerCase() },
-    include: {
-      memberships: {
-        include: { organization: true },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-  });
-  const membership = user?.memberships[0];
-  if (!user || !membership) redirect("/ingresar?error=credenciales");
-  const matches = await verifyPassword(parsed.data.password, user.passwordHash);
-  if (!matches) redirect("/ingresar?error=credenciales");
-
-  await writeSession({
-    userId: user.id,
-    email: user.email,
-    name: user.name,
-    organizationId: membership.organizationId,
-    organizationName: membership.organization.name,
-    role: membership.role,
-    authVersion: user.authVersion,
-  });
+  const session = await authenticate(parsed.data.email.toLowerCase(), parsed.data.password);
+  if (!session) redirect("/ingresar?error=credenciales");
+  await writeSession(session);
   redirect(safePanelPath(String(formData.get("siguiente") ?? "")));
 }
 

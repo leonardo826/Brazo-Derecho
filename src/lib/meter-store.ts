@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import {
   applyMeterEvent,
+  billWithoutCharges,
   buildMonthBill,
   sanitizeTokens,
   type MeterBucket,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/billing";
 import { prisma } from "@/lib/prisma";
 import type { TokenUsage } from "@/lib/pricing";
+import { organizationIsQa, qaOrganizationIdSet, recordsBillingUsage } from "@/lib/qa-account";
 import { monthBounds, monthKey } from "@/lib/usage";
 
 export type MeterWrite = {
@@ -21,9 +23,12 @@ export type MeterWrite = {
 };
 
 export async function applyMeter(tx: Prisma.TransactionClient, input: MeterWrite) {
-  const tokens = sanitizeTokens(input.tokens);
   const now = input.now ?? new Date();
   const yearMonth = monthKey(now);
+  if (!recordsBillingUsage(await organizationIsQa(input.organizationId, tx))) {
+    return { yearMonth, tasksCount: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
+  }
+  const tokens = sanitizeTokens(input.tokens);
   const delta = applyMeterEvent(
     { tasksCount: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 },
     { kind: input.kind, ...tokens, synthetic: input.synthetic },
@@ -123,9 +128,16 @@ function asBuckets(
   }));
 }
 
+function emptyBill(yearMonth: string, label: string) {
+  return billWithoutCharges(buildMonthBill({ yearMonth, label, month: null, buckets: [] }));
+}
+
 export async function companyMeter(organizationId: string, now = new Date()): Promise<MonthBill> {
   const bounds = monthBounds(now);
   const yearMonth = monthKey(now);
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) {
+    return emptyBill(yearMonth, bounds.label);
+  }
   const [month, grouped] = await Promise.all([
     prisma.usageMonth.findUnique({
       where: { organizationId_yearMonth: { organizationId, yearMonth } },
@@ -149,13 +161,19 @@ export async function metersByOrganization(organizationIds: string[], now = new 
   const yearMonth = monthKey(now);
   const bills = new Map<string, MonthBill>();
   if (organizationIds.length === 0) return bills;
+  const qa = await qaOrganizationIdSet(organizationIds);
+  const billable = organizationIds.filter((id) => recordsBillingUsage(qa.has(id)));
+  if (billable.length === 0) {
+    for (const id of organizationIds) bills.set(id, emptyBill(yearMonth, bounds.label));
+    return bills;
+  }
   const [months, grouped] = await Promise.all([
     prisma.usageMonth.findMany({
-      where: { organizationId: { in: organizationIds }, yearMonth },
+      where: { organizationId: { in: billable }, yearMonth },
     }),
     prisma.usageMeter.groupBy({
       by: ["organizationId", "model", "synthetic", "kind"],
-      where: { organizationId: { in: organizationIds }, createdAt: { gte: bounds.start, lt: bounds.end } },
+      where: { organizationId: { in: billable }, createdAt: { gte: bounds.start, lt: bounds.end } },
       _sum: { inputTokens: true, cachedTokens: true, outputTokens: true },
     }),
   ]);
@@ -174,6 +192,10 @@ export async function metersByOrganization(organizationIds: string[], now = new 
   }
   const monthById = new Map(months.map((month) => [month.organizationId, month]));
   for (const id of organizationIds) {
+    if (!recordsBillingUsage(qa.has(id))) {
+      bills.set(id, emptyBill(yearMonth, bounds.label));
+      continue;
+    }
     bills.set(
       id,
       buildMonthBill({

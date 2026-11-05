@@ -3,6 +3,7 @@ import { appUrl } from "@/lib/env";
 import { flowCall } from "@/lib/flow/client";
 import { flowRedirectUrl, planFor, trialDaysToAsk } from "@/lib/flow/plans";
 import { prisma } from "@/lib/prisma";
+import { assertBillableOrganization } from "@/lib/qa-account";
 import { TRIAL_DAYS } from "@/lib/subscription";
 
 type CustomerResponse = { customerId?: string };
@@ -76,6 +77,7 @@ export async function startFlowSubscription(input: {
   agent: AgentId;
   now?: Date;
 }) {
+  await assertBillableOrganization(input.organizationId);
   const now = input.now ?? new Date();
   const existing = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },

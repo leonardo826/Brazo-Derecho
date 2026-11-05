@@ -234,3 +234,22 @@ export function buildMonthBill(input: {
     fixedPriceClp: fixedShelfPriceClp(env),
   };
 }
+
+/** Empresa de prueba: el estimado queda en cero y no muestra precio de vitrina. */
+export function billWithoutCharges(bill: MonthBill): MonthBill {
+  const zero = { inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
+  return {
+    ...bill,
+    tasks: 0,
+    tokens: { ...zero },
+    apiTokens: { ...zero },
+    simulatorTokens: { ...zero },
+    byModel: [],
+    xaiUsd: 0,
+    computerUsd: 0,
+    realUsd: 0,
+    clientUsd: 0,
+    clientClp: 0,
+    fixedPriceClp: null,
+  };
+}

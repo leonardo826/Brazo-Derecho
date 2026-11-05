@@ -9,6 +9,7 @@ import {
   MercadoPagoApiError,
 } from "@/lib/mercadopago/client";
 import { prisma } from "@/lib/prisma";
+import { assertBillableOrganization } from "@/lib/qa-account";
 import { iabotChargeClp, trialEnd } from "@/lib/subscription";
 
 type PreapprovalResponse = { id?: string | number; init_point?: string };
@@ -64,6 +65,7 @@ export async function startMercadoPagoSubscription(
   },
   fetchImpl: typeof fetch = fetch,
 ) {
+  await assertBillableOrganization(input.organizationId);
   if (!mercadoPagoIsConfigured()) throw new MercadoPagoApiError("Mercado Pago no está configurado", 503);
   // El cobro es el precio bruto de la vitrina, no el monto que haya pasado quien llama.
   const amountClp = iabotChargeClp();

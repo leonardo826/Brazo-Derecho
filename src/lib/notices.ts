@@ -46,6 +46,7 @@ export const OKS: Record<string, string> = {
   cuenta: "Listo. Tu empresa quedó creada y ya puedes activar un agente.",
   prueba: `Prueba activada por ${TRIAL_DAYS} días.`,
   plan: "Plan activo. El pago fue de prueba: no hubo cobro ni se pidió una tarjeta.",
+  qa_sin_cobro: "Esta cuenta es de prueba interna. No se genera cobro.",
   pago_cancelado: `Cancelaste el pago de prueba. La prueba de ${TRIAL_DAYS} días sigue activa.`,
   flow: `Listo. Si Flow pidió la tarjeta, termina ese paso. La prueba de ${TRIAL_DAYS} días queda en tu panel y el cobro se confirma cuando Flow avisa el pago.`,
   cancelada: "Suscripción cancelada. El agente quedó detenido.",
