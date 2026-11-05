@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { assertBubbleSides, assertChatDock } from "./contador-ui";
-import { clickHydrated, ensureAdmin, waitForHydration } from "./helpers";
+import { clickHydrated, ensureAdmin } from "./helpers";
 
 async function openContador(page: Page, viewport: { width: number; height: number }) {
   await page.addInitScript(() => {
@@ -9,14 +9,30 @@ async function openContador(page: Page, viewport: { width: number; height: numbe
   await page.setViewportSize(viewport);
   await ensureAdmin(page);
   await page.goto("/panel/contador");
-  await waitForHydration(page);
-  const activate = page.getByRole("button", { name: /Activar prueba|Empezar prueba|Suscribir con Flow|Registrar tarjeta/ });
-  if (await activate.isVisible().catch(() => false)) {
-    await clickHydrated(page, activate, async () => {
-      await expect(page.getByRole("textbox", { name: "Mensaje" })).toBeEnabled({ timeout: 3_000 });
+  // The loading shell has no form. waitForHydration can return before this page arrives.
+  await expect(page.getByRole("heading", { name: "Contador Auditor Chile" })).toBeVisible();
+  const input = page.getByRole("textbox", { name: "Mensaje" });
+  await expect(input).toBeVisible();
+  if (await input.isEnabled()) return;
+
+  // The admin spec suspends this company and reactivates it. If that lands late, the
+  // composer stays disabled and the trial button is hidden because the plan is already open.
+  if (await page.getByText("Tu empresa está suspendida").isVisible()) {
+    await page.goto("/panel/admin");
+    const row = page.getByRole("row", { name: /Administración E2E/ });
+    await clickHydrated(page, row.getByRole("button", { name: "Reactivar" }), async () => {
+      await expect(page.getByText("Empresa reactivada")).toBeVisible({ timeout: 3_000 });
     });
+    await page.goto("/panel/contador");
+    await expect(page.getByRole("heading", { name: "Contador Auditor Chile" })).toBeVisible();
+    if (await input.isEnabled()) return;
   }
-  await expect(page.getByRole("textbox", { name: "Mensaje" })).toBeEnabled();
+
+  const activate = page.getByRole("button", { name: /Activar prueba|Empezar prueba|Suscribir con Flow|Registrar tarjeta/ }).first();
+  await expect(activate).toBeVisible();
+  await clickHydrated(page, activate, async () => {
+    await expect(input).toBeEnabled({ timeout: 5_000 });
+  });
 }
 
 async function consultsNow(page: Page) {
