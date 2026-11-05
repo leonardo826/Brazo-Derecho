@@ -30,7 +30,7 @@ export type ChatClientEvent =
   | { type: "error"; code: string };
 
 export const ACTION_HELP =
-  "Si apruebas, preparo el borrador y los pasos. No presento declaraciones, no pago y no uso claves: eso lo haces tú.";
+  "Si apruebas, dejo el borrador. Declarar o pagar no corre sin esta confirmación. Las claves se usan desde la Bóveda, sin mostrarlas.";
 
 export const CHAT_ERROR: Record<string, string> = {
   sesion: "Tu sesión venció. Vuelve a ingresar.",

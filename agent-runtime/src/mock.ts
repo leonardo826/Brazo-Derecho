@@ -20,16 +20,27 @@ export function mockUrlForGoal(goal: string) {
   return "https://example.com/";
 }
 
+function asksPortalLogin(goal: string) {
+  return /\b(sii|previred|tesorer|b[oó]veda|clave)\b/i.test(goal);
+}
+
 export function createMockModel(): ComputerModel {
   let acted = false;
   let url = "https://example.com/";
   return {
     async decide(ctx) {
       if (!ctx.screenshot.length) throw new Error("sin_captura");
+      const cred = ctx.credentials?.[0];
       if (!acted) {
         acted = true;
+        if (cred && asksPortalLogin(ctx.goal)) {
+          return { kind: "act", action: { type: "fill", credentialId: cred.id } };
+        }
         url = mockUrlForGoal(ctx.goal);
         return { kind: "act", action: { type: "goto", url } };
+      }
+      if (cred && asksPortalLogin(ctx.goal)) {
+        return { kind: "done", result: "Simulador: rellené el acceso con la Bóveda. La clave no se mostró." };
       }
       return {
         kind: "done",

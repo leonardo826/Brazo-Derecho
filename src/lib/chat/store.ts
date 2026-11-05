@@ -2,6 +2,7 @@ import type { PublicMessage } from "@/lib/chat/public";
 import { imageDataUrl, textExcerpt, type PreparedFile } from "@/lib/chat/files";
 import type { SensitiveAction } from "@/lib/chat/sensitive";
 import { Prisma, prisma } from "@/lib/prisma";
+import { reserveUsage } from "@/lib/usage-store";
 import type { ChatFileInput } from "@/lib/xai/types";
 
 const messageInclude = {
@@ -118,6 +119,23 @@ export async function saveAssistantMessage(threadId: string, body: string) {
     include: messageInclude,
   });
   return toPublic(message);
+}
+
+export async function saveCountedAssistantMessage(organizationId: string, threadId: string, body: string) {
+  const saved = await prisma.$transaction(async (tx) => {
+    const reserved = await reserveUsage(tx, {
+      organizationId,
+      agent: "ACCOUNTING",
+      metric: "CONSULTS",
+      quantity: 1,
+    });
+    if (!reserved.ok) return null;
+    return tx.agentMessage.create({
+      data: { threadId, role: "ASSISTANT", body },
+      include: messageInclude,
+    });
+  });
+  return saved ? toPublic(saved) : null;
 }
 
 export async function saveConfirmation(threadId: string, action: SensitiveAction) {

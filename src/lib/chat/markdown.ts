@@ -21,7 +21,10 @@ export function normalizeCitations(source: string) {
   return source.replace(CITATION, "[$1]($2)");
 }
 
+const APP_PATH = /^\/panel\/[a-z0-9]+(?:\/[a-z0-9-]+)*$/;
+
 export function safeHref(raw: string) {
+  if (APP_PATH.test(raw)) return raw;
   try {
     const url = new URL(raw);
     if (url.protocol === "http:" || url.protocol === "https:") return url.toString();

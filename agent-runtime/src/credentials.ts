@@ -28,7 +28,9 @@ export function sanitizeCredentialMeta(input: unknown): CredentialMeta[] {
 }
 
 export function credentialPrompt(credentials: CredentialMeta[] | undefined) {
-  if (!credentials?.length) return "No hay credenciales para esta tarea.";
+  if (!credentials?.length) {
+    return "No hay credenciales para esta tarea. Si hay que entrar a un portal, indica abrir /panel/boveda. No inventes claves.";
+  }
   const lines = credentials.map(
     (item) => `{id:${item.id}, label:${item.label}, portal:${item.portal}, usernameHint:${item.usernameHint}}`,
   );

@@ -23,12 +23,9 @@ const PAYMENT = [
   /\btransfer(ir|encia|encias)\b/i,
 ];
 
-const DECLARATION = [
-  /declaraci[oó]n(es)?/i,
-  /\bdeclar(ar|a|o|en|amos)\b/i,
-  /formulario\s*(22|29)\b/i,
-  /\bf(22|29)\b/i,
-];
+const DECLARE_VERB =
+  /\b(presenta|presentar|presentes|presentá|presenten|presentad|declara|declarar|declaro|declaren|declaramos|env[ií]a|enviar|manda|mandar|haz|hacer|realiza|realizar)\b/i;
+const DECLARE_OBJECT = /\b(declaraci[oó]n(es)?|f22|f29|formulario\s*(22|29))\b/i;
 
 export function isBulkGoal(goal: string) {
   return BULK.some((pattern) => pattern.test(goal));
@@ -43,7 +40,7 @@ export function isPaymentGoal(goal: string) {
 }
 
 export function isDeclarationGoal(goal: string) {
-  return DECLARATION.some((pattern) => pattern.test(goal));
+  return DECLARE_VERB.test(goal) && DECLARE_OBJECT.test(goal);
 }
 
 export function isHighRiskGoal(goal: string) {

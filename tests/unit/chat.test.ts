@@ -4,8 +4,8 @@ import { describe, expect, test } from "vitest";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { attachmentScope, prepareUpload, safeFileName } from "@/lib/chat/files";
 import { parseMarkdown, safeHref } from "@/lib/chat/markdown";
-import type { PublicMessage } from "@/lib/chat/public";
-import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensitive";
+import { ACTION_HELP, type PublicMessage } from "@/lib/chat/public";
+import { sensitiveRequest, splitAction, vaultActionFor, wantsPortalAccess } from "@/lib/chat/sensitive";
 import { replaceOptimisticUser } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { chatContent, modelInput, validImageDataUrl } from "@/lib/xai/chat-input";
@@ -41,8 +41,14 @@ describe("chat continuo", () => {
     expect(sensitiveRequest("Paga las cotizaciones")?.id).toBe("pagar");
     expect(sensitiveRequest("¿Puedes pagar el PPM?")?.id).toBe("pagar");
     expect(sensitiveRequest("Transfiere el IVA a Tesorería")?.id).toBe("pagar");
-    expect(sensitiveRequest("Entra al SII con mi clave")?.id).toBe("herramienta");
+    expect(sensitiveRequest("Entra al SII con mi clave")).toBeNull();
+    expect(sensitiveRequest("Entra al SII a revisar ventas")).toBeNull();
     expect(sensitiveRequest("Borra toda la base")?.id).toBe("herramienta");
+    expect(wantsPortalAccess("Entra al SII con mi clave de la bóveda")).toBe(true);
+    expect(wantsPortalAccess("Entra al SII a revisar ventas")).toBe(true);
+    expect(wantsPortalAccess("¿Cuándo se paga el IVA?")).toBe(false);
+    expect(wantsPortalAccess("¿Cómo se registran las ventas en el SII?")).toBe(false);
+    expect(wantsPortalAccess("Presenta el F29 de octubre")).toBe(false);
   });
 
   test("una duda no abre una tarjeta de confirmación", () => {
@@ -111,6 +117,12 @@ describe("chat continuo", () => {
     expect(dumped).toContain("<script>alert(1)</script>");
     expect(dumped).not.toContain('"href":"javascript:');
     expect(safeHref("javascript:alert(1)")).toBe("");
+    expect(safeHref("/panel/boveda")).toBe("/panel/boveda");
+    expect(safeHref("//panel/boveda")).toBe("");
+    expect(ACTION_HELP.toLowerCase()).not.toContain("no uso claves");
+    const vaultLink = renderToStaticMarkup(createElement(ChatMarkdown, { text: "Guárdala en la [Bóveda](/panel/boveda)." }));
+    expect(vaultLink).toContain('href="/panel/boveda"');
+    expect(vaultLink).not.toContain('target="_blank"');
     expect(blocks.some((block) => block.type === "paragraph" && block.children.some((node) => node.type === "link" && node.href.startsWith("https://www.sii.cl")))).toBe(true);
   });
 

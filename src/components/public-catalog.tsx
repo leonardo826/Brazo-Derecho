@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AGENT_CATALOG, AGENT_ORDER } from "@/lib/catalog";
+import { ACCOUNTING_PUBLIC_NOTE, AGENT_CATALOG, AGENT_ORDER } from "@/lib/catalog";
 import { formatClp } from "@/lib/format";
 import { priceWithIva } from "@/lib/flow/plans";
 import { TRIAL_DAYS } from "@/lib/subscription";
@@ -117,11 +117,9 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
             </p>
           </details>
           <details>
-            <summary>¿El Contador Auditor Chile hace trámites en el SII?</summary>
+            <summary>¿El Contador entra al SII?</summary>
             <p>
-              No. Responde consultas contables y tributarias revisando la normativa vigente del SII y cita las fuentes,
-              pero no presenta declaraciones ni pide tus claves. No reemplaza a un contador certificado. El tope es{" "}
-              {AGENT_CATALOG.ACCOUNTING.limitLabel}.
+              {ACCOUNTING_PUBLIC_NOTE} El tope es {AGENT_CATALOG.ACCOUNTING.limitLabel}.
             </p>
           </details>
           <details>

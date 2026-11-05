@@ -43,13 +43,24 @@ function isFilingCommand(text: string) {
 }
 
 function isRiskyTool(text: string) {
-  if (/\b(con mi clave|usa mi clave|usando mi clave|clave del sii|clave bancaria|mi clave tributaria)\b/i.test(text)) {
-    return true;
-  }
-  if (/\b(entra|entrar|ingresa|ingresar|inicia sesi[oó]n)\b[\s\S]{0,40}\b(al sii|a sii|al banco|a mi banco|a previred|a tesorer[ií]a)\b/i.test(text)) {
-    return true;
-  }
   return /\b(borra|borrar|elimina|eliminar)\b[\s\S]{0,40}\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(text);
+}
+
+const PORTAL = /\b(sii|previred|tesorer[ií]a|servicio de impuestos internos)\b/i;
+const ENTER =
+  /\b(entra|entrar|ingresa|ingresar|ingrese|abre|abrir|inicia(?:r)? sesi[oó]n|revisa|revisar|consulta|consultar|mira|mirar|(?<!\bse\s)ver|chequea|chequear|m[eé]tete)\b/i;
+const VAULT_ASK = /\b(b[oó]veda|con mi clave|usa(?:r|ndo)? (?:la |mi )?clave|clave de la b[oó]veda)\b/i;
+const LOOKUP = /\b(ventas|boletas|facturas|f29|f22|formulario\s*29|formulario\s*22|registro de compras|registro de ventas)\b/i;
+
+export function wantsPortalAccess(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean || isFilingCommand(clean) || isPayCommand(clean)) return false;
+  const portal = PORTAL.test(clean);
+  const enter = ENTER.test(clean);
+  const vault = VAULT_ASK.test(clean);
+  const lookup = LOOKUP.test(clean);
+  if (portal && (enter || vault)) return true;
+  return vault && (enter || lookup);
 }
 
 export function vaultActionFor(action: string): "DECLARAR" | "PAGAR" | null {
