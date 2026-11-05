@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { assertBubbleSides, assertChatDock } from "./contador-ui";
-import { clickHydrated, ensureAdmin } from "./helpers";
+import { ensureAdmin } from "./helpers";
 
 async function openContador(page: Page, viewport: { width: number; height: number }) {
   await page.addInitScript(() => {
@@ -8,31 +8,45 @@ async function openContador(page: Page, viewport: { width: number; height: numbe
   });
   await page.setViewportSize(viewport);
   await ensureAdmin(page);
-  await page.goto("/panel/contador");
-  // The loading shell has no form. waitForHydration can return before this page arrives.
-  await expect(page.getByRole("heading", { name: "Contador Auditor Chile" })).toBeVisible();
-  const input = page.getByRole("textbox", { name: "Mensaje" });
-  await expect(input).toBeVisible();
-  if (await input.isEnabled()) return;
 
-  // The admin spec suspends this company and reactivates it. If that lands late, the
-  // composer stays disabled and the trial button is hidden because the plan is already open.
-  if (await page.getByText("Tu empresa está suspendida").isVisible()) {
-    await page.goto("/panel/admin");
-    const row = page.getByRole("row", { name: /Administración E2E/ });
-    await clickHydrated(page, row.getByRole("button", { name: "Reactivar" }), async () => {
-      await expect(page.getByText("Empresa reactivada")).toBeVisible({ timeout: 3_000 });
-    });
+  const heading = page.getByRole("heading", { name: "Contador Auditor Chile" });
+  const input = page.getByRole("textbox", { name: "Mensaje" });
+  const activate = page.getByRole("button", { name: /Activar prueba|Empezar prueba|Suscribir con Flow|Registrar tarjeta/ }).first();
+
+  async function showContador() {
     await page.goto("/panel/contador");
-    await expect(page.getByRole("heading", { name: "Contador Auditor Chile" })).toBeVisible();
-    if (await input.isEnabled()) return;
+    // The loading shell has no composer. Wait for the real screen, not just any hydrated form.
+    await expect(heading).toBeVisible({ timeout: 8_000 });
+    await expect(input).toBeVisible({ timeout: 8_000 });
   }
 
-  const activate = page.getByRole("button", { name: /Activar prueba|Empezar prueba|Suscribir con Flow|Registrar tarjeta/ }).first();
-  await expect(activate).toBeVisible();
-  await clickHydrated(page, activate, async () => {
-    await expect(input).toBeEnabled({ timeout: 5_000 });
-  });
+  await expect(async () => {
+    await showContador();
+    // The admin spec suspends this company. A suspended plan hides «Activar prueba» and leaves the composer off.
+    if (await page.getByText("Tu empresa está suspendida").isVisible().catch(() => false)) {
+      await page.goto("/panel/admin");
+      const reactivate = page.getByRole("row", { name: /Administración E2E/ }).getByRole("button", { name: "Reactivar" });
+      await expect(reactivate).toBeVisible({ timeout: 5_000 });
+      await reactivate.click();
+      await expect(page.getByText("Empresa reactivada")).toBeVisible({ timeout: 5_000 });
+      await showContador();
+    }
+    if (await input.isEnabled()) return;
+
+    if (await page.getByText("Llegaste al cupo de consultas de este mes").isVisible().catch(() => false)) {
+      throw new Error("El compositor sigue apagado porque el cupo del mes se agotó.");
+    }
+
+    if (await activate.isVisible().catch(() => false)) await activate.click();
+    try {
+      await expect(input).toBeEnabled({ timeout: 4_000 });
+    } catch {
+      // The trial can already be saved while the client still paints the disabled composer.
+      await page.reload();
+      await expect(heading).toBeVisible({ timeout: 8_000 });
+      await expect(input).toBeEnabled({ timeout: 5_000 });
+    }
+  }).toPass({ timeout: 45_000 });
 }
 
 async function consultsNow(page: Page) {
