@@ -10,6 +10,7 @@ import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 export const maxDuration = 300;
@@ -70,7 +71,7 @@ export default async function ContadorPage({
               </p>
             </form>
           ) : (
-            <EmptyState title="Activa la prueba">Activa la prueba de 14 días para hacer tu primera consulta.</EmptyState>
+            <EmptyState title="Activa la prueba">Activa la prueba de {TRIAL_DAYS} días para hacer tu primera consulta.</EmptyState>
           )}
         </section>
         <section className="stack">

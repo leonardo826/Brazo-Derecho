@@ -91,9 +91,9 @@ describe("planes y prueba", () => {
     expect(agentForAmount(1)).toBeNull();
   });
 
-  test("la prueba sigue siendo de 14 días la primera vez", () => {
-    expect(TRIAL_DAYS).toBe(14);
-    expect(trialDaysToAsk(null, new Date("2026-10-30T12:00:00.000Z"))).toBe(14);
+  test("la prueba es de 7 días la primera vez", () => {
+    expect(TRIAL_DAYS).toBe(7);
+    expect(trialDaysToAsk(null, new Date("2026-10-30T12:00:00.000Z"))).toBe(7);
     const now = new Date("2026-10-30T12:00:00.000Z");
     expect(
       trialDaysToAsk({ flowSubscriptionId: null, periodEnd: new Date(now.getTime() + 3 * 86_400_000) }, now),
@@ -130,7 +130,7 @@ describe("aviso de pago", () => {
     expect(next && next.periodEnd.getTime()).toBeGreaterThan(now.getTime());
   });
 
-  test("un rechazo durante la prueba no corta los 14 días", () => {
+  test("un rechazo durante la prueba no corta los 7 días", () => {
     expect(nextSubscriptionState(trial, { paymentStatus: FLOW_PAYMENT.REJECTED }, now)).toBeNull();
   });
 

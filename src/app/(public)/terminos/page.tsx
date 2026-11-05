@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 export const metadata: Metadata = { title: "Términos" };
 
@@ -13,7 +14,7 @@ export default function TermsPage() {
       </p>
       <h2>Qué estás probando</h2>
       <p>
-        Un panel para tres agentes: Atención WhatsApp, Cotizador y Marketing. La prueba dura 14 días. Los precios
+        Un panel para tres agentes: Atención WhatsApp, Cotizador y Marketing. La prueba dura {TRIAL_DAYS} días. Los precios
         publicados son netos, más IVA. Al crear la cuenta queda registrada la fecha en que aceptaste estos términos y
         el aviso de privacidad.
       </p>

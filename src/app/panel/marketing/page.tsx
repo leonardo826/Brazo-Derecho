@@ -10,6 +10,7 @@ import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 export default async function MarketingPage({
@@ -45,7 +46,7 @@ export default async function MarketingPage({
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
-          La prueba de 14 días quedó activa. No se cobra nada durante la prueba. Guarda la voz de tu marca y prepara un borrador. No se publica solo.
+          La prueba de {TRIAL_DAYS} días quedó activa. No se cobra nada durante la prueba. Guarda la voz de tu marca y prepara un borrador. No se publica solo.
         </p>
       ) : null}
       <div className="grid-2">
@@ -95,7 +96,7 @@ export default async function MarketingPage({
             <EmptyState title="Falta el perfil o la prueba">
               {!profile
                 ? "Cuéntanos la voz, el público y un resumen. El agente no inventa promociones que no estén ahí."
-                : "Activa la prueba de 14 días para preparar el primer borrador. Nada se publica solo."}
+                : `Activa la prueba de ${TRIAL_DAYS} días para preparar el primer borrador. Nada se publica solo.`}
             </EmptyState>
           )}
         </section>

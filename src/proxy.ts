@@ -34,6 +34,7 @@ export function proxy(request: NextRequest) {
   const token = csrfToken(request);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(CSRF_HEADER, token);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
 
   const panel = request.nextUrl.pathname.startsWith("/panel");
   const session = request.cookies.get(SESSION_COOKIE)?.value;

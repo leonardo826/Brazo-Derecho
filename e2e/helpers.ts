@@ -37,7 +37,7 @@ export async function clickHydrated(page: Page, button: Locator, seen: () => Pro
 
 export async function logout(page: Page) {
   await clickHydrated(page, page.getByRole("button", { name: "Salir" }), async () => {
-    await expect(page.getByRole("heading", { name: "Tu brazo derecho, con reglas claras." })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Tu oficina, ordenada por IA." })).toBeVisible({
       timeout: 3_000,
     });
   });

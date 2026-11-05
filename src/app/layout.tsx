@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Source_Sans_3 } from "next/font/google";
+import { Fraunces, Poppins, Source_Sans_3 } from "next/font/google";
 import { headers } from "next/headers";
 import { CsrfProvider } from "@/components/csrf-field";
 import { CSRF_HEADER } from "@/lib/csrf-token";
@@ -17,6 +17,13 @@ const sans = Source_Sans_3({
   display: "swap",
 });
 
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "Brazo Derecho",
@@ -31,7 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const csrf = headerStore.get(CSRF_HEADER) ?? "";
   return (
     <html lang="es-CL">
-      <body className={`${display.variable} ${sans.variable}`}>
+      <body className={`${display.variable} ${sans.variable} ${poppins.variable}`}>
         <CsrfProvider token={csrf}>{children}</CsrfProvider>
       </body>
     </html>

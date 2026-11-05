@@ -6,6 +6,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 import { resolveSession } from "@/lib/session";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 export const metadata: Metadata = { title: "Crear cuenta" };
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function RegisterPage({
         <p className="eyebrow">Nueva empresa</p>
         <h1>Crear cuenta</h1>
         <p className="muted">
-          Una cuenta, una empresa. Después eliges un agente y lo pruebas 14 días. El primer cobro llega al terminar la prueba. Te enviamos un enlace
+          Una cuenta, una empresa. Después eliges un agente y lo pruebas {TRIAL_DAYS} días. El primer cobro llega al terminar la prueba. Te enviamos un enlace
           para confirmar el correo; puedes usar el panel antes de abrirlo.
         </p>
         <Flash error={firstParam(params.error)} />
