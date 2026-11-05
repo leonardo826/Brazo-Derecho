@@ -6,9 +6,14 @@ export function xaiBaseUrl() {
   return (process.env.XAI_API_URL?.trim() || "https://api.x.ai/v1").replace(/\/$/, "");
 }
 
-export function createXaiClient(): XaiClient {
+export function xaiUsesNetwork() {
   const apiKey = process.env.XAI_API_KEY?.trim() ?? "";
   const forceMock = (process.env.XAI_MODE ?? "").trim() === "mock";
-  if (!apiKey || forceMock) return new MockXaiClient();
+  return Boolean(apiKey) && !forceMock;
+}
+
+export function createXaiClient(): XaiClient {
+  const apiKey = process.env.XAI_API_KEY?.trim() ?? "";
+  if (!xaiUsesNetwork()) return new MockXaiClient();
   return new LiveXaiClient({ apiKey, baseUrl: xaiBaseUrl() });
 }

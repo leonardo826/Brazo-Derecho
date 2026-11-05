@@ -42,11 +42,13 @@ model Organization {
   usageEvents   UsageEvent[]
   usageMeters   UsageMeter[]
   usageMonths   UsageMonth[]
-  computer      Computer?
-  credentials   ClientCredential[]
-  credentialAudits CredentialAuditEvent[]
-  credentialConfirmations CredentialConfirmation[]
-  credentialFillGrants CredentialFillGrant[]
+  computer                 Computer?
+  credentials              ClientCredential[]
+  credentialAudits         CredentialAuditEvent[]
+  credentialConfirmations  CredentialConfirmation[]
+  credentialFillGrants     CredentialFillGrant[]
+  agentThreads             AgentThread[]
+  agentAttachments         AgentAttachment[]
 }
 
 enum MemberRole {
@@ -497,4 +499,67 @@ model AccountingConsult {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
+}
+
+/// Un hilo continuo por empresa y agente. Reemplaza la consulta de un solo envío.
+model AgentThread {
+  id             String         @id @default(cuid())
+  organizationId String
+  agent          AgentKind
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages       AgentMessage[]
+
+  @@unique([organizationId, agent])
+  @@index([organizationId])
+}
+
+enum AgentMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum AgentMessageKind {
+  TEXT
+  CONFIRMATION
+}
+
+enum AgentConfirmation {
+  PENDING
+  APPROVED
+  CANCELED
+}
+
+model AgentMessage {
+  id              String              @id @default(cuid())
+  threadId        String
+  role            AgentMessageRole
+  kind            AgentMessageKind    @default(TEXT)
+  body            String              @default("")
+  action          String              @default("")
+  actionTitle     String              @default("")
+  confirmation    AgentConfirmation?
+  legacyConsultId String?             @unique
+  createdAt       DateTime            @default(now())
+  thread          AgentThread         @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments     AgentAttachment[]
+
+  @@index([threadId, createdAt])
+}
+
+model AgentAttachment {
+  id             String       @id @default(cuid())
+  messageId      String
+  organizationId String
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  bytes          Bytes
+  createdAt      DateTime     @default(now())
+  message        AgentMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([organizationId])
 }
