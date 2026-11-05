@@ -3,8 +3,12 @@ import { expect, test } from "@playwright/test";
 test("la landing de IA Bot tiene una sola acción principal", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Tu oficina, ordenada por IA." })).toBeVisible();
-  await expect(page.getByText("Precio de lanzamiento: pronto")).toBeVisible();
-  await expect(page.locator(".iabot-price")).toHaveCount(0);
+  const price = page.locator(".iabot-price");
+  await expect(price).toHaveCount(1);
+  await expect(price).toContainText("$63.546");
+  await expect(price).toContainText("al mes, IVA incluido");
+  await expect(page.getByText("Precio de lanzamiento: pronto")).toHaveCount(0);
+  await expect(page.getByText("+ IVA")).toHaveCount(0);
 
   const primary = page.locator("a.iabot-cta");
   await expect(primary).toHaveCount(2);

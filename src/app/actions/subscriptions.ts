@@ -11,7 +11,7 @@ import { paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { getPaymentProvider } from "@/lib/payments/registry";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { trialEnd } from "@/lib/subscription";
+import { iabotChargeClp, trialEnd } from "@/lib/subscription";
 import { paymentProviderSchema } from "@/lib/validation";
 
 export async function activateTrialAction(formData: FormData) {
@@ -25,7 +25,7 @@ export async function activateTrialAction(formData: FormData) {
   if (!providerParsed.success) redirect(`${back}?error=datos`);
   const provider = providerParsed.data;
   const guia = formData.get("guia") === "1" ? "&guia=1" : "";
-  const amountClp = planFor(agentRaw).amountClp;
+  const flowAmountClp = planFor(agentRaw).amountClp;
 
   if (provider === "mercadopago" && mercadoPagoIsConfigured()) {
     let redirectUrl = "";
@@ -34,7 +34,7 @@ export async function activateTrialAction(formData: FormData) {
         organizationId: session.organizationId,
         agent: agentRaw,
         payerEmail: session.email,
-        amountClp,
+        amountClp: iabotChargeClp(),
       });
       redirectUrl = started.redirectUrl;
     } catch (error) {
@@ -52,7 +52,7 @@ export async function activateTrialAction(formData: FormData) {
         organizationId: session.organizationId,
         agent: agentRaw,
         payerEmail: session.email,
-        amountClp,
+        amountClp: flowAmountClp,
       });
       url = started.redirectUrl || null;
     } catch (error) {
@@ -165,7 +165,7 @@ export async function confirmMockPaymentAction(formData: FormData) {
         organizationId: session.organizationId,
         agent: agentRaw,
         payerEmail: session.email,
-        amountClp: planFor(agentRaw).amountClp,
+        amountClp: iabotChargeClp(),
       });
       redirectUrl = started.redirectUrl;
     } catch (error) {

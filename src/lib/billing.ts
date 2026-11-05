@@ -1,4 +1,5 @@
 import { FX_CLP_PER_USD, MODEL_RATES, type TokenUsage } from "@/lib/pricing";
+import { iabotPriceClp } from "@/lib/subscription";
 
 /**
  * Tarifas de trabajo para el estimado de cobro.
@@ -101,11 +102,7 @@ function readNonNegative(env: EnvLike, key: string, fallback: number) {
 }
 
 export function fixedShelfPriceClp(env: EnvLike = process.env) {
-  const raw = env.IABOT_PRICE_CLP?.trim() ?? "";
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0) return null;
-  return value;
+  return iabotPriceClp(env.IABOT_PRICE_CLP ?? "");
 }
 
 type ModelRate = { input: number; cached: number; output: number };

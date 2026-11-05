@@ -9,7 +9,7 @@ import { MENSAJE_SEED_BLOQUEADO, permiteCargarSeedDemo } from "../src/lib/demo-c
 import { hashPassword } from "../src/lib/password";
 import { recordMeter, recordModelCall } from "../src/lib/meter-store";
 import { USAGE_PRESETS } from "../src/lib/pricing";
-import { trialEnd } from "../src/lib/subscription";
+import { IABOT_PRICE_CLP, trialEnd } from "../src/lib/subscription";
 import { MockXaiClient } from "../src/lib/xai/mock";
 
 const prisma = createPrismaClient();
@@ -298,11 +298,13 @@ async function ensureTrials(organizationId: string) {
         status: "TRIAL",
         periodStart: now,
         periodEnd: trialEnd(now),
+        amountClp: IABOT_PRICE_CLP,
       },
       update: {
         status: "TRIAL",
         periodStart: now,
         periodEnd: trialEnd(now),
+        amountClp: IABOT_PRICE_CLP,
       },
     });
   }
