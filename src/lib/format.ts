@@ -6,6 +6,15 @@ export function formatClp(value: number) {
   }).format(value);
 }
 
+export function formatUsd(value: number) {
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
 export function formatWhen(value: Date) {
   return new Intl.DateTimeFormat("es-CL", {
     dateStyle: "medium",

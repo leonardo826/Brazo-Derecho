@@ -75,8 +75,12 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `SENTRY_DSN` | DSN de Sentry para errores del servidor (webhooks) y del navegador. El navegador avisa a `/api/observabilidad` y el servidor reenvía solo si hay DSN. | No se envía nada. El error queda solo en el log del proceso. |
 | `RESEND_API_KEY` | Clave de Resend para correos de confirmación y de recuperación de clave. | Simulador: el correo se escribe en el log y queda en Administración. No sale ningún mensaje. |
 | `RESEND_FROM` | Remitente, por ejemplo `Brazo Derecho <onboarding@resend.dev>`. | `Brazo Derecho <onboarding@resend.dev>`. En el plan gratis, ese remitente solo entrega al correo de la cuenta de Resend. |
+| `IABOT_PRICE_CLP` | Precio fijo de vitrina, en pesos. Producción ya lo tiene. La portada lo muestra como «$… + IVA al mes» y el panel lo muestra al lado del estimado. | La portada dice «Precio de lanzamiento: pronto» y el panel no muestra el precio fijo. |
+| `USAGE_USD_PER_M_INPUT`, `USAGE_USD_PER_M_CACHED`, `USAGE_USD_PER_M_OUTPUT` | USD por millón de tokens para el estimado. | Se usan las constantes de grok-4.3 y grok-4.7. Hay que refrescarlas desde docs.x.ai. No es una tarifa en vivo. |
+| `USAGE_FX_CLP_PER_USD` | Pesos por dólar para el estimado. | 900. No es el tipo de cambio del día. |
+| `USAGE_COMPUTER_USD` | Costo del computador en la nube del período, en USD, que entra al estimado. | 0. |
 
-Los tokens de cada respuesta quedan en `UsageEvent`, por empresa, con el modelo usado. El tope mensual se descuenta en la misma transacción que guarda la respuesta. El mes se calcula en `America/Santiago`.
+Los tokens de cada respuesta quedan en `UsageEvent`, por empresa, con el modelo usado. El tope mensual se descuenta en la misma transacción que guarda la respuesta. El mes se calcula en `America/Santiago`. Cada llamada al modelo anota además un `UsageMeter` (`CHAT` o `COMPUTER_STEP`) y, al terminar la tarea, un evento `TASK`. `UsageMonth` suma tareas y tokens de esa empresa en el mes. En Uso del mes y en `GET /api/uso` se ve el estimado: el doble del costo real (xAI + computador). Ese número no cambia el cobro de Mercado Pago. El simulador marca los tokens como sintéticos y no entran en el costo real.
 
 ## Cuentas de demostración
 

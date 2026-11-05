@@ -10,6 +10,7 @@ import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
+import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { priceSchema, quoteRequestSchema, quoteStatusSchema, recordIdSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -165,6 +166,7 @@ export async function createQuoteAction(formData: FormData) {
   }
   if (!gated.ok) redirect("/panel/cotizador?error=limite");
   const response = gated.value;
+  await recordModelCall({ organizationId: session.organizationId, response });
 
   let quoteId: string | null = null;
   try {
@@ -178,6 +180,11 @@ export async function createQuoteAction(formData: FormData) {
       model: response.model,
     });
     if (!usage.ok) return null;
+    await recordCompletedTask(tx, {
+      organizationId: session.organizationId,
+      model: response.model,
+      synthetic: response.mocked,
+    });
     const aggregate = await tx.quote.aggregate({
       where: { organizationId: session.organizationId },
       _max: { number: true },
