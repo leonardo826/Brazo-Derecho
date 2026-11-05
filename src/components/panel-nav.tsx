@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/panel/marketing", label: "Marketing" },
   { href: "/panel/contador", label: "Contador Auditor" },
   { href: "/panel/uso", label: "Uso del mes" },
+  { href: "/panel/boveda", label: "Bóveda" },
   { href: "/panel/cuenta", label: "Cuenta" },
 ];
 

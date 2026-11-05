@@ -48,6 +48,7 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `DATABASE_URL` | Postgres de la app. En Neon puede ser la URL con pooler. | La app no parte. |
 | `DIRECT_URL` | Conexión directa para `prisma migrate`. En local puede ser la misma que `DATABASE_URL`. En Neon usa la URL sin pooler. | La migración no corre. |
 | `SESSION_SECRET` | Firma la cookie de sesión. Mínimo 32 caracteres. | La sesión no se puede crear. |
+| `CREDENTIALS_MASTER_KEY` | Llave maestra de la bóveda, base64 de 32 bytes. Solo en Vercel Production, como Secret. Se genera con `openssl rand -base64 32`. | Las APIs de la bóveda responden error y no guardan ni descifran. El detalle está en `docs/BOVEDA.md`. |
 | `APP_URL` | URL pública, sin barra final. Flow avisa los pagos a `{APP_URL}/api/flow/confirmacion`. | Se usa `http://localhost:3000`. |
 | `XAI_API_KEY` | Clave de la Responses API de xAI (`https://api.x.ai/v1/responses`). | El texto lo arma el simulador, sin red. |
 | `XAI_API_URL` | Base de la API. | `https://api.x.ai/v1`. |
@@ -113,6 +114,7 @@ La primera vez que entras al panel aparece el recorrido **Prueba la demo**: cinc
 - Los webhooks de Flow, Mercado Pago y WhatsApp escriben un log en JSON, sin el texto del mensaje, el token de pago ni el access token. Si Mercado Pago rechaza una llamada, el log anota el código HTTP y los campos `message` y `cause` de la respuesta, sin cabeceras, access token ni otros secretos. El de Mercado Pago no usa CSRF, igual que el de Flow, y tiene límite de intentos. Si `SENTRY_DSN` está vacío, el reporte a Sentry no hace nada.
 - Administración (`ADMIN_EMAILS`) lista empresas, uso del mes, costo estimado de tokens y el estado de cada suscripción. Suspender detiene los agentes y conserva los datos. También muestra los correos del simulador, con el enlace para confirmar el correo o cambiar la clave.
 - Al crear la cuenta se pide confirmar el correo. El aviso del panel no bloquea el uso. Las cuentas del seed de demostración ya quedan confirmadas. En Ingresar, «¿Olvidaste tu contraseña?» manda un enlace de un solo uso que dura una hora. Hay un límite de intentos por IP y por correo. Cambiar la contraseña cierra las sesiones anteriores.
+- Bóveda (`/panel/boveda`): la empresa guarda accesos de portales cifrados con AES-256-GCM. Hace falta aceptar el texto antes del primer guardado. La lista y el registro no muestran la clave. El modelo solo ve id, nombre, portal y pista de usuario, y solo si la persona pidió ese ingreso. Declarar o pagar pide una confirmación aparte. Sin `CREDENTIALS_MASTER_KEY` no se guarda ni se lee. Ver `docs/BOVEDA.md`.
 - El catálogo público está en `/agentes` y `/precios`: qué hace y qué no hace cada agente, el precio neto más IVA, la prueba de 14 días, preguntas frecuentes y el enlace para crear la cuenta. El menú de la portada apunta ahí.
 
 ```

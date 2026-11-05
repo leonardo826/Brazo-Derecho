@@ -1,14 +1,17 @@
 import { parseAction } from "./actions.ts";
+import { credentialPrompt, type CredentialMeta } from "./credentials.ts";
 import type { ComputerModel, ModelDecision } from "./desktop.ts";
+import { isHighRiskGoal } from "./sensitive.ts";
 
 export type ComputerModelName = "grok-4.3" | "grok-4.7";
 
 const INSTRUCTIONS = [
   "Eres el agente de computador de IA Bot, para una pyme en Chile.",
   "Ves una captura del escritorio y eliges una sola acción con la herramienta computer.",
-  "Puedes click, type, key, scroll o goto (solo http o https).",
+  "Puedes click, type, key, scroll, goto (solo http o https) o fill.",
   "WhatsApp Web puede estar abierto para que la persona escanee el QR. No escribas en ese chat, no envíes mensajes y no hagas envíos masivos.",
-  "No pagues, no transfieras y no confirmes compras.",
+  "No pagues, no transfieras, no presentes declaraciones y no confirmes compras, salvo que el mensaje diga que el cliente ya confirmó.",
+  "Si hay credenciales, solo ves id, etiqueta, portal y pista de usuario. Para rellenar un login usa action fill y credentialId. No escribas la clave en text ni en result, y no inventes claves.",
   "Cuando el objetivo esté cumplido, usa action done y un result corto en español.",
 ].join(" ");
 
@@ -20,13 +23,14 @@ const COMPUTER_TOOL = {
     type: "object",
     additionalProperties: false,
     properties: {
-      action: { type: "string", enum: ["click", "type", "key", "scroll", "goto", "done"] },
+      action: { type: "string", enum: ["click", "type", "key", "scroll", "goto", "fill", "done"] },
       x: { type: "number" },
       y: { type: "number" },
       text: { type: "string" },
       key: { type: "string" },
       dy: { type: "number" },
       url: { type: "string" },
+      credentialId: { type: "string" },
       result: { type: "string" },
     },
     required: ["action"],
@@ -48,8 +52,15 @@ export function buildComputerRequest(input: {
   goal: string;
   screenshot: Buffer;
   history: string[];
+  credentials?: CredentialMeta[];
+  clientConfirmed?: boolean;
 }) {
   const history = input.history.slice(-12).join("\n");
+  const confirmation = !isHighRiskGoal(input.goal)
+    ? "Esta tarea no es declarar ni pagar."
+    : input.clientConfirmed
+      ? "El cliente confirmó esta declaración o pago."
+      : "El cliente no confirmó. No declares ni pagues.";
   return {
     model: input.model,
     store: false,
@@ -65,7 +76,13 @@ export function buildComputerRequest(input: {
           { type: "input_image", image_url: `data:image/png;base64,${input.screenshot.toString("base64")}` },
           {
             type: "input_text",
-            text: [`Objetivo: ${input.goal}`, history ? `Pasos ya hechos:\n${history}` : "Todavía no hay pasos.", "Elige una sola acción."].join("\n\n"),
+            text: [
+              `Objetivo: ${input.goal}`,
+              credentialPrompt(input.credentials),
+              confirmation,
+              history ? `Pasos ya hechos:\n${history}` : "Todavía no hay pasos.",
+              "Elige una sola acción. Si rellenas un acceso, usa fill con el id. No repitas claves.",
+            ].join("\n\n"),
           },
         ],
       },
@@ -140,7 +157,16 @@ export function createLiveComputerModel(options: {
           Authorization: `Bearer ${options.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildComputerRequest({ model: options.model, goal: ctx.goal, screenshot: ctx.screenshot, history: ctx.history })),
+        body: JSON.stringify(
+          buildComputerRequest({
+            model: options.model,
+            goal: ctx.goal,
+            screenshot: ctx.screenshot,
+            history: ctx.history,
+            credentials: ctx.credentials,
+            clientConfirmed: ctx.clientConfirmed,
+          }),
+        ),
         signal: AbortSignal.timeout(60_000),
       });
       const text = await response.text();

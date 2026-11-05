@@ -33,6 +33,10 @@ export async function enqueueComputerTask(
     agentToken?: string;
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
+    agentPayload?: {
+      credentials: { id: string; label: string; portal: string; usernameHint: string }[];
+      fillGrant: string;
+    };
   },
   deps: { store: ComputerStore },
 ): Promise<{ ok: true; task: ComputerTaskRecord; calledAgent: boolean } | { ok: false; error: "datos" }> {
@@ -57,7 +61,7 @@ export async function enqueueComputerTask(
       goal,
       status: "PENDING_APPROVAL",
       sensitive: true,
-      result: "Pendiente de aprobación. No se envió ni se pagó nada.",
+      result: "Pendiente de aprobación. No se envió, no se declaró ni se pagó nada.",
     });
     return { ok: true, task, calledAgent: false };
   }
@@ -76,15 +80,27 @@ export async function enqueueComputerTask(
   try {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (input.agentToken?.trim()) headers.authorization = `Bearer ${input.agentToken.trim()}`;
+    const body: Record<string, unknown> = { goal };
+    const payload = input.agentPayload;
+    if (payload?.credentials.length) {
+      body.credentials = payload.credentials.map((row) => ({
+        id: row.id,
+        label: row.label,
+        portal: row.portal,
+        usernameHint: row.usernameHint,
+      }));
+    }
+    if (payload?.fillGrant) body.fillGrant = payload.fillGrant;
     const response = await (input.fetchImpl ?? fetch)(`${agentUrl.replace(/\/$/, "")}/task`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ goal }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(input.timeoutMs ?? 120_000),
     });
     const data = (await response.json().catch(() => null)) as { status?: unknown; result?: unknown } | null;
     const status = asStatus(data?.status) ?? (response.ok ? "DONE" : "FAILED");
-    const result = typeof data?.result === "string" ? data.result.slice(0, 2000) : response.ok ? "" : "El computador no completó la tarea.";
+    let result = typeof data?.result === "string" ? data.result.slice(0, 2000) : response.ok ? "" : "El computador no completó la tarea.";
+    if (payload?.fillGrant) result = result.split(payload.fillGrant).join("[redactado]");
     return { ok: true, task: await deps.store.finish(task.id, status, result), calledAgent: true };
   } catch {
     return { ok: true, task: await deps.store.finish(task.id, "FAILED", "No pude hablar con el computador."), calledAgent: true };

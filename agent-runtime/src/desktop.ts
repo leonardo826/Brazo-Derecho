@@ -1,4 +1,5 @@
 import type { DesktopAction } from "./actions.ts";
+import type { CredentialMeta } from "./credentials.ts";
 
 export type DesktopStatus = {
   ok: boolean;
@@ -16,8 +17,17 @@ export interface Desktop {
 
 export type ModelDecision = { kind: "act"; action: DesktopAction } | { kind: "done"; result: string };
 
+export type DecideInput = {
+  goal: string;
+  screenshot: Buffer;
+  step: number;
+  history: string[];
+  credentials?: CredentialMeta[];
+  clientConfirmed?: boolean;
+};
+
 export interface ComputerModel {
-  decide(input: { goal: string; screenshot: Buffer; step: number; history: string[] }): Promise<ModelDecision>;
+  decide(input: DecideInput): Promise<ModelDecision>;
 }
 
 export function pickWorkWindow(windows: { id: string; name: string }[]) {

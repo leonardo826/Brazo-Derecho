@@ -33,6 +33,12 @@ export const ERRORS: Record<string, string> = {
   plataforma: "Esa acción es solo de administración.",
   token: "Ese enlace ya no sirve: se usó o se venció. Pide uno nuevo.",
   computador: "No pude hablar con el computador.",
+  boveda_sin_clave:
+    "Falta CREDENTIALS_MASTER_KEY en el servidor. La bóveda no guardó ni leyó ninguna clave.",
+  boveda_consentimiento: "Para guardar una clave tienes que aceptar el texto de la bóveda.",
+  boveda_migracion: "Falta la migración de la bóveda. Avisa a quien administra el sitio.",
+  boveda_confirmacion:
+    "Para declarar o pagar tienes que confirmarlo en la bóveda. La clave sola no alcanza.",
 };
 
 export const OKS: Record<string, string> = {
@@ -68,8 +74,12 @@ export const OKS: Record<string, string> = {
   verificado: "Ese correo ya estaba confirmado.",
   correo_ok: "Correo confirmado. Gracias.",
   computador_tarea: "La tarea quedó encolada. Si no hay computador configurado, no salió a ningún escritorio.",
-  computador_pendiente: "Quedó pendiente de aprobación. No se envió ni se pagó nada.",
+  computador_pendiente: "Quedó pendiente de aprobación. No se envió, no se declaró ni se pagó nada.",
   computador_rechazada: "Esa tarea no se hace: no hay envíos masivos.",
   computador_aprobada: "Quedó marcada como aprobada. El envío y el pago siguen apagados.",
   computador_descartada: "Tarea descartada. No se envió nada.",
+  boveda_guardada: "Clave guardada y cifrada. No se muestra el secreto.",
+  boveda_eliminada: "Acceso eliminado. La clave cifrada ya no está.",
+  boveda_confirmada:
+    "Confirmación anotada. Dura 15 minutos y vale solo para esa acción. No manda la declaración ni el pago.",
 };
