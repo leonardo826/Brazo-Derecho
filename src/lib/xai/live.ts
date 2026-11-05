@@ -1,3 +1,4 @@
+import { linkAbortSignal } from "@/lib/chat/abort";
 import { EMPTY_USAGE } from "@/lib/pricing";
 import { modelInput } from "@/lib/xai/chat-input";
 import { mapXaiStreamEvent, readOutputText, readSseData, readTokenUsage, type ResponsesBody } from "@/lib/xai/parse";
@@ -69,7 +70,7 @@ export class LiveXaiClient implements XaiClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(requestBody(request, false)),
-      signal: AbortSignal.timeout(slowTask(request) ? 240_000 : 45_000),
+      signal: linkAbortSignal(slowTask(request) ? 240_000 : 45_000, request.signal),
     });
 
     const text = await response.text();
@@ -121,7 +122,7 @@ export class LiveXaiClient implements XaiClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(requestBody(request, true)),
-      signal: AbortSignal.timeout(slowTask(request) ? 240_000 : 45_000),
+      signal: linkAbortSignal(slowTask(request) ? 240_000 : 45_000, request.signal),
     });
     if (!response.ok) throw new Error("La API de xAI no respondió");
 

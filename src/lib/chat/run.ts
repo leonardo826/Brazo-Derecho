@@ -1,3 +1,4 @@
+import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/chat/abort";
 import {
   accountantChatInstructions,
   APPROVED_PORTAL_NOTE,
@@ -87,15 +88,12 @@ async function recordVaultConfirmation(organizationId: string, actorUserId: stri
   }
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function* streamModel(input: {
   threadId: string;
   organizationId: string;
   organizationName: string;
   extra: string;
+  signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   const turns = await loadHistory(input.threadId, input.organizationId);
   const vault = await vaultPrompt(
@@ -110,6 +108,7 @@ async function* streamModel(input: {
   const client = createXaiClient();
   let raw = "";
   let final: XaiResponse | null = null;
+  const gap = chunkGapMs(xaiUsesNetwork());
   try {
     for await (const event of client.streamRespond({
       model: modelFor("ACCOUNTING"),
@@ -118,10 +117,14 @@ async function* streamModel(input: {
       usage: USAGE_PRESETS.text,
       businessName: input.organizationName,
       maxOutputTokens: 4000,
+      signal: input.signal,
     })) {
+      if (streamWasStopped(input.signal)) return;
       if (event.type === "status") yield { type: "status", text: event.text };
       if (event.type === "delta") {
-        if (!xaiUsesNetwork() && process.env.VITEST !== "true") await delay(12);
+        await waitChunk(input.signal, gap);
+        // Stopping here skips reserveUsage below, so the consult is not billed.
+        if (streamWasStopped(input.signal)) return;
         raw += event.text;
         yield { type: "delta", text: event.text };
       }
@@ -129,18 +132,21 @@ async function* streamModel(input: {
     }
   } catch (error) {
     if (missingTable(error)) throw error;
+    if (streamWasStopped(input.signal) || isAbortError(error)) return;
     logEvent("chat.ia", { organizationId: input.organizationId });
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };
     yield { type: "error", code: "ia" };
     return;
   }
+  if (streamWasStopped(input.signal)) return;
   if (!final?.outputText.trim() && !raw.trim()) {
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };
     yield { type: "error", code: "ia" };
     return;
   }
+  if (streamWasStopped(input.signal)) return;
   const response = final ?? {
     id: "resp_parcial",
     model: modelFor("ACCOUNTING"),
@@ -196,6 +202,7 @@ async function* streamPortalAccess(input: {
   organizationId: string;
   actorUserId: string;
   text: string;
+  signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   yield { type: "status", text: "Revisando la bóveda…" };
   let rows: CredentialMeta[] = [];
@@ -245,6 +252,7 @@ async function* streamPortalAccess(input: {
       body = vaultScreenMessage(plan.credential.portal);
     }
   }
+  if (streamWasStopped(input.signal)) return;
   const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body);
   if (!saved) {
     yield { type: "error", code: "limite" };
@@ -261,6 +269,7 @@ export async function* streamChatTurn(input: {
   actorUserId: string;
   text: string;
   files: PreparedFile[];
+  signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   const action = sensitiveRequest(input.text);
   const saved = await saveUserMessage({
@@ -275,12 +284,14 @@ export async function* streamChatTurn(input: {
     yield { type: "done" };
     return;
   }
+  if (streamWasStopped(input.signal)) return;
   if (wantsPortalAccess(input.text)) {
     yield* streamPortalAccess({
       threadId: saved.threadId,
       organizationId: input.organizationId,
       actorUserId: input.actorUserId,
       text: input.text,
+      signal: input.signal,
     });
     return;
   }
@@ -292,6 +303,7 @@ export async function* streamChatTurn(input: {
     organizationId: input.organizationId,
     organizationName: input.organizationName,
     extra: "",
+    signal: input.signal,
   });
 }
 
@@ -301,6 +313,7 @@ export async function* streamDecision(input: {
   actorUserId: string;
   messageId: string;
   decision: "APPROVED" | "CANCELED";
+  signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   const current = await prisma.agentMessage.findFirst({
     where: {
@@ -339,10 +352,12 @@ export async function* streamDecision(input: {
     where: { organizationId: input.organizationId, message: { threadId: current.threadId, role: "USER" } },
   });
   if (files > 0) yield { type: "status", text: "Revisando el archivo…" };
+  if (streamWasStopped(input.signal)) return;
   yield* streamModel({
     threadId: current.threadId,
     organizationId: input.organizationId,
     organizationName: input.organizationName,
     extra: APPROVED_NOTE,
+    signal: input.signal,
   });
 }

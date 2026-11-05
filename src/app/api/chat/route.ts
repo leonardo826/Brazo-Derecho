@@ -79,12 +79,15 @@ export async function POST(request: Request) {
     if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
   }
   return sseResponse(
-    streamChatTurn({
-      organizationId: session.organizationId,
-      organizationName: session.organizationName,
-      actorUserId: session.userId,
-      text: parsed.text,
-      files: parsed.files,
-    }),
+    (signal) =>
+      streamChatTurn({
+        organizationId: session.organizationId,
+        organizationName: session.organizationName,
+        actorUserId: session.userId,
+        text: parsed.text,
+        files: parsed.files,
+        signal,
+      }),
+    request.signal,
   );
 }

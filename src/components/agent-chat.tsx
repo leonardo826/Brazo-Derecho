@@ -4,8 +4,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
+import { isAbortError } from "@/lib/chat/abort";
+import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
-import { replaceOptimisticUser } from "@/lib/chat/thread";
+import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
 import { ACCOUNTING_DISCLAIMER } from "@/lib/catalog";
@@ -13,6 +15,42 @@ import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
 type LocalFile = { file: File; url: string };
+type Draft = { id: string; text: string; files: LocalFile[] };
+
+const STOPPED_NOTE = "Detuviste la respuesta.";
+
+function optimisticUser(draft: Draft): PublicMessage {
+  return {
+    id: draft.id,
+    role: "USER",
+    kind: "TEXT",
+    body: draft.text,
+    action: "",
+    actionTitle: "",
+    confirmation: null,
+    createdAt: new Date().toISOString(),
+    attachments: draft.files.map((item, index) => ({
+      id: `${draft.id}-${index}`,
+      fileName: item.file.name,
+      mimeType: item.file.type || "application/octet-stream",
+      sizeBytes: item.file.size,
+    })),
+  };
+}
+
+function localAssistant(body: string): PublicMessage {
+  return {
+    id: `local-stop-${crypto.randomUUID()}`,
+    role: "ASSISTANT",
+    kind: "TEXT",
+    body,
+    action: "",
+    actionTitle: "",
+    confirmation: null,
+    createdAt: new Date().toISOString(),
+    attachments: [],
+  };
+}
 
 type BrowserSpeech = {
   lang: string;
@@ -152,6 +190,7 @@ export function AgentChat({
   const [composer, setComposer] = useState("");
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [pending, setPending] = useState(false);
+  const [waitingIds, setWaitingIds] = useState<string[]>([]);
   const [status, setStatus] = useState("");
   const [live, setLive] = useState("");
   const [notice, setNotice] = useState("");
@@ -165,6 +204,23 @@ export function AgentChat({
   const stopRecord = useRef<(() => void) | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
+  const turns = useRef<TurnQueue<Draft>>({ active: null, waiting: [] });
+  const busyRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const liveRef = useRef("");
+  const stopRequestedRef = useRef(false);
+  const committedRef = useRef(false);
+  const draftText = useRef("");
+  const filesRef = useRef<LocalFile[]>([]);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const node = logRef.current;
@@ -178,150 +234,292 @@ export function AgentChat({
     node.style.height = `${Math.min(node.scrollHeight, 112)}px`;
   }, [composer]);
 
-  function upsert(message: PublicMessage, localId = "") {
-    setItems((prev) => replaceOptimisticUser(prev, message, localId));
+  function publishQueue() {
+    setWaitingIds(turns.current.waiting.map((item) => item.id));
+  }
+
+  function updateComposer(value: string) {
+    draftText.current = value;
+    setComposer(value);
+  }
+
+  function updateFiles(next: LocalFile[]) {
+    filesRef.current = next;
+    setFiles(next);
+  }
+
+  function appendComposer(text: string) {
+    setComposer((current) => {
+      const next = current ? `${current} ${text}` : text;
+      draftText.current = next;
+      return next;
+    });
+  }
+
+  function clearLive() {
+    liveRef.current = "";
+    setLive("");
+  }
+
+  function queuedIds() {
+    return turns.current.waiting.map((item) => item.id);
+  }
+
+  function remember(message: PublicMessage, localId = "") {
+    const queued = queuedIds();
+    setItems((prev) => placeThreadMessage(prev, message, localId, queued));
+  }
+
+  function pushStopped(body: string) {
+    const queued = queuedIds();
+    setItems((prev) => insertBeforeQueue(prev, localAssistant(body), queued));
+  }
+
+  function freezePartial() {
+    if (!mountedRef.current) return;
+    const partial = liveRef.current.trim();
+    clearLive();
+    setStatus("");
+    if (committedRef.current) return;
+    if (partial) {
+      pushStopped(`${partial}\n\n${STOPPED_NOTE}`);
+      return;
+    }
+    if (stopRequestedRef.current) pushStopped(STOPPED_NOTE);
   }
 
   function apply(event: ChatClientEvent) {
     if (event.type === "status") setStatus(event.text);
     if (event.type === "user") {
-      // El updater de React corre después de este turno. Si el id temporal se lee ahí,
-      // el ref ya está vacío y la burbuja optimista queda junto a la guardada.
+      // React runs the updater after this turn. Reading the temp id inside it
+      // would see an empty ref and leave the optimistic bubble next to the saved one.
       const localId = tempId.current;
       tempId.current = "";
-      upsert(event.message, localId);
+      remember(event.message, localId);
     }
     if (event.type === "delta") {
-      setLive((current) => hideActionMarker(current + event.text));
+      const next = hideActionMarker(liveRef.current + event.text);
+      liveRef.current = next;
+      setLive(next);
       setStatus("escribiendo…");
     }
     if (event.type === "message") {
-      setLive("");
-      upsert(event.message);
+      if (event.message.role === "ASSISTANT") committedRef.current = true;
+      clearLive();
+      remember(event.message);
     }
-    if (event.type === "replace") upsert(event.message);
+    if (event.type === "replace") remember(event.message);
     if (event.type === "usage") setConsults(event.consults);
     if (event.type === "error") {
       setNotice(CHAT_ERROR[event.code] ?? CHAT_ERROR.ia);
-      setLive("");
+      clearLive();
       setStatus("");
     }
     if (event.type === "done") {
-      setPending(false);
-      setStatus("");
-      setLive("");
+      committedRef.current = true;
+      const more = turns.current.waiting.length > 0 && busyRef.current;
+      if (!more) setPending(false);
+      setStatus(more ? "Sigo con el siguiente…" : "");
+      clearLive();
       router.refresh();
     }
   }
 
-  async function consume(response: Response, restore: () => void) {
+  async function consume(response: Response, signal: AbortSignal, restore: () => void) {
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !contentType.includes("text/event-stream")) {
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       setNotice(CHAT_ERROR[body.error ?? ""] ?? CHAT_ERROR.ia);
       restore();
-      setPending(false);
       setStatus("");
-      return true;
+      clearLive();
+      return "error" as const;
     }
     let lastAssistant = "";
     let lastId = "";
-    await readEvents(response, (event) => {
-      apply(event);
-      if (event.type === "message" && event.message.role === "ASSISTANT" && event.message.kind === "TEXT") {
-        lastAssistant = event.message.body;
-        lastId = event.message.id;
-      }
-      if (event.type === "done" && autoplayNow() && lastAssistant) void play(lastAssistant, lastId);
-    });
-    setPending(false);
-    return false;
+    let failed = false;
+    try {
+      await readEvents(response, (event) => {
+        if (event.type === "error") failed = true;
+        apply(event);
+        if (event.type === "message" && event.message.role === "ASSISTANT" && event.message.kind === "TEXT") {
+          lastAssistant = event.message.body;
+          lastId = event.message.id;
+        }
+        if (event.type === "done" && autoplayNow() && lastAssistant) void play(lastAssistant, lastId);
+      });
+    } catch (error) {
+      if (isAbortError(error) || signal.aborted) return "abort" as const;
+      throw error;
+    }
+    if (signal.aborted || stopRequestedRef.current) return "abort" as const;
+    if (failed) return "error" as const;
+    return "done" as const;
   }
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending || !open) return;
-    const text = composer.trim();
-    const chosen = files;
-    if (!text && chosen.length === 0) return;
-    const snapshot = composer;
-    const id = `local-${crypto.randomUUID()}`;
-    tempId.current = id;
-    setNotice("");
+  function takeBack(draft: Draft) {
+    tempId.current = "";
+    if (draftText.current.trim() || filesRef.current.length > 0) return false;
+    if (!draft.text && draft.files.length === 0) return true;
+    updateComposer(draft.text);
+    updateFiles(draft.files);
+    setItems((prev) => prev.filter((item) => item.id !== draft.id));
+    return true;
+  }
+
+  function revokeFiles(draft: Draft) {
+    for (const item of draft.files) {
+      if (item.url) URL.revokeObjectURL(item.url);
+    }
+  }
+
+  async function finishActive(draft: Draft, end: TurnEnd, requeue: boolean) {
+    if (!mountedRef.current) return;
+    if ((end === "done" || end === "abort") && !requeue) revokeFiles(draft);
+    const step = completeTurn(turns.current, end);
+    const keep = requeue && (draft.text.length > 0 || draft.files.length > 0);
+    turns.current = keep ? requeueFront(step.queue, draft) : step.queue;
+    publishQueue();
+    if (step.next && !keep) {
+      await sendDraft(step.next, true);
+      return;
+    }
+    busyRef.current = false;
+    setPending(false);
+    setStatus("");
+  }
+
+  async function sendDraft(draft: Draft, followup: boolean) {
+    stopRequestedRef.current = false;
+    committedRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    tempId.current = draft.id;
     setPending(true);
-    setStatus("Revisando…");
-    setLive("");
-    setItems((prev) => [
-      ...prev,
-      {
-        id,
-        role: "USER",
-        kind: "TEXT",
-        body: text,
-        action: "",
-        actionTitle: "",
-        confirmation: null,
-        createdAt: new Date().toISOString(),
-        attachments: chosen.map((item, index) => ({
-          id: `${id}-${index}`,
-          fileName: item.file.name,
-          mimeType: item.file.type || "application/octet-stream",
-          sizeBytes: item.file.size,
-        })),
-      },
-    ]);
-    setComposer("");
-    setFiles([]);
+    setNotice("");
+    setStatus(followup ? "Sigo con el siguiente…" : "Revisando…");
+    clearLive();
     const form = new FormData();
     form.set("agente", "ACCOUNTING");
-    form.set("texto", text);
-    for (const item of chosen) form.append("archivo", item.file);
+    form.set("texto", draft.text);
+    for (const item of draft.files) form.append("archivo", item.file);
+    let end: TurnEnd = "error";
+    let requeue = false;
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { [CSRF_HEADER]: csrf },
         body: form,
+        signal: controller.signal,
       });
-      const kept = await consume(response, () => {
-        tempId.current = "";
-        setItems((prev) => prev.filter((item) => item.id !== id));
-        setComposer(snapshot);
-        setFiles(chosen);
+      const result = await consume(response, controller.signal, () => {
+        requeue = !takeBack(draft);
       });
-      if (!kept) {
-        for (const item of chosen) {
-          if (item.url) URL.revokeObjectURL(item.url);
-        }
+      if (result === "abort") {
+        freezePartial();
+        end = "abort";
+      } else if (result === "error") {
+        end = "error";
+      } else {
+        if (!committedRef.current && stopRequestedRef.current) freezePartial();
+        end = "done";
       }
-    } catch {
-      tempId.current = "";
-      setItems((prev) => prev.filter((item) => item.id !== id));
-      setComposer(snapshot);
-      setFiles(chosen);
-      setNotice(CHAT_ERROR.ia);
-      setPending(false);
-      setStatus("");
+    } catch (error) {
+      if (!mountedRef.current) return;
+      if (isAbortError(error) || controller.signal.aborted) {
+        freezePartial();
+        end = "abort";
+      } else {
+        requeue = !takeBack(draft);
+        setNotice(CHAT_ERROR.ia);
+        clearLive();
+        setStatus("");
+        end = "error";
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
+    await finishActive(draft, end, requeue);
+  }
+
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!open) return;
+    const text = composer.trim();
+    const chosen = files;
+    if (!text && chosen.length === 0) return;
+    const draft: Draft = { id: `local-${crypto.randomUUID()}`, text, files: chosen };
+    updateComposer("");
+    updateFiles([]);
+    setNotice("");
+    setItems((prev) => [...prev, optimisticUser(draft)]);
+    const pushed = pushTurn(turns.current, draft);
+    turns.current = pushed.queue;
+    publishQueue();
+    composerRef.current?.focus({ preventScroll: true });
+    if (!pushed.startNow) return;
+    busyRef.current = true;
+    await sendDraft(draft, false);
+  }
+
+  function stopResponse() {
+    stopRequestedRef.current = true;
+    abortRef.current?.abort();
+  }
+
+  function releaseQueue() {
+    if (busyRef.current || !open) return;
+    const step = releasePaused(turns.current);
+    turns.current = step.queue;
+    publishQueue();
+    if (!step.next) return;
+    busyRef.current = true;
+    void sendDraft(step.next, true);
   }
 
   async function decide(id: string, decision: "APPROVED" | "CANCELED") {
-    if (pending || !open) return;
+    if (busyRef.current || !open) return;
+    const sentinel: Draft = { id: `local-decision-${id}`, text: "", files: [] };
+    const pushed = pushTurn(turns.current, sentinel);
+    turns.current = pushed.queue;
+    if (!pushed.startNow) return;
+    busyRef.current = true;
+    stopRequestedRef.current = false;
+    committedRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setNotice("");
     setPending(true);
     setStatus(decision === "APPROVED" ? "Revisando…" : "");
-    setLive("");
+    clearLive();
+    let end: TurnEnd = "error";
     try {
       const response = await fetch("/api/chat/confirmacion", {
         method: "POST",
         headers: { "Content-Type": "application/json", [CSRF_HEADER]: csrf },
         body: JSON.stringify({ id, decision }),
+        signal: controller.signal,
       });
-      await consume(response, () => undefined);
-    } catch {
-      setNotice(CHAT_ERROR.ia);
-      setPending(false);
-      setStatus("");
+      const result = await consume(response, controller.signal, () => undefined);
+      if (result === "abort") {
+        freezePartial();
+        end = "abort";
+      } else end = result;
+    } catch (error) {
+      if (!mountedRef.current) return;
+      if (isAbortError(error) || controller.signal.aborted) {
+        freezePartial();
+        end = "abort";
+      } else {
+        setNotice(CHAT_ERROR.ia);
+        setStatus("");
+        clearLive();
+        end = "error";
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
+    await finishActive(sentinel, end, false);
   }
 
   function addFiles(list: FileList | null) {
@@ -333,6 +531,7 @@ export function AgentChat({
         const url = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
         next.push({ file, url });
       }
+      filesRef.current = next;
       return next;
     });
   }
@@ -342,6 +541,7 @@ export function AgentChat({
       const next = current.slice();
       const [removed] = next.splice(index, 1);
       if (removed?.url) URL.revokeObjectURL(removed.url);
+      filesRef.current = next;
       return next;
     });
   }
@@ -349,12 +549,12 @@ export function AgentChat({
   async function transcribeBrowser() {
     try {
       const text = await listenInBrowser("es-CL");
-      if (text) setComposer((current) => (current ? `${current} ${text}` : text));
+      if (text) appendComposer(text);
       return;
     } catch {
       try {
         const text = await listenInBrowser("es-ES");
-        if (text) setComposer((current) => (current ? `${current} ${text}` : text));
+        if (text) appendComposer(text);
       } catch {
         setNotice(CHAT_ERROR.voz);
       }
@@ -408,7 +608,7 @@ export function AgentChat({
       });
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; texto?: string; fallback?: boolean; error?: string };
       if (body.ok && body.texto) {
-        setComposer((current) => (current ? `${current} ${body.texto}` : body.texto ?? ""));
+        appendComposer(body.texto);
         return;
       }
       if (body.fallback || !response.ok) {
@@ -477,6 +677,69 @@ export function AgentChat({
 
   const shownLive = hideActionMarker(live);
   const over = consults >= limit;
+  const waiting = new Set(waitingIds);
+  const settled = items.filter((message) => !waiting.has(message.id));
+  const queued = items.filter((message) => waiting.has(message.id));
+
+  function renderMessage(message: PublicMessage) {
+    if (message.kind === "CONFIRMATION") {
+      return (
+        <article className="confirm-card" key={message.id}>
+          <p className="eyebrow">{message.actionTitle || "Confirmación"}</p>
+          <p>{message.body}</p>
+          <p className="muted">{ACTION_HELP}</p>
+          {message.confirmation === "PENDING" ? (
+            <div className="composer-actions">
+              <button className="button" type="button" disabled={pending || !open} onClick={() => decide(message.id, "APPROVED")}>
+                Aprobar
+              </button>
+              <button className="button secondary" type="button" disabled={pending || !open} onClick={() => decide(message.id, "CANCELED")}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <p className="muted">{message.confirmation === "APPROVED" ? "Aprobada. Preparo el borrador." : "Cancelada."}</p>
+          )}
+        </article>
+      );
+    }
+    const stoppedOnly = message.body.trim() === STOPPED_NOTE;
+    return (
+      <div className={`agent-row ${message.role === "USER" ? "user" : "assistant"}`} key={message.id}>
+        <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`}>
+          <p className="who">{message.role === "USER" ? "Tú" : "Agente"}</p>
+          {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
+          {message.attachments.length > 0 ? (
+            <div className="agent-files">
+              {message.attachments.map((file) =>
+                file.id.startsWith("local-") ? (
+                  <span key={file.id}>{file.fileName}</span>
+                ) : file.mimeType.startsWith("image/") ? (
+                  <a key={file.id} href={`/api/chat/adjuntos/${file.id}`} target="_blank" rel="noreferrer">
+                    {/* The thumbnail needs the session cookie; next/image does not send it. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/chat/adjuntos/${file.id}`} alt={file.fileName} />
+                  </a>
+                ) : (
+                  <a key={file.id} href={`/api/chat/adjuntos/${file.id}`}>
+                    {file.fileName}
+                  </a>
+                ),
+              )}
+            </div>
+          ) : null}
+          {waiting.has(message.id) ? <p className="muted when">En espera</p> : null}
+          <p className="muted when">{formatWhen(new Date(message.createdAt))}</p>
+          {message.role === "ASSISTANT" && !stoppedOnly ? <p className="muted disclaimer">{ACCOUNTING_DISCLAIMER}</p> : null}
+          {message.role === "ASSISTANT" && message.body.trim() && !stoppedOnly ? (
+            <button className="button secondary small" type="button" onClick={() => play(message.body, message.id)}>
+              {speakingId === message.id ? "Detener" : "Escuchar"}
+            </button>
+          ) : null}
+        </article>
+      </div>
+    );
+  }
 
   return (
     <section className="agent-chat" aria-label="Conversación con el contador">
@@ -495,62 +758,7 @@ export function AgentChat({
         {items.length === 0 && !shownLive ? (
           <p className="muted agent-empty">Escríbeme una duda de IVA, F29 o remuneraciones. El hilo queda guardado en tu empresa.</p>
         ) : null}
-        {items.map((message) =>
-          message.kind === "CONFIRMATION" ? (
-            <article className="confirm-card" key={message.id}>
-              <p className="eyebrow">{message.actionTitle || "Confirmación"}</p>
-              <p>{message.body}</p>
-              <p className="muted">{ACTION_HELP}</p>
-              {message.confirmation === "PENDING" ? (
-                <div className="composer-actions">
-                  <button className="button" type="button" disabled={pending || !open} onClick={() => decide(message.id, "APPROVED")}>
-                    Aprobar
-                  </button>
-                  <button className="button secondary" type="button" disabled={pending || !open} onClick={() => decide(message.id, "CANCELED")}>
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <p className="muted">{message.confirmation === "APPROVED" ? "Aprobada. Preparo el borrador." : "Cancelada."}</p>
-              )}
-            </article>
-          ) : (
-            <div className={`agent-row ${message.role === "USER" ? "user" : "assistant"}`} key={message.id}>
-              <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`}>
-                <p className="who">{message.role === "USER" ? "Tú" : "Agente"}</p>
-                {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
-                {message.attachments.length > 0 ? (
-                  <div className="agent-files">
-                    {message.attachments.map((file) =>
-                      file.id.startsWith("local-") ? (
-                        <span key={file.id}>{file.fileName}</span>
-                      ) : file.mimeType.startsWith("image/") ? (
-                        <a key={file.id} href={`/api/chat/adjuntos/${file.id}`} target="_blank" rel="noreferrer">
-                          {/* La miniatura pide la cookie de sesión; next/image no la manda. */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={`/api/chat/adjuntos/${file.id}`} alt={file.fileName} />
-                        </a>
-                      ) : (
-                        <a key={file.id} href={`/api/chat/adjuntos/${file.id}`}>
-                          {file.fileName}
-                        </a>
-                      ),
-                    )}
-                  </div>
-                ) : null}
-                <p className="muted when">{formatWhen(new Date(message.createdAt))}</p>
-                {message.role === "ASSISTANT" ? (
-                  <p className="muted disclaimer">{ACCOUNTING_DISCLAIMER}</p>
-                ) : null}
-                {message.role === "ASSISTANT" && message.body.trim() ? (
-                  <button className="button secondary small" type="button" onClick={() => play(message.body, message.id)}>
-                    {speakingId === message.id ? "Detener" : "Escuchar"}
-                  </button>
-                ) : null}
-              </article>
-            </div>
-          ),
-        )}
+        {settled.map((message) => renderMessage(message))}
         {pending && !shownLive ? (
           <div className="agent-row assistant">
             <article className="agent-bubble assistant typing">
@@ -568,6 +776,7 @@ export function AgentChat({
             </article>
           </div>
         ) : null}
+        {queued.map((message) => renderMessage(message))}
       </div>
       {notice ? (
         <p className="banner error" role="alert">
@@ -594,6 +803,16 @@ export function AgentChat({
             ))}
           </ul>
         ) : null}
+        {waitingIds.length > 0 ? (
+          <div className="composer-queue">
+            <p role="status">{waitingIds.length === 1 ? "1 mensaje en espera" : `${waitingIds.length} mensajes en espera`}</p>
+            {!pending ? (
+              <button className="button secondary" type="button" onClick={releaseQueue}>
+                Enviar en espera
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="composer-bar">
           <label className="composer-icon file-button">
             <AttachIcon />
@@ -603,7 +822,7 @@ export function AgentChat({
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif,.pdf,.txt,.csv,.json,application/pdf,text/plain,text/csv,application/json"
               multiple
-              disabled={!open || pending}
+              disabled={!open}
               onChange={(event) => {
                 addFiles(event.target.files);
                 event.target.value = "";
@@ -618,8 +837,8 @@ export function AgentChat({
             maxLength={4000}
             rows={1}
             placeholder="Escribe tu duda…"
-            disabled={!open || pending}
-            onChange={(event) => setComposer(event.target.value)}
+            disabled={!open}
+            onChange={(event) => updateComposer(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -627,11 +846,17 @@ export function AgentChat({
               }
             }}
           />
-          <button className={`composer-icon${recording ? " recording" : ""}`} type="button" disabled={!open || pending} aria-pressed={recording} onClick={toggleMic}>
+          <button className={`composer-icon${recording ? " recording" : ""}`} type="button" disabled={!open} aria-pressed={recording} onClick={toggleMic}>
             {recording ? <StopIcon /> : <MicIcon />}
             <span className="sr-only">{recording ? "Detener" : "Micrófono"}</span>
           </button>
-          <button className="composer-icon send" type="submit" disabled={!open || pending || (!composer.trim() && files.length === 0)}>
+          {pending ? (
+            <button className="composer-icon stop" type="button" onClick={stopResponse}>
+              <StopIcon />
+              <span className="sr-only">Detener respuesta</span>
+            </button>
+          ) : null}
+          <button className="composer-icon send" type="submit" disabled={!open || (!composer.trim() && files.length === 0)}>
             <SendIcon />
             <span className="sr-only">Enviar</span>
           </button>
