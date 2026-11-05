@@ -44,7 +44,8 @@ export default async function AdminPage({
   const meters = await metersByOrganization(organizationIds, viewedAt);
   const selectedKey = monthKey(viewedAt);
   const totalCost = organizations.reduce(
-    (sum, organization) => sum + (usage.byOrganization.get(organization.id)?.costClp ?? 0),
+    (sum, organization) =>
+      sum + (organization.isQa ? 0 : (usage.byOrganization.get(organization.id)?.costClp ?? 0)),
     0,
   );
   const referenceId = whatsappEnv().phoneNumberId;
@@ -83,6 +84,9 @@ export default async function AdminPage({
         <p className="price">
           {formatClp(totalCost)} <small>suma de las empresas</small>
         </p>
+        {organizations.some((organization) => organization.isQa) ? (
+          <p className="muted">Las cuentas de prueba interna no entran en esta suma ni se facturan.</p>
+        ) : null}
       </section>
       {organizations.length === 0 ? (
         <EmptyState title="Todavía no hay empresas">Cuando alguien cree una cuenta, aparece en esta lista.</EmptyState>
@@ -118,6 +122,12 @@ export default async function AdminPage({
                   <tr key={organization.id}>
                     <td>
                       <strong>{organization.name}</strong>
+                      {organization.isQa ? (
+                        <>
+                          <br />
+                          <span className="muted">Prueba interna, no se factura</span>
+                        </>
+                      ) : null}
                       <br />
                       <span className="muted">
                         {organization.whatsappPhoneNumberId

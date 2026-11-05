@@ -3,10 +3,12 @@ import { canActivateMockPlan } from "@/lib/flow/mock-plan";
 import { planFor } from "@/lib/flow/plans";
 import { addOneMonth } from "@/lib/flow/state";
 import { prisma } from "@/lib/prisma";
+import { organizationIsQa } from "@/lib/qa-account";
 
 export { canActivateMockPlan } from "@/lib/flow/mock-plan";
 
 export async function activateMockPlan(organizationId: string, agent: AgentId, now = new Date()) {
+  if (await organizationIsQa(organizationId)) return { ok: false as const };
   const subscription = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId, agent } },
   });

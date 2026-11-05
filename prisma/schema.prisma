@@ -29,6 +29,8 @@ model Organization {
   flowCustomerId         String?         @unique
   whatsappPhoneNumberId  String?         @unique
   suspendedAt            DateTime?
+  /// Cuenta de prueba interna. No se factura ni entra en métricas de cobro.
+  isQa                   Boolean         @default(false)
   createdAt              DateTime        @default(now())
   memberships   Membership[]
   subscriptions Subscription[]

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   applyMeterEvent,
+  billWithoutCharges,
   buildMonthBill,
   EMPTY_USAGE_MONTH,
   estimateClientPriceClp,
@@ -112,6 +113,16 @@ describe("medición de consumo", () => {
     expect(bill.xaiUsd).toBeCloseTo(2);
     expect(bill.computerUsd).toBeCloseTo(0.5);
     expect(bill.clientClp).toBe(Math.round(5 * 900));
+    const sinCobro = billWithoutCharges(bill);
+    expect(sinCobro.tasks).toBe(0);
+    expect(sinCobro.tokens).toEqual({ inputTokens: 0, cachedTokens: 0, outputTokens: 0 });
+    expect(sinCobro.apiTokens.inputTokens).toBe(0);
+    expect(sinCobro.xaiUsd).toBe(0);
+    expect(sinCobro.computerUsd).toBe(0);
+    expect(sinCobro.clientUsd).toBe(0);
+    expect(sinCobro.clientClp).toBe(0);
+    expect(sinCobro.fixedPriceClp).toBeNull();
+    expect(sinCobro.byModel).toEqual([]);
     expect(splitMeterBuckets(bill.byModel.map((row) => ({ model: row.model, synthetic: false, kind: "CHAT", ...row.tokens }))).apiTokens).toEqual(
       bill.apiTokens,
     );

@@ -10,6 +10,7 @@ import { mercadoPagoIsConfigured } from "@/lib/mercadopago/client";
 import { paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { getPaymentProvider } from "@/lib/payments/registry";
 import { prisma } from "@/lib/prisma";
+import { organizationIsQa, QaSinCobroError } from "@/lib/qa-account";
 import { requireSession } from "@/lib/session";
 import { iabotChargeClp, trialEnd } from "@/lib/subscription";
 import { paymentProviderSchema } from "@/lib/validation";
@@ -23,6 +24,7 @@ export async function activateTrialAction(formData: FormData) {
   if (!isAgentId(agentRaw)) redirect(`${back}?error=datos`);
   const providerParsed = paymentProviderSchema.safeParse(String(formData.get("provider") ?? "flow"));
   if (!providerParsed.success) redirect(`${back}?error=datos`);
+  if (await organizationIsQa(session.organizationId)) redirect(withNotice(back, "ok", "qa_sin_cobro"));
   const provider = providerParsed.data;
   const guia = formData.get("guia") === "1" ? "&guia=1" : "";
   const flowAmountClp = planFor(agentRaw).amountClp;
@@ -38,6 +40,7 @@ export async function activateTrialAction(formData: FormData) {
       });
       redirectUrl = started.redirectUrl;
     } catch (error) {
+      if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
       console.error("Mercado Pago no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(`${back}?error=mercadopago`);
     }
@@ -56,6 +59,7 @@ export async function activateTrialAction(formData: FormData) {
       });
       url = started.redirectUrl || null;
     } catch (error) {
+      if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
       console.error("Flow no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(`${back}?error=flow`);
     }
@@ -156,6 +160,7 @@ export async function confirmMockPaymentAction(formData: FormData) {
   if (provider === "flow" && flowIsConfigured()) redirect(`${back}?error=flow`);
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, back);
+  if (await organizationIsQa(session.organizationId)) redirect(withNotice(back, "ok", "qa_sin_cobro"));
   if (!isAgentId(agentRaw)) redirect(withNotice(checkout, "error", "datos"));
 
   if (provider === "mercadopago" && mercadoPagoIsConfigured()) {
@@ -169,6 +174,7 @@ export async function confirmMockPaymentAction(formData: FormData) {
       });
       redirectUrl = started.redirectUrl;
     } catch (error) {
+      if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
       console.error("Mercado Pago no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(withNotice(checkout, "error", "mercadopago"));
     }

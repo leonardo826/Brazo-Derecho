@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { limitFor, type AgentId, type MetricId } from "@/lib/catalog";
 import type { TokenUsage } from "@/lib/pricing";
 import { prisma } from "@/lib/prisma";
+import { organizationIsQa, qaOrganizationIdSet, recordsBillingUsage } from "@/lib/qa-account";
 import { evaluateLimit, monthBounds, summarizeUsage, type UsageSlice } from "@/lib/usage";
 
 type ReserveInput = {
@@ -15,6 +16,7 @@ type ReserveInput = {
 };
 
 export async function usedThisMonth(organizationId: string, metric: MetricId, now = new Date()) {
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) return 0;
   const { start, end } = monthBounds(now);
   const aggregate = await prisma.usageEvent.aggregate({
     where: { organizationId, metric, createdAt: { gte: start, lt: end } },
@@ -24,6 +26,10 @@ export async function usedThisMonth(organizationId: string, metric: MetricId, no
 }
 
 export async function reserveUsage(tx: Prisma.TransactionClient, input: ReserveInput) {
+  if (!recordsBillingUsage(await organizationIsQa(input.organizationId, tx))) {
+    const limit = limitFor(input.agent, input.metric);
+    return { ok: true as const, used: 0, limit, remaining: limit };
+  }
   const { start, end } = monthBounds(input.now);
   const aggregate = await tx.usageEvent.aggregate({
     where: {
@@ -59,12 +65,17 @@ export async function usageByOrganization(organizationIds: string[], now = new D
   if (organizationIds.length === 0) {
     return { label: bounds.label, byOrganization: new Map<string, ReturnType<typeof summarizeUsage>>() };
   }
-  const events = await prisma.usageEvent.findMany({
-    where: {
-      organizationId: { in: organizationIds },
-      createdAt: { gte: bounds.start, lt: bounds.end },
-    },
-  });
+  const qa = await qaOrganizationIdSet(organizationIds);
+  const billable = organizationIds.filter((id) => recordsBillingUsage(qa.has(id)));
+  const events =
+    billable.length === 0
+      ? []
+      : await prisma.usageEvent.findMany({
+          where: {
+            organizationId: { in: billable },
+            createdAt: { gte: bounds.start, lt: bounds.end },
+          },
+        });
   for (const event of events) {
     grouped.get(event.organizationId)?.push({
       agent: event.agent,
@@ -83,6 +94,9 @@ export async function usageByOrganization(organizationIds: string[], now = new D
 
 export async function usageSnapshot(organizationId: string, now = new Date()) {
   const bounds = monthBounds(now);
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) {
+    return { ...bounds, ...summarizeUsage([]) };
+  }
   const events = await prisma.usageEvent.findMany({
     where: {
       organizationId,
