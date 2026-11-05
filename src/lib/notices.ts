@@ -32,6 +32,7 @@ export const ERRORS: Record<string, string> = {
   suspendida: "Tu empresa está suspendida. Los agentes están detenidos hasta que administración la reactive.",
   plataforma: "Esa acción es solo de administración.",
   token: "Ese enlace ya no sirve: se usó o se venció. Pide uno nuevo.",
+  computador: "No pude hablar con el computador.",
 };
 
 export const OKS: Record<string, string> = {
@@ -66,4 +67,9 @@ export const OKS: Record<string, string> = {
   verificacion: "Te reenviamos el enlace para confirmar el correo.",
   verificado: "Ese correo ya estaba confirmado.",
   correo_ok: "Correo confirmado. Gracias.",
+  computador_tarea: "La tarea quedó encolada. Si no hay computador configurado, no salió a ningún escritorio.",
+  computador_pendiente: "Quedó pendiente de aprobación. No se envió ni se pagó nada.",
+  computador_rechazada: "Esa tarea no se hace: no hay envíos masivos.",
+  computador_aprobada: "Quedó marcada como aprobada. El envío y el pago siguen apagados.",
+  computador_descartada: "Tarea descartada. No se envió nada.",
 };

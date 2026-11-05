@@ -57,6 +57,8 @@ jobs:
         run: npm test
       - name: Typecheck
         run: npm run typecheck
+      - name: Typecheck computador
+        run: npx tsc -p agent-runtime --noEmit
       - name: Lint
         run: npm run lint
       - name: Migrate

@@ -1,0 +1,19 @@
+# Plantilla de Fase 1. No crea la app y no despliega.
+# El nombre iabot-desktop-PLANTILLA no es una app real.
+# No hay [http_service]: noVNC no queda publicado en internet.
+# La máquina y el volumen los armaría scripts/provision-client.ts, en dry-run por defecto.
+
+app = "iabot-desktop-PLANTILLA"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  XAI_MODE = "mock"
+  DISPLAY = ":99"
+  CHROME_PROFILE = "/data/chrome-profile"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2048"

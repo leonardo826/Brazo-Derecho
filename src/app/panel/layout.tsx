@@ -2,6 +2,7 @@ import { PanelShell } from "@/components/panel-shell";
 import { UsageWarningBanner } from "@/components/usage-warning";
 import { VerifyBanner } from "@/components/verify-banner";
 import { isPlatformAdmin } from "@/lib/admin";
+import { computerPanelEnabled } from "@/lib/computer/flag";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { usageSnapshot } from "@/lib/usage-store";
@@ -24,7 +25,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   ]);
   const suspended = Boolean(organization?.suspendedAt);
   return (
-    <PanelShell session={session} showAdmin={admin}>
+    <PanelShell session={session} showAdmin={admin} showComputer={computerPanelEnabled()}>
       {user?.emailVerifiedAt ? null : <VerifyBanner />}
       <UsageWarningBanner totals={usage.totals} />
       {suspended && admin ? (

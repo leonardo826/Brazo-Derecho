@@ -9,10 +9,12 @@ import type { Session } from "@/lib/session";
 export function PanelShell({
   session,
   showAdmin = false,
+  showComputer = false,
   children,
 }: {
   session: Session;
   showAdmin?: boolean;
+  showComputer?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -26,7 +28,7 @@ export function PanelShell({
             <Logo href="/panel" />
             <p className="org">{session.organizationName}</p>
           </div>
-          <PanelNav showAdmin={showAdmin} />
+          <PanelNav showAdmin={showAdmin} showComputer={showComputer} />
           <div className="side-foot">
             <p className="whoami">
               <span>{session.name}</span>

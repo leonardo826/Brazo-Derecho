@@ -14,12 +14,17 @@ const LINKS = [
   { href: "/panel/cuenta", label: "Cuenta" },
 ];
 
-export function PanelNav({ showAdmin = false }: { showAdmin?: boolean }) {
+export function PanelNav({ showAdmin = false, showComputer = false }: { showAdmin?: boolean; showComputer?: boolean }) {
   const pathname = usePathname();
   const tourHref = useDemoTourHref();
+  const links = [
+    ...LINKS,
+    ...(showComputer ? [{ href: "/panel/computador", label: "Ver mi computador" }] : []),
+    ...(showAdmin ? [{ href: "/panel/admin", label: "Administración" }] : []),
+  ];
   return (
     <nav className="panel-nav" aria-label="Panel">
-      {[...LINKS, ...(showAdmin ? [{ href: "/panel/admin", label: "Administración" }] : [])].map((link) => {
+      {links.map((link) => {
         const active = link.href === "/panel" ? pathname === "/panel" : pathname.startsWith(link.href);
         const onTour = tourHref === link.href;
         const className = [active ? "active" : "", onTour ? "tour-target" : ""].filter(Boolean).join(" ");
