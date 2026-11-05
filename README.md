@@ -15,11 +15,13 @@ Sin claves el panel sigue funcionando: xAI responde con el simulador, la prueba 
 - Node.js 22
 - PostgreSQL 16
 
-Con Docker:
+Con Docker, la base:
 
 ```bash
 docker compose up -d
 ```
+
+Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía está en `infra/desktop/README.md`.
 
 Sin Docker, crea la base y el usuario `brazo` / `brazo` sobre la base `brazo_derecho`.
 
@@ -52,6 +54,11 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `XAI_MODE` | `mock` obliga al simulador aunque exista clave. | Con clave, llama a xAI. |
 | `XAI_MODEL_ROUTINE` | Modelo de tareas habituales. `grok-4.3` o `grok-4.7`. | `grok-4.3`. |
 | `XAI_MODEL_COMPLEX` | Modelo de cotizaciones y marketing. `grok-4.3` o `grok-4.7`. | `grok-4.7`. |
+| `XAI_COMPUTER_MODEL` | Modelo del computador del agente. `grok-4.3` o `grok-4.7`. | `grok-4.3`. Con `XAI_MODE=mock` o sin `XAI_API_KEY` no llama a xAI. |
+| `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En local se muestra. En producción queda oculto. |
+| `COMPUTER_AGENT_URL` | URL del agente del escritorio (`POST /task`). | La tarea queda en cola y no hay red. |
+| `FLY_API_TOKEN` | Token de Fly para el piloto. Solo por entorno. | El script de alta no llama a Fly. |
+| `FLY_DRY_RUN` | Tiene que ser exactamente `false`, con token y `--confirmo-gasto`, para crear máquina. | Dry-run: imprime el plan y no cobra. |
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
 | `FLOW_SECRET_KEY` | Secreto para firmar cada llamada (HMAC-SHA256). | Igual que sin api key: no hay cobro. |
 | `FLOW_API_URL` | Base del API. | `https://sandbox.flow.cl/api`. |

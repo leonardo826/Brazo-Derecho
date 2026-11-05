@@ -5,7 +5,7 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: ["src/generated/**", "test-results/**", "playwright-report/**"],
+    ignores: ["src/generated/**", "test-results/**", "playwright-report/**", "agent-runtime/**"],
   },
 ];
 

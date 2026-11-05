@@ -40,6 +40,7 @@ model Organization {
   posts         MarketingPost[]
   consults      AccountingConsult[]
   usageEvents   UsageEvent[]
+  computer      Computer?
 }
 
 enum MemberRole {
@@ -304,6 +305,61 @@ model MarketingPost {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
+}
+
+enum ComputerStatus {
+  PENDING
+  PROVISIONING
+  RUNNING
+  STOPPED
+  NEEDS_QR
+  ERROR
+}
+
+enum ComputerTaskStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+// Un computador (Fly Machine + volumen) por cliente. clientId es la organización.
+// El token de noVNC se guarda solo como hash. Fase 1 no crea la máquina.
+model Computer {
+  id             String         @id @default(cuid())
+  clientId       String         @unique
+  flyApp         String         @default("")
+  machineId      String         @default("")
+  volumeId       String         @default("")
+  status         ComputerStatus @default(PENDING)
+  region         String         @default("gru")
+  novncTokenHash String         @default("")
+  novncExpiresAt DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tasks          ComputerTask[]
+
+  @@index([status])
+}
+
+model ComputerTask {
+  id         String             @id @default(cuid())
+  computerId String
+  clientId   String
+  goal       String
+  status     ComputerTaskStatus @default(QUEUED)
+  sensitive  Boolean            @default(false)
+  result     String             @default("")
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  computer   Computer           @relation(fields: [computerId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+  @@index([computerId])
 }
 
 model AccountingConsult {
