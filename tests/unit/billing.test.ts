@@ -88,8 +88,9 @@ describe("medición de consumo", () => {
     });
     expect(price.xaiUsd).toBeCloseTo(3.4);
     expect(price.clientClp).toBe(Math.round(6.8 * 900));
-    expect(fixedShelfPriceClp({ IABOT_PRICE_CLP: "53400" })).toBe(53400);
-    expect(fixedShelfPriceClp({})).toBeNull();
+    expect(fixedShelfPriceClp({ IABOT_PRICE_CLP: "63546" })).toBe(63546);
+    expect(fixedShelfPriceClp({ IABOT_PRICE_CLP: "53400" })).toBe(63546);
+    expect(fixedShelfPriceClp({})).toBe(63546);
   });
 
   test("el mes separa los tokens del simulador y no los cobra", () => {
@@ -102,12 +103,12 @@ describe("medición de consumo", () => {
         { model: "grok-4.3", synthetic: true, kind: "CHAT", inputTokens: 100, cachedTokens: 0, outputTokens: 20 },
         { model: "grok-4.7", synthetic: true, kind: "TASK", inputTokens: 0, cachedTokens: 0, outputTokens: 0 },
       ],
-      env: { IABOT_PRICE_CLP: "53400", USAGE_COMPUTER_USD: "0.5", USAGE_FX_CLP_PER_USD: "900" },
+      env: { IABOT_PRICE_CLP: "63546", USAGE_COMPUTER_USD: "0.5", USAGE_FX_CLP_PER_USD: "900" },
     });
     expect(bill.tasks).toBe(2);
     expect(bill.apiTokens.inputTokens).toBe(1_000_000);
     expect(bill.simulatorTokens).toEqual({ inputTokens: 100, cachedTokens: 0, outputTokens: 20 });
-    expect(bill.fixedPriceClp).toBe(53400);
+    expect(bill.fixedPriceClp).toBe(63546);
     expect(bill.xaiUsd).toBeCloseTo(2);
     expect(bill.computerUsd).toBeCloseTo(0.5);
     expect(bill.clientClp).toBe(Math.round(5 * 900));

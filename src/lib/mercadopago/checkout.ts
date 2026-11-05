@@ -9,7 +9,7 @@ import {
   MercadoPagoApiError,
 } from "@/lib/mercadopago/client";
 import { prisma } from "@/lib/prisma";
-import { trialEnd } from "@/lib/subscription";
+import { iabotChargeClp, trialEnd } from "@/lib/subscription";
 
 type PreapprovalResponse = { id?: string | number; init_point?: string };
 
@@ -65,7 +65,9 @@ export async function startMercadoPagoSubscription(
   fetchImpl: typeof fetch = fetch,
 ) {
   if (!mercadoPagoIsConfigured()) throw new MercadoPagoApiError("Mercado Pago no está configurado", 503);
-  if (!Number.isInteger(input.amountClp) || input.amountClp <= 0) {
+  // El cobro es el precio bruto de la vitrina, no el monto que haya pasado quien llama.
+  const amountClp = iabotChargeClp();
+  if (!Number.isInteger(amountClp) || amountClp <= 0) {
     throw new MercadoPagoApiError("Monto inválido", 400);
   }
   const now = input.now ?? new Date();
@@ -87,12 +89,12 @@ export async function startMercadoPagoSubscription(
       periodStart: now,
       periodEnd: trialEnd(now),
       provider: "MERCADOPAGO",
-      amountClp: input.amountClp,
+      amountClp,
       mpPayerEmail: input.payerEmail,
     },
     update: {
       provider: "MERCADOPAGO",
-      amountClp: input.amountClp,
+      amountClp,
       mpPayerEmail: input.payerEmail,
       ...(open ? {} : { status: "TRIAL" as const, periodStart: now, periodEnd: trialEnd(now) }),
     },
@@ -106,7 +108,7 @@ export async function startMercadoPagoSubscription(
         subscriptionId: subscription.id,
         payerEmail: input.payerEmail,
         reason: plan.name,
-        amountClp: input.amountClp,
+        amountClp,
         firstChargeAt: subscription.periodEnd,
       }),
     },

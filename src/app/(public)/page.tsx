@@ -99,7 +99,7 @@ export default function HomePage() {
               <p className="iabot-soon">Precio de lanzamiento: pronto</p>
             ) : (
               <p className="iabot-price">
-                {formatClp(price)} <span>+ IVA al mes</span>
+                {formatClp(price)} <span>al mes, IVA incluido</span>
               </p>
             )}
             <Link className="iabot-cta" href="/registro">

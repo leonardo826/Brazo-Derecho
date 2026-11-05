@@ -49,8 +49,9 @@ SENTRY_DSN=""
 RESEND_API_KEY="re_..."
 RESEND_FROM="Brazo Derecho <hola@TU-DOMINIO>"
 
-# Ya está en producción. No la borres. No cobra sola.
-IABOT_PRICE_CLP="53400"
+# Precio bruto mensual, IVA incluido. La portada y Mercado Pago usan este monto.
+# En producción tiene que ser 63546. Si se deja el neto antiguo 53400, el código igual cobra 63546.
+IABOT_PRICE_CLP="63546"
 USAGE_USD_PER_M_INPUT=""
 USAGE_USD_PER_M_CACHED=""
 USAGE_USD_PER_M_OUTPUT=""
@@ -75,7 +76,7 @@ USAGE_COMPUTER_USD=""
 | `SENTRY_DSN` | No se reporta nada fuera del log. Con DSN, el servidor y el navegador (vía `/api/observabilidad`) envían el error a Sentry. |
 | `DEMO_SEED` | En producción el seed no crea ni actualiza las cuentas demo. Solo el valor exacto `true` las carga. `SEED_DEMO=1` ya no alcanza. No lo pongas en el servidor público. |
 | `ADMIN_EMAILS` | Nadie ve el costo por empresa ni puede suspender. |
-| `IABOT_PRICE_CLP` | La portada dice «Precio de lanzamiento: pronto» y el panel no muestra el precio fijo. No la borres en producción: ya está definida y la portada la muestra como «$… + IVA al mes». El cobro de Mercado Pago no sale de esta variable. |
+| `IABOT_PRICE_CLP` | Vacío usa el bruto del código, 63546. La portada dice «$63.546 al mes, IVA incluido» y Mercado Pago cobra ese monto. Si en producción sigue el neto 53400, el código también usa 63546. Un texto inválido deja la portada en «Precio de lanzamiento: pronto» y el cobro sigue en 63546. |
 | `USAGE_USD_PER_M_INPUT`, `USAGE_USD_PER_M_CACHED`, `USAGE_USD_PER_M_OUTPUT` | El estimado usa las constantes de grok-4.3 y grok-4.7. No es una tarifa en vivo. |
 | `USAGE_FX_CLP_PER_USD` | El estimado usa 900 pesos por dólar. No es el tipo de cambio del día. |
 | `USAGE_COMPUTER_USD` | El computador en la nube suma US$0 al estimado. |

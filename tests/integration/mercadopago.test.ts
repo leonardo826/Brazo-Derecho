@@ -54,6 +54,7 @@ function webhookRequest(input: { dataId: string; topic: string; body: unknown; t
 }
 
 const previousAppUrl = process.env.APP_URL;
+const previousIabotPrice = process.env.IABOT_PRICE_CLP;
 
 afterEach(() => {
   resetRateLimits();
@@ -63,6 +64,8 @@ afterEach(() => {
   delete process.env.MERCADOPAGO_TEST_PAYER_EMAIL;
   if (previousAppUrl === undefined) delete process.env.APP_URL;
   else process.env.APP_URL = previousAppUrl;
+  if (previousIabotPrice === undefined) delete process.env.IABOT_PRICE_CLP;
+  else process.env.IABOT_PRICE_CLP = previousIabotPrice;
 });
 
 afterAll(async () => {
@@ -190,6 +193,7 @@ describe("webhook de Mercado Pago", () => {
   test("crear la suscripción manda external_reference y redirige a init_point", async () => {
     process.env.MERCADOPAGO_ACCESS_TOKEN = TOKEN;
     process.env.APP_URL = "http://localhost:3000";
+    process.env.IABOT_PRICE_CLP = "53400";
     const { organizationId, email } = await makeOrg();
     let sent = "";
     const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
@@ -212,6 +216,8 @@ describe("webhook de Mercado Pago", () => {
     expect(body.back_url).toBe("http://localhost:3000/panel/pago");
     expect(body.auto_recurring.currency_id).toBe("CLP");
     expect(body.auto_recurring.frequency_type).toBe("months");
+    expect(body.auto_recurring.transaction_amount).toBe(63546);
+    expect(saved.amountClp).toBe(63546);
     expect(sent).not.toContain("free_trial");
     expect(sent).not.toContain(TOKEN);
     expect(saved.provider).toBe("MERCADOPAGO");

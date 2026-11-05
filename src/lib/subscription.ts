@@ -2,12 +2,30 @@ import { formatDay } from "@/lib/format";
 
 export const TRIAL_DAYS = 7;
 
-/** Precio mensual de IA Bot Profesional, solo si Leonardo lo definió. No inventa cifras. */
-export function iabotPriceClp(raw = process.env.IABOT_PRICE_CLP) {
+/**
+ * Precio mensual bruto de IA Bot Profesional, IVA incluido.
+ * 53.400 × 1,19 = 63.546. Lo usan la portada, el panel y Mercado Pago.
+ */
+export const IABOT_PRICE_CLP = 63546;
+
+/** Neto que estaba en el entorno. No se muestra ni se cobra. */
+const IABOT_PRICE_NET_LEGACY_CLP = "53400";
+
+/**
+ * Precio de vitrina. Vacío, o el neto antiguo, usan el bruto.
+ * Otro entero positivo lo reemplaza. Un texto inválido no inventa un monto.
+ */
+export function iabotPriceClp(raw: string | undefined = process.env.IABOT_PRICE_CLP): number | null {
   const value = raw?.trim() ?? "";
+  if (!value || value === IABOT_PRICE_NET_LEGACY_CLP) return IABOT_PRICE_CLP;
   if (!/^[1-9]\d*$/.test(value)) return null;
   const amount = Number(value);
   return Number.isSafeInteger(amount) ? amount : null;
+}
+
+/** Monto del preapproval. Si el entorno no trae un precio válido, cobra el bruto. */
+export function iabotChargeClp(raw?: string) {
+  return iabotPriceClp(raw) ?? IABOT_PRICE_CLP;
 }
 
 export function trialEnd(from = new Date()) {

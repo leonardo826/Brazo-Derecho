@@ -72,11 +72,14 @@ export default async function UsagePage({
           {formatClp(meter.clientClp)} <small>estimado, el doble del costo real</small>
         </p>
         {meter.fixedPriceClp != null ? (
-          <p>El precio fijo de la vitrina sigue en {formatClp(meter.fixedPriceClp)} + IVA al mes. Este estimado no lo reemplaza.</p>
+          <p>
+            El precio fijo de la vitrina es {formatClp(meter.fixedPriceClp)} al mes, IVA incluido. Este estimado no lo
+            reemplaza.
+          </p>
         ) : null}
         <p className="muted">
-          No es un cobro. Mercado Pago sigue con el monto fijo del plan. Las tarifas de grok-4.3 y grok-4.7 son
-          constantes: hay que refrescarlas desde docs.x.ai. El dólar de este cálculo ({meter.fx.toLocaleString("es-CL")}{" "}
+          No es un cobro. Mercado Pago cobra el precio de la vitrina, no este estimado. Las tarifas de grok-4.3 y grok-4.7
+          son constantes: hay que refrescarlas desde docs.x.ai. El dólar de este cálculo ({meter.fx.toLocaleString("es-CL")}{" "}
           pesos) no es el tipo de cambio del día.
         </p>
       </article>

@@ -14,7 +14,7 @@ import { flowIsTestMode, mercadoPagoIsTestMode } from "@/lib/payments/mode";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
-import { TRIAL_DAYS } from "@/lib/subscription";
+import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
 
 export default async function MockCheckoutPage({
   searchParams,
@@ -68,8 +68,13 @@ export default async function MockCheckoutPage({
         {flow ? (
           <p>Flow está configurado en este servidor. El pago de prueba no se usa: el cobro lo hace Flow.</p>
         ) : null}
-        {mercadoPago && !flow ? (
-          <p>Mercado Pago está configurado. Si lo eliges, el pago lo hace Mercado Pago. Flow, en esta pantalla, sigue en modo prueba.</p>
+        {mercadoPago ? (
+          <p>
+            Mercado Pago cobra {formatClp(iabotChargeClp())} al mes, IVA incluido.
+            {!flow
+              ? " Si lo eliges, el pago lo hace Mercado Pago. Flow, en esta pantalla, sigue en modo prueba."
+              : ""}
+          </p>
         ) : null}
         {!flow && agent && !ready ? (
           <p>Primero activa la prueba de {TRIAL_DAYS} días. Desde ahí puedes pasar al plan con este pago de prueba.</p>

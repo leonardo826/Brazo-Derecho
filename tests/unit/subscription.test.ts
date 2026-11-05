@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { formatClp } from "@/lib/format";
 import { buildPreapprovalPayload } from "@/lib/mercadopago/checkout";
-import { iabotPriceClp, trialEnd, TRIAL_DAYS } from "@/lib/subscription";
+import { IABOT_PRICE_CLP, iabotChargeClp, iabotPriceClp, trialEnd, TRIAL_DAYS } from "@/lib/subscription";
 
 describe("prueba de IA Bot", () => {
   test("TRIAL_DAYS es 7", () => {
@@ -26,18 +27,31 @@ describe("prueba de IA Bot", () => {
     expect(payload.auto_recurring.start_date).toBe(end.toISOString());
   });
 
-  test("el precio solo aparece si IABOT_PRICE_CLP es un entero positivo", () => {
+  test("el precio de vitrina es 63546 bruto, con IVA incluido", () => {
     const previous = process.env.IABOT_PRICE_CLP;
     delete process.env.IABOT_PRICE_CLP;
-    expect(iabotPriceClp()).toBeNull();
-    expect(iabotPriceClp("")).toBeNull();
-    expect(iabotPriceClp("  ")).toBeNull();
+    expect(IABOT_PRICE_CLP).toBe(63546);
+    expect(formatClp(IABOT_PRICE_CLP)).toBe("$63.546");
+    expect(iabotPriceClp()).toBe(63546);
+    expect(iabotPriceClp("")).toBe(63546);
+    expect(iabotPriceClp("  ")).toBe(63546);
+    expect(iabotPriceClp("53400")).toBe(63546);
+    expect(iabotChargeClp("53400")).toBe(63546);
     expect(iabotPriceClp("0")).toBeNull();
     expect(iabotPriceClp("44.990")).toBeNull();
     expect(iabotPriceClp("pronto")).toBeNull();
+    expect(iabotChargeClp("pronto")).toBe(63546);
     expect(iabotPriceClp("44990")).toBe(44990);
-    process.env.IABOT_PRICE_CLP = "39990";
-    expect(iabotPriceClp()).toBe(39990);
+    process.env.IABOT_PRICE_CLP = "63546";
+    expect(iabotPriceClp()).toBe(63546);
+    const payload = buildPreapprovalPayload({
+      subscriptionId: "sub_iabot",
+      payerEmail: "ana@ejemplo.cl",
+      reason: "IA Bot Profesional",
+      amountClp: iabotChargeClp(),
+      firstChargeAt: trialEnd(),
+    });
+    expect(payload.auto_recurring.transaction_amount).toBe(63546);
     if (previous === undefined) delete process.env.IABOT_PRICE_CLP;
     else process.env.IABOT_PRICE_CLP = previous;
   });
