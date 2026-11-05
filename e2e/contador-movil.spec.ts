@@ -54,6 +54,55 @@ async function assertChatDock(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
+async function assertBubbleSides(page: Page) {
+  // La fila «escribiendo…» es la última .agent-row.assistant y se desmonta al guardar
+  // la respuesta. getComputedStyle de ese nodo suelto devuelve "" en Chrome; hay que
+  // medir la burbuja ya confirmada (tiene «Escuchar»).
+  await expect
+    .poll(
+      async () => {
+        try {
+          return await page.evaluate(() => {
+            const shown = (el: Element | null) => {
+              if (!el?.isConnected) return false;
+              const box = el.getBoundingClientRect();
+              const style = getComputedStyle(el);
+              return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+            };
+            const gaps = (row: Element) => {
+              const bubble = row.querySelector(".agent-bubble");
+              if (!bubble) return null;
+              const rowBox = row.getBoundingClientRect();
+              const bubbleBox = bubble.getBoundingClientRect();
+              return {
+                align: getComputedStyle(row).justifyContent,
+                left: bubbleBox.left - rowBox.left,
+                right: rowBox.right - bubbleBox.right,
+              };
+            };
+            const user = [...document.querySelectorAll(".agent-row.user")].filter(shown).at(-1);
+            const assistant = [...document.querySelectorAll(".agent-row.assistant")]
+              .filter((el) => shown(el) && (el.textContent ?? "").includes("Respuesta de prueba") && el.querySelector("button"))
+              .at(-1);
+            if (!user || !assistant) return "pending";
+            const userGap = gaps(user);
+            const assistantGap = gaps(assistant);
+            if (!userGap || !assistantGap) return "pending";
+            if (userGap.align !== "flex-end") return `user:${userGap.align}`;
+            if (assistantGap.align !== "flex-start") return `assistant:${assistantGap.align}`;
+            if (assistantGap.left > 8) return `assistant-left:${assistantGap.left.toFixed(1)}`;
+            if (userGap.right > 8) return `user-right:${userGap.right.toFixed(1)}`;
+            return "ok";
+          });
+        } catch {
+          return "pending";
+        }
+      },
+      { timeout: 20_000 },
+    )
+    .toBe("ok");
+}
+
 test("el contador es un chat continuo en el celular y en el escritorio", async ({ page }) => {
   test.setTimeout(120_000);
   await mkdir(outDir, { recursive: true });
@@ -84,13 +133,7 @@ test("el contador es un chat continuo en el celular y en el escritorio", async (
     await expect(page.locator(".agent-bubble.assistant:visible").filter({ hasText: "Respuesta de prueba" }).first()).toBeVisible({
       timeout: 20_000,
     });
-    const userAlign = await page.locator(".agent-row.user:visible").last().evaluate((el) => getComputedStyle(el).justifyContent);
-    const assistantAlign = await page
-      .locator(".agent-row.assistant:visible")
-      .last()
-      .evaluate((el) => getComputedStyle(el).justifyContent);
-    expect(userAlign).toBe("flex-end");
-    expect(assistantAlign).toBe("flex-start");
+    await assertBubbleSides(page);
     await assertChatDock(page);
     await input.fill("¿Y el F29 de abril?");
   }
@@ -106,6 +149,9 @@ test("el contador es un chat continuo en el celular y en el escritorio", async (
 
   await page.setViewportSize({ width: 1280, height: 800 });
   await assertChatDock(page);
+  if (await page.locator(".agent-bubble.assistant").filter({ hasText: "Respuesta de prueba" }).count()) {
+    await assertBubbleSides(page);
+  }
   const side = await page.locator(".panel-side").boundingBox();
   expect(side?.width ?? 0).toBeGreaterThan(180);
   await page.screenshot({ path: path.join(outDir, "contador-1280.png") });
