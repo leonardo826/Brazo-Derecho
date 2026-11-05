@@ -1,5 +1,8 @@
 import { enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { prismaComputerStore } from "@/lib/computer/store";
+import { missingVaultTable, vaultStatus } from "@/lib/credentials/http";
+import { prismaCredentialRepo } from "@/lib/credentials/repo";
+import { prepareCredentialUse } from "@/lib/credentials/service";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { resolveSession } from "@/lib/session";
 
@@ -17,13 +20,34 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ ok: false, error: "datos" }, { status: 400 });
   }
-  const goal = body && typeof body === "object" && "goal" in body ? String((body as { goal?: unknown }).goal ?? "") : "";
+  const record = body && typeof body === "object" ? (body as { goal?: unknown; credentialId?: unknown }) : {};
+  const goal = typeof record.goal === "string" ? record.goal : "";
+  const credentialId = typeof record.credentialId === "string" ? record.credentialId.trim() : "";
+  let agentPayload: { credentials: { id: string; label: string; portal: string; usernameHint: string }[]; fillGrant: string } | undefined;
+  try {
+    const prepared = await prepareCredentialUse(
+      prismaCredentialRepo(),
+      {
+        organizationId: session.organizationId,
+        actorUserId: session.userId,
+        goal,
+        credentialId: credentialId || undefined,
+      },
+      process.env,
+    );
+    if (!prepared.ok) return Response.json({ ok: false, error: prepared.error }, { status: vaultStatus(prepared.error) });
+    agentPayload = prepared.agentPayload;
+  } catch (error) {
+    if (!missingVaultTable(error)) throw error;
+    if (credentialId) return Response.json({ ok: false, error: "boveda_migracion" }, { status: 503 });
+  }
   const result = await enqueueComputerTask(
     {
       clientId: session.organizationId,
       goal,
       agentUrl: process.env.COMPUTER_AGENT_URL,
       agentToken: process.env.COMPUTER_AGENT_TOKEN,
+      agentPayload,
     },
     { store: prismaComputerStore() },
   );

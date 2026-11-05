@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { decideSensitiveTask, enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { issueNovncToken } from "@/lib/computer/novnc";
 import { prismaComputerStore } from "@/lib/computer/store";
+import { missingVaultTable } from "@/lib/credentials/http";
+import { prismaCredentialRepo } from "@/lib/credentials/repo";
+import { prepareCredentialUse } from "@/lib/credentials/service";
 import { assertOwnOrganizationActive, guardMutation, guardRate, withError, withNotice } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
@@ -15,12 +18,33 @@ export async function enqueueComputerAction(formData: FormData) {
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, BACK);
   guardRate(`computer:${session.organizationId}`, 20, 60_000, BACK);
+  const goal = String(formData.get("goal") ?? "");
+  const credentialId = String(formData.get("credentialId") ?? "").trim();
+  let agentPayload: { credentials: { id: string; label: string; portal: string; usernameHint: string }[]; fillGrant: string } | undefined;
+  try {
+    const prepared = await prepareCredentialUse(
+      prismaCredentialRepo(),
+      {
+        organizationId: session.organizationId,
+        actorUserId: session.userId,
+        goal,
+        credentialId: credentialId || undefined,
+      },
+      process.env,
+    );
+    if (!prepared.ok) redirect(withError(BACK, prepared.error));
+    agentPayload = prepared.agentPayload;
+  } catch (error) {
+    if (!missingVaultTable(error)) throw error;
+    if (credentialId) redirect(withError(BACK, "boveda_migracion"));
+  }
   const result = await enqueueComputerTask(
     {
       clientId: session.organizationId,
-      goal: String(formData.get("goal") ?? ""),
+      goal,
       agentUrl: process.env.COMPUTER_AGENT_URL,
       agentToken: process.env.COMPUTER_AGENT_TOKEN,
+      agentPayload,
     },
     { store: prismaComputerStore() },
   );

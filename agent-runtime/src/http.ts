@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { parseAction } from "./actions.ts";
+import { sanitizeCredentialMeta } from "./credentials.ts";
 import type { Desktop } from "./desktop.ts";
-import { runComputerTask } from "./loop.ts";
+import { runComputerTask, type FillMaterial } from "./loop.ts";
 import { createMockModel } from "./mock.ts";
 import { computerModelName, createLiveComputerModel, resolveXaiMode } from "./xai.ts";
 
@@ -11,6 +12,7 @@ export type AgentEnv = {
   XAI_API_URL?: string;
   XAI_COMPUTER_MODEL?: string;
   AGENT_RUNTIME_TOKEN?: string;
+  VAULT_FILL_URL?: string;
   DISPLAY?: string;
   CHROME_PROFILE?: string;
 };
@@ -100,6 +102,9 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
   if (method === "POST" && path === "/action") {
     const parsed = parseAction(request.body);
     if (!parsed.ok) return json(400, { ok: false, error: parsed.error });
+    if (parsed.action.type === "fill") {
+      return json(400, { ok: false, error: "El relleno de una clave no entra por esta ruta." });
+    }
     try {
       await deps.desktop.perform(parsed.action);
     } catch {
@@ -109,9 +114,11 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
   }
 
   if (method === "POST" && path === "/task") {
-    const record = request.body as { goal?: unknown; model?: unknown };
+    const record = request.body as { goal?: unknown; model?: unknown; credentials?: unknown; fillGrant?: unknown };
     const goal = typeof record.goal === "string" ? record.goal.trim() : "";
     if (!goal || goal.length > 2000) return json(400, { ok: false, error: "Escribe un objetivo de hasta 2000 caracteres." });
+    const credentials = sanitizeCredentialMeta(record.credentials);
+    const fillGrant = typeof record.fillGrant === "string" ? record.fillGrant : "";
     const mode = resolveXaiMode(deps.env);
     const modelName = computerModelName(typeof record.model === "string" ? record.model : deps.env.XAI_COMPUTER_MODEL);
     const model =
@@ -123,10 +130,32 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
             model: modelName,
             fetchImpl: deps.fetchImpl,
           });
-    const result = await runComputerTask({ goal, desktop: deps.desktop, model });
+    const fillLogin = (credentialId: string) => fillFromVault(deps, fillGrant, credentialId);
+    // clientConfirmed no se acepta en el cuerpo: declarar y pagar siguen bloqueados en esta ruta.
+    const result = await runComputerTask({ goal, desktop: deps.desktop, model, credentials, fillLogin });
     console.log(JSON.stringify({ evento: "tarea", status: result.status, pasos: result.steps.length, modo: mode }));
     return json(200, { ok: result.status === "DONE", ...result, xaiMode: mode, model: modelName });
   }
 
   return json(404, { ok: false, error: "ruta" });
+}
+
+async function fillFromVault(deps: AgentDeps, grant: string, credentialId: string): Promise<FillMaterial | null> {
+  const url = (deps.env.VAULT_FILL_URL ?? "").trim();
+  const token = (deps.env.AGENT_RUNTIME_TOKEN ?? "").trim();
+  if (!url || !grant || !token) return null;
+  const response = await (deps.fetchImpl ?? fetch)(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ grant, credentialId }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = (await response.json().catch(() => null)) as { ok?: unknown; username?: unknown; secret?: unknown } | null;
+  if (!response.ok || !data || data.ok !== true || typeof data.username !== "string" || typeof data.secret !== "string") {
+    return null;
+  }
+  return { username: data.username, secret: data.secret };
 }

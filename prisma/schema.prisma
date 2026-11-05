@@ -43,6 +43,10 @@ model Organization {
   usageMeters   UsageMeter[]
   usageMonths   UsageMonth[]
   computer      Computer?
+  credentials   ClientCredential[]
+  credentialAudits CredentialAuditEvent[]
+  credentialConfirmations CredentialConfirmation[]
+  credentialFillGrants CredentialFillGrant[]
 }
 
 enum MemberRole {
@@ -400,6 +404,88 @@ model ComputerTask {
 
   @@index([clientId, createdAt])
   @@index([computerId])
+}
+
+/// Acceso de un portal (SII, banco, etc.). El usuario y la clave van solo cifrados.
+/// La pista de usuario no es secreta. No guardar la clave en claro.
+model ClientCredential {
+  id                String    @id @default(cuid())
+  organizationId    String
+  label             String
+  portal            String
+  usernameHint      String    @default("")
+  ciphertext        String
+  iv                String
+  authTag           String
+  consentAcceptedAt DateTime
+  createdByUserId   String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastUsedAt        DateTime?
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+enum CredentialAuditKind {
+  CREATE
+  DELETE
+  USE
+  CONFIRM
+}
+
+/// Uso, alta o baja de una clave. Conserva id y nombre aunque se borre el acceso.
+/// Nunca lleva la clave ni el usuario completo.
+model CredentialAuditEvent {
+  id              String              @id @default(cuid())
+  organizationId  String
+  credentialId    String
+  credentialLabel String
+  actorUserId     String
+  kind            CredentialAuditKind
+  purpose         String
+  success         Boolean
+  createdAt       DateTime            @default(now())
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+enum CredentialRiskAction {
+  DECLARAR
+  PAGAR
+}
+
+/// Confirmación explícita para presentar una declaración o pagar. Dura minutos.
+model CredentialConfirmation {
+  id             String               @id @default(cuid())
+  organizationId String
+  actorUserId    String
+  action         CredentialRiskAction
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime             @default(now())
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, actorUserId, action])
+}
+
+/// Permiso de un solo uso para que el computador rellene un login. Se guarda el hash, no el token.
+/// No contiene la clave.
+model CredentialFillGrant {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  actorUserId          String
+  tokenHash            String   @unique
+  allowedCredentialIds String[]
+  purpose              String
+  highRisk             Boolean  @default(false)
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime @default(now())
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expiresAt])
 }
 
 model AccountingConsult {

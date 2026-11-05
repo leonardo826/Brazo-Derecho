@@ -19,6 +19,7 @@ La CSP sigue la guía de Next 16 sin nonces, para no obligar a render dinámico 
 
 - [ ] `npm audit fix` (sin `--force`) se corrió el 30 de octubre de 2026 y no había arreglos compatibles. Quedan 9 avisos cuyo único fix es un salto mayor: `next` 16, `prisma` 7, `vitest` 5 y `zod` 4. No se aplicó `--force`. Hay que decidir esos saltos a mano.
 - [ ] `SESSION_SECRET` de producción no es la del ejemplo y tiene al menos 32 caracteres.
+- [ ] `CREDENTIALS_MASTER_KEY` está en Vercel Production como Secret (base64 de 32 bytes, `openssl rand -base64 32`). No está en el repositorio. Sin ella la bóveda responde error. Ver `docs/BOVEDA.md`.
 - [ ] `ADMIN_EMAILS` son correos de personas reales. `DEMO_SEED` no está en `true`. Si las cuentas demo ya existen, `npm run desactivar:demo` las bloquea sin borrar datos.
 - [ ] Un POST de Flow con `s` inválido responde 401. Un pago de sandbox con solo `token` actualiza la suscripción después de `payment/getStatus`.
 - [ ] Un POST de Mercado Pago con `x-signature` inválida o `ts` vencido responde 401 y no cambia la suscripción. Con firma válida, el estado sale de la consulta a la API, no del cuerpo.

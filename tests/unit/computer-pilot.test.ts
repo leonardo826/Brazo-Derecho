@@ -61,6 +61,55 @@ describe("piloto del computador", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("presentar una declaración queda pendiente y no llama al agente", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("no debía haber red");
+    });
+    const result = await enqueueComputerTask(
+      {
+        clientId: "cliente1",
+        goal: "Presenta la declaración de renta en el SII",
+        agentUrl: "http://agente.internal:8787/",
+        fetchImpl: fetchMock as typeof fetch,
+      },
+      { store: memoryStore() },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.task.status).toBe("PENDING_APPROVAL");
+    expect(result.calledAgent).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("el relleno va en el cuerpo al agente y no queda en la tarea", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "DONE", result: "Ingreso listo. grant-de-prueba-que-no-es-la-clave" }), { status: 200 }));
+    const secret = "ZzVaultSecret99";
+    const result = await enqueueComputerTask(
+      {
+        clientId: "cliente1",
+        goal: "Entra al SII con mi clave",
+        agentUrl: "http://agente.internal:8787/",
+        fetchImpl: fetchMock as typeof fetch,
+        agentPayload: {
+          credentials: [{ id: "cred12345678", label: "SII", portal: "SII", usernameHint: "9988" }],
+          fillGrant: "grant-de-prueba-que-no-es-la-clave",
+        },
+      },
+      { store: memoryStore() },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result.task)).not.toContain(secret);
+    expect(JSON.stringify(result.task)).not.toContain("grant-de-prueba");
+    expect(result.task.result).toContain("[redactado]");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as { credentials: { usernameHint: string }[]; fillGrant: string };
+    expect(body.credentials[0]?.usernameHint).toBe("9988");
+    expect(body.fillGrant).toBe("grant-de-prueba-que-no-es-la-clave");
+    expect(JSON.stringify(body)).not.toContain(secret);
+    expect(JSON.stringify(result)).not.toContain("grant-de-prueba-que-no-es-la-clave");
+  });
+
   test("con URL encola y llama a /task", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "DONE", result: "Example cargó." }), { status: 200 }));
     const result = await enqueueComputerTask(

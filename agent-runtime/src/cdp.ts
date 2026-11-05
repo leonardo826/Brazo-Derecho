@@ -165,6 +165,7 @@ export function createCdpDesktop(options: { cdpBase: string; display: string; pr
       return png;
     },
     async perform(action: DesktopAction) {
+      if (action.type === "fill") throw new Error("fill_no_directo");
       if (action.type === "goto") {
         const pages = await listPages(base, fetchImpl);
         const page = workPage(pages);

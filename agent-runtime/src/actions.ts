@@ -3,7 +3,8 @@ export type DesktopAction =
   | { type: "type"; text: string }
   | { type: "key"; key: string }
   | { type: "scroll"; dy: number }
-  | { type: "goto"; url: string };
+  | { type: "goto"; url: string }
+  | { type: "fill"; credentialId: string };
 
 const KEYS: Record<string, string> = {
   Return: "Return",
@@ -80,10 +81,17 @@ export function parseAction(input: unknown): { ok: true; action: DesktopAction }
     if (!url) return { ok: false, error: "La URL tiene que ser http o https, sin usuario ni clave." };
     return { ok: true, action: { type: "goto", url } };
   }
-  return { ok: false, error: "Acción desconocida. Usa click, type, key, scroll o goto." };
+  if (raw.type === "fill") {
+    const credentialId = typeof raw.credentialId === "string" ? raw.credentialId.trim() : "";
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(credentialId)) {
+      return { ok: false, error: "Falta el id de la credencial." };
+    }
+    return { ok: true, action: { type: "fill", credentialId } };
+  }
+  return { ok: false, error: "Acción desconocida. Usa click, type, key, scroll, goto o fill." };
 }
 
-export function xdotoolArgs(action: Exclude<DesktopAction, { type: "goto" }>) {
+export function xdotoolArgs(action: Exclude<DesktopAction, { type: "goto" | "fill" }>) {
   if (action.type === "click") {
     return ["mousemove", "--sync", String(action.x), String(action.y), "click", action.button === "right" ? "3" : "1"];
   }
@@ -98,5 +106,6 @@ export function describeAction(action: DesktopAction) {
   if (action.type === "click") return `click ${action.x},${action.y}`;
   if (action.type === "type") return `type ${action.text.length} caracteres`;
   if (action.type === "key") return `key ${action.key}`;
+  if (action.type === "fill") return `fill ${action.credentialId}`;
   return `scroll ${action.dy}`;
 }

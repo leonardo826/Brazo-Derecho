@@ -2,6 +2,10 @@ import { decideComputerAction, enqueueComputerAction, mintComputerViewAction } f
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { localNovncUrl, novncStillValid, safeNovncHref, tokenMatches } from "@/lib/computer/novnc";
+import { missingVaultTable } from "@/lib/credentials/http";
+import { prismaCredentialRepo } from "@/lib/credentials/repo";
+import { listCredentials } from "@/lib/credentials/service";
+import type { PublicCredential } from "@/lib/credentials/types";
 import { Prisma, prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
@@ -33,6 +37,12 @@ export default async function ComputerPage({
   let migration = false;
   let computer: Awaited<ReturnType<typeof prisma.computer.findUnique>> = null;
   let tasks: Awaited<ReturnType<typeof prisma.computerTask.findMany>> = [];
+  let credentials: PublicCredential[] = [];
+  try {
+    credentials = await listCredentials(prismaCredentialRepo(), session.organizationId);
+  } catch (error) {
+    if (!missingVaultTable(error)) throw error;
+  }
   try {
     computer = await prisma.computer.findUnique({ where: { clientId: session.organizationId } });
     tasks = computer
@@ -100,13 +110,30 @@ export default async function ComputerPage({
       </article>
       <article className="panel-card stack" style={{ marginTop: "1rem" }}>
         <h2>Pedirle algo</h2>
-        <p className="muted">Enviar un mensaje o pagar queda pendiente. No sale nada sin un paso que todavía está apagado.</p>
+        <p className="muted">
+          Enviar un mensaje, presentar una declaración o pagar queda pendiente. No sale nada sin tu confirmación, y en esta fase el pago y la declaración siguen apagados.
+        </p>
         <form action={enqueueComputerAction} className="stack">
           <CsrfField />
           <label>
             Objetivo
             <input name="goal" maxLength={2000} placeholder="Abre https://example.com y dime qué dice" required />
           </label>
+          {credentials.length ? (
+            <label>
+              Usar un acceso de la bóveda
+              <select name="credentialId" defaultValue="">
+                <option value="">No usar la bóveda</option>
+                {credentials.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label} · {item.portal} · {item.usernameHint}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="muted">Si quieres que rellene un ingreso, guarda antes la clave en la bóveda. No la pegues en el objetivo.</p>
+          )}
           <button className="button secondary" type="submit">
             Encolar tarea
           </button>
