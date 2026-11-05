@@ -1,4 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function expectPublishedPlanFooter(page: Page) {
+  const footer = page.locator("footer.site-footer");
+  await expect(footer).toContainText("IA Bot Profesional: $63.546 al mes, IVA incluido.");
+  await expect(footer).not.toContainText("netos");
+  await expect(footer).not.toContainText("más IVA");
+  await expect(footer).not.toContainText("+ IVA");
+  await expect(page.getByText(/netos,?\s*más IVA/)).toHaveCount(0);
+}
 
 test("la landing de IA Bot tiene una sola acción principal", async ({ page }) => {
   await page.goto("/");
@@ -18,9 +27,13 @@ test("la landing de IA Bot tiene una sola acción principal", async ({ page }) =
 
   await primary.first().click();
   await expect(page).toHaveURL(/\/registro$/);
+  await page.goto("/registro");
+  await expectPublishedPlanFooter(page);
 
   await page.goto("/");
   await page.getByRole("link", { name: "Ya tengo cuenta" }).click();
   await expect(page).toHaveURL(/\/ingresar$/);
+  await page.goto("/ingresar");
+  await expectPublishedPlanFooter(page);
   await expect(page.getByRole("link", { name: "Ya tengo una cuenta: entrar con Google" })).toBeVisible();
 });
