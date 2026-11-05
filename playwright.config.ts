@@ -29,6 +29,7 @@ export default defineConfig({
       APP_URL: baseURL,
       XAI_MODE: "mock",
       XAI_API_KEY: "",
+      CHAT_STREAM_CHUNK_MS: "900",
       FLOW_API_KEY: "",
       FLOW_SECRET_KEY: "",
       MERCADOPAGO_ACCESS_TOKEN: "",

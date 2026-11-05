@@ -35,12 +35,15 @@ export async function POST(request: Request) {
     if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
   }
   return sseResponse(
-    streamDecision({
-      organizationId: session.organizationId,
-      organizationName: session.organizationName,
-      actorUserId: session.userId,
-      messageId: id,
-      decision,
-    }),
+    (signal) =>
+      streamDecision({
+        organizationId: session.organizationId,
+        organizationName: session.organizationName,
+        actorUserId: session.userId,
+        messageId: id,
+        decision,
+        signal,
+      }),
+    request.signal,
   );
 }

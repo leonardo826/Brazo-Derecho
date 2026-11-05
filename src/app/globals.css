@@ -847,6 +847,17 @@ mark.placeholder {
 .composer-icon.recording { color: var(--copper); background: var(--bad-bg); }
 .composer-icon.send { background: var(--copper); color: white; }
 .composer-icon.send:disabled { background: var(--line-strong); color: white; }
+.composer-icon.stop { background: var(--ink); color: white; }
+.composer-queue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0.35rem;
+}
+.composer-queue p { margin: 0; color: var(--ink-soft); font-size: 0.8rem; }
+.composer-queue .button { width: auto; min-height: 44px; }
 .composer-bar .file-button { cursor: pointer; }
 .composer-note {
   margin: 0;

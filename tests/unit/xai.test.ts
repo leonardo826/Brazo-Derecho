@@ -84,6 +84,39 @@ describe("cliente xAI", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  test("el stream se corta si la señal aborta, antes de leer la respuesta", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const fail = () => {
+          const error = new Error("The operation was aborted");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (init?.signal?.aborted) fail();
+        else init?.signal?.addEventListener("abort", fail, { once: true });
+      });
+    });
+    const client = new LiveXaiClient({
+      apiKey: "xai-test",
+      baseUrl: "https://api.x.ai/v1",
+      fetchImpl: fetchMock as typeof fetch,
+    });
+    const pending = client
+      .streamRespond({
+        model: "grok-4.3",
+        instructions: "instrucciones",
+        task: { type: "agent_chat", today: "hoy", messages: [{ role: "user", text: "hola" }] },
+        usage: USAGE_PRESETS.text,
+        signal: controller.signal,
+      })
+      [Symbol.asyncIterator]()
+      .next();
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   test("grok-4.3 queda para lo habitual y grok-4.7 para lo complejo", () => {
     expect(routineModel()).toBe("grok-4.3");
     expect(complexModel()).toBe("grok-4.7");

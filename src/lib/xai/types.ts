@@ -43,6 +43,7 @@ export type XaiRequest = {
   usage: TokenUsage;
   businessName?: string;
   maxOutputTokens?: number;
+  signal?: AbortSignal;
 };
 
 export type XaiResponse = {
