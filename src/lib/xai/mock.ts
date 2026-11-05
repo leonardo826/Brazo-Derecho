@@ -32,6 +32,13 @@ export function renderMockTask(task: XaiTask) {
       return `Imagen cuadrada, luz natural, negocio local en Chile, sin logos de terceros ni texto pequeño. Tema: ${task.summary}. Canal: ${task.channel}.`;
     case "accounting_question":
       return `CONCLUSIÓN\nRespuesta de prueba para: ${task.question}\n\nNormativa verificada al: ${task.today}\n\nNo reemplaza a un contador certificado.`;
+    case "agent_chat": {
+      const last = [...task.messages].reverse().find((message) => message.role === "user");
+      const question = last?.text.trim() || "tu mensaje";
+      const names = (last?.files ?? []).map((file) => file.name).filter(Boolean);
+      const files = names.length ? `\n\nRevisé el archivo: ${names.join(", ")}.` : "";
+      return `**Conclusión**\n\nRespuesta de prueba para: ${question}${files}\n\n- Normativa verificada al: ${task.today}\n\nNo reemplaza a un contador certificado.`;
+    }
     default: {
       const never: never = task;
       return never;
@@ -56,5 +63,14 @@ export class MockXaiClient implements XaiClient {
       usage: request.usage,
       mocked: true,
     };
+  }
+
+  async *streamRespond(request: XaiRequest) {
+    const response = await this.respond(request);
+    const size = 48;
+    for (let index = 0; index < response.outputText.length; index += size) {
+      yield { type: "delta" as const, text: response.outputText.slice(index, index + size) };
+    }
+    yield { type: "done" as const, response };
   }
 }

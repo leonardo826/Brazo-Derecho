@@ -1,45 +1,42 @@
-import { EMPTY_USAGE, type TokenUsage } from "@/lib/pricing";
+import { EMPTY_USAGE } from "@/lib/pricing";
+import { modelInput } from "@/lib/xai/chat-input";
+import { mapXaiStreamEvent, readOutputText, readSseData, readTokenUsage, type ResponsesBody } from "@/lib/xai/parse";
 import { taskInput } from "@/lib/xai/prompt";
-import type { XaiClient, XaiRequest, XaiResponse } from "@/lib/xai/types";
+import type { XaiClient, XaiRequest, XaiResponse, XaiStreamEvent } from "@/lib/xai/types";
 
-type ResponsesUsage = {
-  input_tokens?: number;
-  output_tokens?: number;
-  input_tokens_details?: { cached_tokens?: number };
-};
+export { readOutputText, readTokenUsage } from "@/lib/xai/parse";
 
-type ResponsesBody = {
-  id?: string;
-  model?: string;
-  output_text?: string;
-  output?: Array<{
-    type?: string;
-    content?: Array<{ type?: string; text?: string }>;
-  }>;
-  usage?: ResponsesUsage;
-  error?: { message?: string };
-};
+function inputFor(request: XaiRequest) {
+  if (request.task.type === "agent_chat") return modelInput(request.task, request.businessName);
+  if (request.task.type === "accounting_question") {
+    return [
+      request.businessName?.trim() ? `Cliente: ${request.businessName.trim()}.` : "",
+      `Fecha de hoy: ${request.task.today}.`,
+      "Consulta:",
+      request.task.question,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return taskInput(request.task, request.businessName);
+}
 
-export function readTokenUsage(usage: ResponsesUsage | undefined): TokenUsage {
-  const inputTokens = Math.max(0, Math.round(usage?.input_tokens ?? 0));
-  const outputTokens = Math.max(0, Math.round(usage?.output_tokens ?? 0));
-  const cachedRaw = Math.max(0, Math.round(usage?.input_tokens_details?.cached_tokens ?? 0));
+function requestBody(request: XaiRequest, stream: boolean) {
+  const effort = request.model === "grok-4.3" ? "low" : "medium";
+  const accounting = request.task.type === "accounting_question" || request.task.type === "agent_chat";
   return {
-    inputTokens,
-    outputTokens,
-    cachedTokens: Math.min(inputTokens, cachedRaw),
+    model: request.model,
+    instructions: request.instructions,
+    input: inputFor(request),
+    max_output_tokens: request.maxOutputTokens ?? 800,
+    reasoning: { effort },
+    ...(accounting ? { tools: [{ type: "web_search" }] } : {}),
+    ...(stream ? { stream: true } : {}),
   };
 }
 
-export function readOutputText(body: ResponsesBody) {
-  if (typeof body.output_text === "string" && body.output_text.trim()) return body.output_text.trim();
-  const chunks: string[] = [];
-  for (const item of body.output ?? []) {
-    for (const part of item.content ?? []) {
-      if (part.type === "output_text" && part.text?.trim()) chunks.push(part.text.trim());
-    }
-  }
-  return chunks.join("\n").trim();
+function slowTask(request: XaiRequest) {
+  return request.task.type === "accounting_question" || request.task.type === "agent_chat";
 }
 
 export class LiveXaiClient implements XaiClient {
@@ -65,34 +62,14 @@ export class LiveXaiClient implements XaiClient {
       };
     }
 
-    const effort = request.model === "grok-4.3" ? "low" : "medium";
-    const accounting = request.task.type === "accounting_question";
-    const input =
-      request.task.type === "accounting_question"
-        ? [
-            request.businessName?.trim() ? `Cliente: ${request.businessName.trim()}.` : "",
-            `Fecha de hoy: ${request.task.today}.`,
-            "Consulta:",
-            request.task.question,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : taskInput(request.task, request.businessName);
     const response = await (this.options.fetchImpl ?? fetch)(`${this.options.baseUrl}/responses`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.options.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: request.model,
-        instructions: request.instructions,
-        input,
-        max_output_tokens: request.maxOutputTokens ?? 800,
-        reasoning: { effort },
-        ...(accounting ? { tools: [{ type: "web_search" }] } : {}),
-      }),
-      signal: AbortSignal.timeout(accounting ? 240_000 : 45_000),
+      body: JSON.stringify(requestBody(request, false)),
+      signal: AbortSignal.timeout(slowTask(request) ? 240_000 : 45_000),
     });
 
     const text = await response.text();
@@ -118,5 +95,87 @@ export class LiveXaiClient implements XaiClient {
       usage: readTokenUsage(body.usage),
       mocked: false,
     };
+  }
+
+  async *streamRespond(request: XaiRequest): AsyncGenerator<XaiStreamEvent> {
+    if (!request.instructions.trim()) {
+      throw new Error("El agente necesita instrucciones");
+    }
+    if (request.task.type === "whatsapp_refuse") {
+      const canned: XaiResponse = {
+        id: "canned_refusal",
+        model: request.model,
+        outputText: request.task.reply,
+        usage: EMPTY_USAGE,
+        mocked: false,
+      };
+      yield { type: "delta", text: canned.outputText };
+      yield { type: "done", response: canned };
+      return;
+    }
+
+    const response = await (this.options.fetchImpl ?? fetch)(`${this.options.baseUrl}/responses`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.options.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody(request, true)),
+      signal: AbortSignal.timeout(slowTask(request) ? 240_000 : 45_000),
+    });
+    if (!response.ok) throw new Error("La API de xAI no respondió");
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.body || contentType.includes("application/json")) {
+      const text = await response.text();
+      let body: ResponsesBody = {};
+      try {
+        body = text ? (JSON.parse(text) as ResponsesBody) : {};
+      } catch {
+        throw new Error("La API de xAI respondió en un formato que no pudimos leer");
+      }
+      const outputText = readOutputText(body);
+      if (!outputText) throw new Error("La API de xAI no entregó texto");
+      const done: XaiResponse = {
+        id: body.id || "resp_sin_id",
+        model: body.model || request.model,
+        outputText,
+        usage: readTokenUsage(body.usage),
+        mocked: false,
+      };
+      yield { type: "delta", text: outputText };
+      yield { type: "done", response: done };
+      return;
+    }
+
+    let accumulated = "";
+    let finished: XaiResponse | null = null;
+    for await (const raw of readSseData(response.body)) {
+      const mapped = mapXaiStreamEvent(raw);
+      if (!mapped) continue;
+      if (mapped.type === "delta") accumulated += mapped.text;
+      if (mapped.type === "done") {
+        finished = mapped.response.outputText
+          ? { ...mapped.response, model: mapped.response.model || request.model }
+          : { ...mapped.response, model: mapped.response.model || request.model, outputText: accumulated.trim() };
+        yield { type: "done", response: finished };
+        continue;
+      }
+      yield mapped;
+    }
+    if (!finished) {
+      const outputText = accumulated.trim();
+      if (!outputText) throw new Error("La API de xAI no entregó texto");
+      yield {
+        type: "done",
+        response: {
+          id: "resp_stream",
+          model: request.model,
+          outputText,
+          usage: EMPTY_USAGE,
+          mocked: false,
+        },
+      };
+    }
   }
 }

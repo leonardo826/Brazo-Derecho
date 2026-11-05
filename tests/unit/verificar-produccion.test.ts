@@ -49,7 +49,7 @@ function cabecerasOk(extra: Encabezados = {}): Encabezados {
     "x-frame-options": ["DENY"],
     "x-content-type-options": ["nosniff"],
     "referrer-policy": ["same-origin"],
-    "permissions-policy": ["camera=(), microphone=(), geolocation=(), payment=()"],
+    "permissions-policy": ["camera=(), microphone=(self), geolocation=(), payment=()"],
     "cross-origin-opener-policy": ["same-origin-allow-popups"],
     "x-dns-prefetch-control": ["off"],
     ...extra,
@@ -475,7 +475,7 @@ function cabecerasPlanas() {
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "referrer-policy": "same-origin",
-    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "permissions-policy": "camera=(), microphone=(self), geolocation=(), payment=()",
     "cross-origin-opener-policy": "same-origin-allow-popups",
     "x-dns-prefetch-control": "off",
   };

@@ -505,8 +505,11 @@ function problemasCabeceras(headers: Encabezados) {
   const permisos = valorEncabezado(headers, "permissions-policy").replace(/\s+/g, "").toLowerCase();
   if (!permisos) problemas.push("Falta Permissions-Policy.");
   else {
-    for (const permiso of ["camera=()", "microphone=()", "geolocation=()", "payment=()"]) {
+    for (const permiso of ["camera=()", "geolocation=()", "payment=()"]) {
       if (!permisos.includes(permiso)) problemas.push(`Permissions-Policy no trae ${permiso}.`);
+    }
+    if (!permisos.includes("microphone=(self)")) {
+      problemas.push("Permissions-Policy no permite el micrófono solo en este sitio (microphone=(self)).");
     }
   }
 

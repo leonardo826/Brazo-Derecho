@@ -713,6 +713,130 @@ mark.placeholder {
 .iabot-footer a:hover { color: white; }
 .iabot :focus-visible { outline-color: var(--accent); }
 
+.agent-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: min(70dvh, 44rem);
+  height: calc(100dvh - 11rem);
+  margin-top: 0.8rem;
+}
+.agent-chat-tools { display: flex; flex-wrap: wrap; gap: 0.35rem 0.8rem; align-items: center; }
+.agent-chat-tools .muted { margin: 0; }
+.agent-log {
+  flex: 1;
+  min-height: 12rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.2rem 0.15rem 0.6rem;
+  -webkit-overflow-scrolling: touch;
+}
+.agent-empty { margin: 0.4rem 0; }
+.agent-row { display: flex; }
+.agent-row.user { justify-content: flex-end; }
+.agent-row.assistant { justify-content: flex-start; }
+.agent-bubble {
+  max-width: min(40rem, 92%);
+  border-radius: 18px;
+  padding: 0.7rem 0.85rem 0.75rem;
+}
+.agent-bubble.user {
+  background: white;
+  border: 1px solid var(--line);
+  border-bottom-right-radius: 6px;
+}
+.agent-bubble.assistant {
+  background: var(--pine);
+  color: var(--cream);
+  border-bottom-left-radius: 6px;
+}
+.agent-bubble .who { margin: 0 0 0.25rem; font-size: 0.82rem; font-weight: 700; opacity: 0.8; }
+.agent-bubble .plain-msg { margin: 0; white-space: pre-wrap; }
+.agent-bubble .when, .agent-bubble .disclaimer { margin: 0.35rem 0 0; font-size: 0.85rem; }
+.agent-bubble.assistant .muted { color: rgba(246, 241, 230, 0.78); }
+.agent-bubble .md p { margin: 0.35rem 0; }
+.agent-bubble .md h3, .agent-bubble .md h4 { color: inherit; margin: 0.45rem 0 0.2rem; font-size: 1.15rem; }
+.agent-bubble .md ul, .agent-bubble .md ol { margin: 0.3rem 0; padding-left: 1.2rem; }
+.agent-bubble .md pre {
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.agent-bubble .md code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+.agent-bubble .md a { color: inherit; }
+.agent-files { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.45rem; }
+.agent-files a, .agent-files span { color: inherit; }
+.agent-files img {
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: cover;
+  border-radius: 10px;
+  background: white;
+}
+.typing-status { margin: 0.2rem 0 0; font-style: italic; }
+.confirm-card {
+  border: 1px solid var(--copper);
+  background: var(--warn-bg);
+  color: var(--ink);
+  border-radius: 16px;
+  padding: 0.85rem 0.9rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.confirm-card p { margin: 0; }
+.agent-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: 0.45rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.7rem 0.75rem calc(0.7rem + env(safe-area-inset-bottom));
+}
+.agent-composer textarea { min-height: 2.8rem; max-height: 8rem; }
+.composer-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.composer-actions .button,
+.agent-composer .file-button {
+  width: auto;
+  min-height: 48px;
+  min-width: 48px;
+}
+.agent-composer .file-button { display: inline-flex; cursor: pointer; }
+.file-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; }
+.file-chips li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem 0.2rem 0.2rem;
+}
+.file-chips img { width: 2rem; height: 2rem; object-fit: cover; border-radius: 999px; }
+.file-chips button {
+  border: 0;
+  background: transparent;
+  color: var(--copper);
+  font-weight: 700;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .agent-chat { height: calc(100dvh - 15.5rem - env(safe-area-inset-bottom)); min-height: 24rem; }
+}
+@media (max-width: 480px) {
+  .composer-actions .button,
+  .agent-composer .file-button { width: auto; flex: 1 1 7rem; }
+  .agent-bubble { max-width: 100%; }
+}
+
 @media (max-width: 800px) {
   .iabot-functions, .iabot-steps { grid-template-columns: 1fr; }
   .iabot-hero { padding: 2.4rem 0 2.2rem; }

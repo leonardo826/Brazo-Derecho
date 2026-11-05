@@ -48,8 +48,12 @@ describe("cabeceras", () => {
     expect(dev).toContain("Content-Security-Policy");
     expect(dev).toContain("X-Content-Type-Options");
     expect(dev).toContain("X-Frame-Options");
+    expect(securityHeaders("production").find((header) => header.key === "Permissions-Policy")?.value).toContain(
+      "microphone=(self)",
+    );
     expect(dev).not.toContain("Strict-Transport-Security");
     expect(prod.some((header) => header.key === "Strict-Transport-Security")).toBe(true);
+    expect(contentSecurityPolicy("production")).toContain("media-src 'self' blob:");
     expect(contentSecurityPolicy("production")).toContain("frame-ancestors 'none'");
     expect(contentSecurityPolicy("production")).toContain("form-action 'self'");
     expect(contentSecurityPolicy("production")).toContain("script-src 'self' 'unsafe-inline'");

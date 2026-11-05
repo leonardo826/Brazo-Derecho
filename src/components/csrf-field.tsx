@@ -8,7 +8,11 @@ export function CsrfProvider({ token, children }: { token: string; children: Rea
   return <CsrfContext.Provider value={token}>{children}</CsrfContext.Provider>;
 }
 
+export function useCsrfToken() {
+  return useContext(CsrfContext);
+}
+
 export function CsrfField() {
-  const token = useContext(CsrfContext);
+  const token = useCsrfToken();
   return <input type="hidden" name="csrf" value={token} />;
 }
