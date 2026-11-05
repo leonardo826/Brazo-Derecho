@@ -44,6 +44,47 @@ function listenInBrowser(lang: "es-CL" | "es-ES") {
   });
 }
 
+function ComposerIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+
+function AttachIcon() {
+  return (
+    <ComposerIcon>
+      <path d="M21.4 11.1l-9.2 9.2a6 6 0 01-8.5-8.5l9.2-9.2a4 4 0 015.7 5.7l-9.2 9.1a2 2 0 01-2.8-2.8l8.5-8.5" />
+    </ComposerIcon>
+  );
+}
+
+function MicIcon() {
+  return (
+    <ComposerIcon>
+      <path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" />
+      <path d="M19 11a7 7 0 01-14 0M12 18v3" />
+    </ComposerIcon>
+  );
+}
+
+function StopIcon() {
+  return (
+    <ComposerIcon>
+      <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />
+    </ComposerIcon>
+  );
+}
+
+function SendIcon() {
+  return (
+    <ComposerIcon>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </ComposerIcon>
+  );
+}
+
 const autoplayListeners = new Set<() => void>();
 
 function autoplayNow() {
@@ -120,6 +161,7 @@ export function AgentChat({
   const autoplay = useSyncExternalStore(subscribeAutoplay, autoplayNow, () => false);
   const [speakingId, setSpeakingId] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const stopRecord = useRef<(() => void) | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
@@ -128,6 +170,13 @@ export function AgentChat({
     const node = logRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [items, live, status, pending]);
+
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 112)}px`;
+  }, [composer]);
 
   function upsert(message: PublicMessage, localId = "") {
     setItems((prev) => replaceOptimisticUser(prev, message, localId));
@@ -440,7 +489,7 @@ export function AgentChat({
           />
           Leer las respuestas
         </label>
-        <p className="muted">En datos móviles queda apagado hasta que lo actives.</p>
+        <p className="muted agent-chat-hint">En datos móviles queda apagado hasta que lo actives.</p>
       </div>
       <div className="agent-log" ref={logRef} role="log" aria-live="polite" aria-relevant="additions" aria-busy={pending} aria-label="Mensajes">
         {items.length === 0 && !shownLive ? (
@@ -545,27 +594,10 @@ export function AgentChat({
             ))}
           </ul>
         ) : null}
-        <label>
-          Mensaje
-          <textarea
-            name="texto"
-            value={composer}
-            maxLength={4000}
-            rows={2}
-            placeholder="Escribe tu duda de IVA, F29 o remuneraciones…"
-            disabled={!open || pending}
-            onChange={(event) => setComposer(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-          />
-        </label>
-        <div className="composer-actions">
-          <label className="button secondary file-button">
-            Adjuntar
+        <div className="composer-bar">
+          <label className="composer-icon file-button">
+            <AttachIcon />
+            <span className="sr-only">Adjuntar</span>
             <input
               className="sr-only"
               type="file"
@@ -578,14 +610,33 @@ export function AgentChat({
               }}
             />
           </label>
-          <button className="button secondary" type="button" disabled={!open || pending} aria-pressed={recording} onClick={toggleMic}>
-            {recording ? "Detener" : "Micrófono"}
+          <textarea
+            ref={composerRef}
+            name="texto"
+            aria-label="Mensaje"
+            value={composer}
+            maxLength={4000}
+            rows={1}
+            placeholder="Escribe tu duda…"
+            disabled={!open || pending}
+            onChange={(event) => setComposer(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          <button className={`composer-icon${recording ? " recording" : ""}`} type="button" disabled={!open || pending} aria-pressed={recording} onClick={toggleMic}>
+            {recording ? <StopIcon /> : <MicIcon />}
+            <span className="sr-only">{recording ? "Detener" : "Micrófono"}</span>
           </button>
-          <button className="button" type="submit" disabled={!open || pending || (!composer.trim() && files.length === 0)}>
-            Enviar
+          <button className="composer-icon send" type="submit" disabled={!open || pending || (!composer.trim() && files.length === 0)}>
+            <SendIcon />
+            <span className="sr-only">Enviar</span>
           </button>
         </div>
-        <p className="muted">No compartas claves del SII ni bancarias: esas van en la Bóveda. Los archivos quedan guardados en tu empresa.</p>
+        <p className="composer-note">No compartas claves del SII ni bancarias: esas van en la Bóveda.</p>
       </form>
     </section>
   );

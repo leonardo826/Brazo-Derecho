@@ -1,10 +1,9 @@
 import { AgentChat } from "@/components/agent-chat";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
-import { UsageBar } from "@/components/usage-bar";
 import { agentIsOpen } from "@/lib/agent-access";
 import { loadAgentThread, missingTable } from "@/lib/chat/store";
-import { ACCOUNTING_DISCLAIMER, limitFor, modelFor } from "@/lib/catalog";
+import { ACCOUNTING_DISCLAIMER, limitFor } from "@/lib/catalog";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 import { usageSnapshot } from "@/lib/usage-store";
@@ -33,18 +32,38 @@ export default async function ContadorPage({
     migration = true;
   }
 
+  const used = usage.totals.CONSULTS;
+
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">{modelFor("ACCOUNTING")}</p>
+    <div className="contador-screen">
+      <header className="contador-bar">
+        <div className="contador-title">
           <h1>Contador Auditor Chile</h1>
-          <p className="muted">{ACCOUNTING_DISCLAIMER}</p>
+          <p className="contador-meta">
+            <span
+              className="contador-quota"
+              role="meter"
+              aria-label="Consultas de este mes"
+              aria-valuemin={0}
+              aria-valuemax={limit}
+              aria-valuenow={used}
+              aria-valuetext={`${used} de ${limit}`}
+            >
+              {used}/{limit}
+            </span>
+            <span className="contador-dot" aria-hidden="true">
+              ·
+            </span>
+            <span>{ACCOUNTING_DISCLAIMER}</span>
+          </p>
         </div>
-        <SubscribeActions agent="ACCOUNTING" back="/panel/contador" subscription={subscription} />
-      </div>
+        {open ? null : (
+          <div className="contador-plan">
+            <SubscribeActions agent="ACCOUNTING" back="/panel/contador" subscription={subscription} />
+          </div>
+        )}
+      </header>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
-      <UsageBar used={usage.totals.CONSULTS} limit={limit} label="Consultas de este mes" />
       {migration ? (
         <p className="banner error" role="alert">
           Falta la migración del chat. En local corre <code>npx prisma migrate deploy</code>.
@@ -53,11 +72,11 @@ export default async function ContadorPage({
         <AgentChat
           open={open}
           messages={messages}
-          used={usage.totals.CONSULTS}
+          used={used}
           limit={limit}
           voice={xaiUsesNetwork() ? "xai" : "navegador"}
         />
       )}
-    </>
+    </div>
   );
 }

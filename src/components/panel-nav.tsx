@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { useDemoTourHref } from "@/components/demo-tour";
 
 const LINKS = [
@@ -18,13 +19,35 @@ const LINKS = [
 export function PanelNav({ showAdmin = false, showComputer = false }: { showAdmin?: boolean; showComputer?: boolean }) {
   const pathname = usePathname();
   const tourHref = useDemoTourHref();
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    function center() {
+      const current = nav?.querySelector<HTMLElement>("[aria-current='page']");
+      if (!nav || !current) return;
+      const navRect = nav.getBoundingClientRect();
+      const linkRect = current.getBoundingClientRect();
+      if (navRect.width < 40) return;
+      if (linkRect.left >= navRect.left - 1 && linkRect.right <= navRect.right + 1) return;
+      nav.scrollLeft += linkRect.left - navRect.left - (nav.clientWidth - linkRect.width) / 2;
+    }
+    center();
+    const frame = requestAnimationFrame(center);
+    const observer = new ResizeObserver(center);
+    observer.observe(nav);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [pathname]);
   const links = [
     ...LINKS,
     ...(showComputer ? [{ href: "/panel/computador", label: "Ver mi computador" }] : []),
     ...(showAdmin ? [{ href: "/panel/admin", label: "Administración" }] : []),
   ];
   return (
-    <nav className="panel-nav" aria-label="Panel">
+    <nav className="panel-nav" aria-label="Panel" ref={navRef}>
       {links.map((link) => {
         const active = link.href === "/panel" ? pathname === "/panel" : pathname.startsWith(link.href);
         const onTour = tourHref === link.href;
