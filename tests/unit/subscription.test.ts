@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { formatClp } from "@/lib/format";
 import { buildPreapprovalPayload } from "@/lib/mercadopago/checkout";
-import { IABOT_PRICE_CLP, iabotChargeClp, iabotPriceClp, trialEnd, TRIAL_DAYS } from "@/lib/subscription";
+import { IABOT_PRICE_CLP, iabotChargeClp, iabotPriceClp, iabotPriceNotice, trialEnd, TRIAL_DAYS } from "@/lib/subscription";
 
 describe("prueba de IA Bot", () => {
   test("TRIAL_DAYS es 7", () => {
@@ -52,6 +52,12 @@ describe("prueba de IA Bot", () => {
       firstChargeAt: trialEnd(),
     });
     expect(payload.auto_recurring.transaction_amount).toBe(63546);
+    expect(iabotPriceNotice("")).toBe("IA Bot Profesional: $63.546 al mes, IVA incluido.");
+    expect(iabotPriceNotice("53400")).toBe("IA Bot Profesional: $63.546 al mes, IVA incluido.");
+    expect(iabotPriceNotice("63546")).toBe("IA Bot Profesional: $63.546 al mes, IVA incluido.");
+    expect(iabotPriceNotice("44990")).toBe("IA Bot Profesional: $44.990 al mes, IVA incluido.");
+    expect(iabotPriceNotice("pronto")).toBe("Precio de lanzamiento: pronto.");
+    expect(iabotPriceNotice("63546")).not.toMatch(/neto|más IVA|\+ IVA/);
     if (previous === undefined) delete process.env.IABOT_PRICE_CLP;
     else process.env.IABOT_PRICE_CLP = previous;
   });

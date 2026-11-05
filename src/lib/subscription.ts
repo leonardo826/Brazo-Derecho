@@ -1,4 +1,4 @@
-import { formatDay } from "@/lib/format";
+import { formatClp, formatDay } from "@/lib/format";
 
 export const TRIAL_DAYS = 7;
 
@@ -26,6 +26,13 @@ export function iabotPriceClp(raw: string | undefined = process.env.IABOT_PRICE_
 /** Monto del preapproval. Si el entorno no trae un precio válido, cobra el bruto. */
 export function iabotChargeClp(raw?: string) {
   return iabotPriceClp(raw) ?? IABOT_PRICE_CLP;
+}
+
+/** Aviso público del plan publicado. Si la vitrina no muestra precio, no inventa un monto. */
+export function iabotPriceNotice(raw?: string) {
+  const price = iabotPriceClp(raw);
+  if (price == null) return "Precio de lanzamiento: pronto.";
+  return `IA Bot Profesional: ${formatClp(price)} al mes, IVA incluido.`;
 }
 
 export function trialEnd(from = new Date()) {
