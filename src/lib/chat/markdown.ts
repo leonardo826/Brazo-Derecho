@@ -14,6 +14,13 @@ export type MdBlock =
 const INLINE =
   /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(\[([^\]]+)\]\(([^)\s]+)\))/g;
 
+/** El modelo a veces cita como `[[1]](url)`. El parser ya entiende `[1](url)`. */
+const CITATION = /\[\[([^\]\n]+)\]\]\(([^)\s]+)\)/g;
+
+export function normalizeCitations(source: string) {
+  return source.replace(CITATION, "[$1]($2)");
+}
+
 export function safeHref(raw: string) {
   try {
     const url = new URL(raw);
@@ -46,7 +53,7 @@ export function parseInline(input: string): MdInline[] {
 }
 
 export function parseMarkdown(source: string): MdBlock[] {
-  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeCitations(source).replace(/\r\n/g, "\n").split("\n");
   const blocks: MdBlock[] = [];
   let index = 0;
   while (index < lines.length) {

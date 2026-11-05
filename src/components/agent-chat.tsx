@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
+import { replaceOptimisticUser } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
 import { ACCOUNTING_DISCLAIMER } from "@/lib/catalog";
@@ -128,24 +129,18 @@ export function AgentChat({
     if (node) node.scrollTop = node.scrollHeight;
   }, [items, live, status, pending]);
 
-  function upsert(message: PublicMessage) {
-    setItems((prev) => {
-      const withoutTemp = tempId.current ? prev.filter((item) => item.id !== tempId.current) : prev;
-      const index = withoutTemp.findIndex((item) => item.id === message.id);
-      if (index >= 0) {
-        const next = withoutTemp.slice();
-        next[index] = message;
-        return next;
-      }
-      return [...withoutTemp, message];
-    });
+  function upsert(message: PublicMessage, localId = "") {
+    setItems((prev) => replaceOptimisticUser(prev, message, localId));
   }
 
   function apply(event: ChatClientEvent) {
     if (event.type === "status") setStatus(event.text);
     if (event.type === "user") {
-      upsert(event.message);
+      // El updater de React corre después de este turno. Si el id temporal se lee ahí,
+      // el ref ya está vacío y la burbuja optimista queda junto a la guardada.
+      const localId = tempId.current;
       tempId.current = "";
+      upsert(event.message, localId);
     }
     if (event.type === "delta") {
       setLive((current) => hideActionMarker(current + event.text));
