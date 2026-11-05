@@ -61,6 +61,43 @@ describe("piloto del computador", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("revisar ventas o el F29 llama al agente y presentar queda pendiente", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "DONE", result: "Ventas revisadas." }), { status: 200 }));
+    const review = await enqueueComputerTask(
+      {
+        clientId: "cliente1",
+        goal: "Revisa el F29 en el SII",
+        agentUrl: "http://agente.internal:8787/",
+        fetchImpl: fetchMock as typeof fetch,
+        agentPayload: {
+          credentials: [{ id: "cred12345678", label: "Clave SII", portal: "SII", usernameHint: "9988" }],
+          fillGrant: "grant-de-prueba-que-no-es-la-clave",
+        },
+      },
+      { store: memoryStore() },
+    );
+    expect(review.ok).toBe(true);
+    if (!review.ok) return;
+    expect(review.calledAgent).toBe(true);
+    expect(review.task.status).toBe("DONE");
+    expect(JSON.stringify(review)).not.toContain("grant-de-prueba-que-no-es-la-clave");
+
+    const filing = await enqueueComputerTask(
+      {
+        clientId: "cliente1",
+        goal: "Presenta el F29 de octubre",
+        agentUrl: "http://agente.internal:8787/",
+        fetchImpl: fetchMock as typeof fetch,
+      },
+      { store: memoryStore() },
+    );
+    expect(filing.ok).toBe(true);
+    if (!filing.ok) return;
+    expect(filing.task.status).toBe("PENDING_APPROVAL");
+    expect(filing.calledAgent).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("presentar una declaración queda pendiente y no llama al agente", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("no debía haber red");

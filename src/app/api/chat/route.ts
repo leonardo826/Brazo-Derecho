@@ -82,6 +82,7 @@ export async function POST(request: Request) {
     streamChatTurn({
       organizationId: session.organizationId,
       organizationName: session.organizationName,
+      actorUserId: session.userId,
       text: parsed.text,
       files: parsed.files,
     }),

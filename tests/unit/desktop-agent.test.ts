@@ -167,6 +167,8 @@ describe("agente de computador en simulador", () => {
     expect(rig.actions).toHaveLength(0);
     expect(isHighRiskGoal("Presenta la declaración de IVA")).toBe(true);
     expect(isSensitiveGoal("Presenta la declaración de IVA")).toBe(true);
+    expect(isHighRiskGoal("Revisa el F29 en el SII")).toBe(false);
+    expect(isSensitiveGoal("Entra al SII a revisar ventas")).toBe(false);
     expect(isSensitiveGoal("Entra al SII con mi clave")).toBe(false);
 
     const response = await handleAgent(
@@ -187,6 +189,35 @@ describe("agente de computador en simulador", () => {
     });
     expect(result.status).toBe("DONE");
     expect(rig.shots()).toBeGreaterThan(0);
+  });
+
+  test("el simulador rellena el SII con la credencial y no muestra la clave", async () => {
+    const secret = "ZzVaultSecret99";
+    const username = "user-sii-9988";
+    const seen: string[] = [];
+    const rig = fakeDesktop();
+    const model: ComputerModel = createMockModel();
+    const wrapped: ComputerModel = {
+      async decide(ctx) {
+        seen.push(JSON.stringify({ goal: ctx.goal, credentials: ctx.credentials }));
+        return model.decide(ctx);
+      },
+    };
+    const result = await runComputerTask({
+      goal: "Entra al SII a revisar ventas",
+      desktop: rig.desktop,
+      model: wrapped,
+      credentials: [{ id: "cred12345678", label: "Clave SII", portal: "SII", usernameHint: "9988" }],
+      fillLogin: async () => ({ username, secret }),
+    });
+    expect(result.status).toBe("DONE");
+    expect(result.result).toMatch(/Bóveda/);
+    expect(result.result).not.toContain(secret);
+    expect(result.result).not.toContain(username);
+    expect(seen.join("\n")).not.toContain(secret);
+    expect(rig.actions).toContainEqual({ type: "type", text: secret });
+    expect(JSON.stringify(result.steps)).toContain("cred12345678");
+    expect(JSON.stringify(result.steps)).not.toContain(secret);
   });
 
   test("fill usa la clave en el escritorio y no se la muestra al modelo", async () => {

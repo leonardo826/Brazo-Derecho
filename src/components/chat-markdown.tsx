@@ -9,8 +9,9 @@ function Inline({ nodes }: { nodes: MdInline[] }) {
         if (node.type === "em") return <em key={key}>{node.text}</em>;
         if (node.type === "code") return <code key={key}>{node.text}</code>;
         if (node.type === "link") {
+          const internal = node.href.startsWith("/");
           return (
-            <a key={key} href={node.href} rel="noreferrer noopener" target="_blank">
+            <a key={key} href={node.href} {...(internal ? {} : { rel: "noreferrer noopener", target: "_blank" })}>
               {node.text}
             </a>
           );

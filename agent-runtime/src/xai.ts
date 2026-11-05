@@ -10,15 +10,17 @@ const INSTRUCTIONS = [
   "Ves una captura del escritorio y eliges una sola acción con la herramienta computer.",
   "Puedes click, type, key, scroll, goto (solo http o https) o fill.",
   "WhatsApp Web puede estar abierto para que la persona escanee el QR. No escribas en ese chat, no envíes mensajes y no hagas envíos masivos.",
-  "No pagues, no transfieras, no presentes declaraciones y no confirmes compras, salvo que el mensaje diga que el cliente ya confirmó.",
-  "Si hay credenciales, solo ves id, etiqueta, portal y pista de usuario. Para rellenar un login usa action fill y credentialId. No escribas la clave en text ni en result, y no inventes claves.",
-  "Cuando el objetivo esté cumplido, usa action done y un result corto en español.",
+  "No pagues, no transfieras y no presentes declaraciones ni confirmes compras, salvo que el mensaje diga que el cliente ya confirmó.",
+  "Si el objetivo es entrar a un portal (SII, ventas, F29) y hay credencial, usa fill con credentialId. Solo ves id, etiqueta, portal y pista de usuario.",
+  "No escribas la clave en text ni en result, y no inventes claves. Si no hay credencial, el result indica abrir /panel/boveda.",
+  "Cuando el objetivo esté cumplido, usa action done. El result va en una o dos frases, en español de Chile.",
 ].join(" ");
 
 const COMPUTER_TOOL = {
   type: "function",
   name: "computer",
-  description: "Una sola acción sobre el escritorio. Para terminar, action=done.",
+  description:
+    "Una sola acción sobre el escritorio. Para entrar con la Bóveda usa fill y credentialId. Para terminar, action=done. El result va en una o dos frases.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -81,7 +83,7 @@ export function buildComputerRequest(input: {
               credentialPrompt(input.credentials),
               confirmation,
               history ? `Pasos ya hechos:\n${history}` : "Todavía no hay pasos.",
-              "Elige una sola acción. Si rellenas un acceso, usa fill con el id. No repitas claves.",
+              "Elige una sola acción. Si rellenas un acceso, usa fill con credentialId. No repitas claves. Si no hay credencial, indica /panel/boveda.",
             ].join("\n\n"),
           },
         ],
