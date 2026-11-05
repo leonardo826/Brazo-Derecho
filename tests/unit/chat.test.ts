@@ -1,13 +1,30 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { attachmentScope, prepareUpload, safeFileName } from "@/lib/chat/files";
 import { parseMarkdown, safeHref } from "@/lib/chat/markdown";
+import type { PublicMessage } from "@/lib/chat/public";
 import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensitive";
+import { replaceOptimisticUser } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { chatContent, modelInput, validImageDataUrl } from "@/lib/xai/chat-input";
 import { mapXaiStreamEvent, readSseData } from "@/lib/xai/parse";
 import type { XaiTask } from "@/lib/xai/types";
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function message(partial: Pick<PublicMessage, "id" | "role" | "body"> & Partial<PublicMessage>): PublicMessage {
+  return {
+    kind: "TEXT",
+    action: "",
+    actionTitle: "",
+    confirmation: null,
+    createdAt: "2026-11-05T11:20:00.000Z",
+    attachments: [],
+    ...partial,
+  };
+}
 
 function chat(text: string, files?: { name: string; mime: string; imageDataUrl?: string; note?: string }[]): Extract<XaiTask, { type: "agent_chat" }> {
   return {
@@ -45,6 +62,47 @@ describe("chat continuo", () => {
     expect(split.text).toBe("Borrador listo.");
     expect(split.action).toMatchObject({ id: "pagar", title: "Pagar cotizaciones" });
     expect(hideActionMarker("Hola ACCION_SENSIBLE: pagar")).toBe("Hola");
+  });
+
+  test("un envío deja una sola burbuja de usuario al llegar el mensaje guardado", () => {
+    const text = "Prueba móvil: di hola en una frase.";
+    const optimistic = message({ id: "local-1", role: "USER", body: text });
+    const saved = message({ id: "db-1", role: "USER", body: text, createdAt: "2026-11-05T11:20:01.000Z" });
+    const history = [
+      message({ id: "db-0", role: "USER", body: "¿Cuándo vence el F29?" }),
+      message({ id: "db-a", role: "ASSISTANT", body: "El 12 del mes siguiente." }),
+      optimistic,
+    ];
+    // El composer guarda el id y limpia el ref antes de que React ejecute el updater.
+    let tempId = optimistic.id;
+    const localId = tempId;
+    tempId = "";
+    const next = replaceOptimisticUser(history, saved, localId);
+    expect(tempId).toBe("");
+    expect(next.filter((item) => item.role === "USER" && item.body === text)).toHaveLength(1);
+    expect(next.map((item) => item.id)).toEqual(["db-0", "db-a", "db-1"]);
+  });
+
+  test("dos envíos distintos con el mismo texto siguen siendo dos burbujas", () => {
+    const first = message({ id: "db-1", role: "USER", body: "hola" });
+    const second = message({ id: "db-2", role: "USER", body: "hola", createdAt: "2026-11-05T11:21:00.000Z" });
+    expect(replaceOptimisticUser([first], second).map((item) => item.id)).toEqual(["db-1", "db-2"]);
+  });
+
+  test("las citas [[n]](url) se renderizan como enlace", () => {
+    const text = "El F29 vence el 12 [[1]](https://www.sii.cl/normativa) y el PPM el 20 [[2]](https://www.sii.cl/ppm).";
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
+    expect(html).toContain('href="https://www.sii.cl/normativa"');
+    expect(html).toContain('href="https://www.sii.cl/ppm"');
+    expect(html).toContain(">1</a>");
+    expect(html).toContain(">2</a>");
+    expect(html).not.toContain("[[1]]");
+    expect(html).not.toContain("[[2]]");
+    const hostile = renderToStaticMarkup(
+      createElement(ChatMarkdown, { text: "ver [[1]](javascript:alert(1))" }),
+    );
+    expect(hostile).not.toContain("javascript:");
+    expect(hostile).not.toContain("href=");
   });
 
   test("el markdown no interpreta HTML ni enlaces javascript", () => {
