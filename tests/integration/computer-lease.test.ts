@@ -1,6 +1,9 @@
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, test } from "vitest";
 import { handleAgent } from "../../agent-runtime/src/http";
 import type { Desktop, DesktopStatus } from "../../agent-runtime/src/desktop";
@@ -26,14 +29,18 @@ function desktop(): Desktop {
   };
 }
 
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const tsxCli = join(dirname(createRequire(import.meta.url).resolve("tsx/package.json")), "dist/cli.mjs");
+
 function cli(args: string[], env: Record<string, string>) {
-  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn("npx", ["tsx", "scripts/computer-lease-admin.ts", ...args], {
-      cwd: "/agent/repos/Brazo-Derecho",
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [tsxCli, "scripts/computer-lease-admin.ts", ...args], {
+      cwd: root,
       env: { ...process.env, ...env },
     });
     let stdout = "";
     let stderr = "";
+    child.on("error", reject);
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
     });
@@ -122,5 +129,5 @@ describe("comando de operador, cableado local", () => {
     expect(seen.filter((path) => path === "/task")).toHaveLength(1);
 
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-  });
+  }, 30_000);
 });
