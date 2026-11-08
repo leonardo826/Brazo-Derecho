@@ -32,6 +32,19 @@ function negated(text: string, verbs: string) {
   return new RegExp(`\\bno(?:\\s+\\w+){0,5}\\s+(?:${verbs})\\b`, "i").test(text);
 }
 
+function clauseLead(clause: string) {
+  return clause.replace(/^[¿¡\s]+/, "");
+}
+
+function asksAgent(clause: string, atStart: string, requested: string) {
+  const lead = clauseLead(clause);
+  if (new RegExp(`^(?:por favor\\s+)?(?:${atStart})\\b`, "i").test(lead)) return true;
+  return new RegExp(
+    `\\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\\s+(?:que\\s+)?(?:me\\s+)?(?:${requested})\\b`,
+    "i",
+  ).test(clause);
+}
+
 function isPayCommand(text: string) {
   return clausesOf(text).some((clause) => {
     const stripped = clause
@@ -45,44 +58,35 @@ function isPayCommand(text: string) {
     if (negated(stripped, "transfiere|transferir|transfier[ae]|abona|abonar|paga|pagar|pague|pagá|paguen|puedes|quiero|necesito")) {
       return false;
     }
-    if (/\b(transfiere|transferir|transfier[ae]|abona|abonar|haz el pago|realiza el pago|realizar el pago)\b/i.test(stripped)) {
-      return true;
-    }
-    if (/\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(?:pagar|paga|pague|pagá|paguen)\b/i.test(stripped)) {
-      return true;
-    }
-    if (/^\s*(?:¿\s*)?(paga|pagar|pague|pagá|paguen)\b/i.test(stripped)) return true;
-    return /\b(paga|pague|pagá|paguen)\b\s+(?:el|la|los|las|al)\b/i.test(stripped);
+    return asksAgent(
+      stripped,
+      "haz el pago|realiza el pago|realizar el pago|paga|pague|pagá|paguen|transfiere|transferir|transfier[ae]|abona|abonar",
+      "pagar|paga|pague|pagá|paguen|transferir|transfieras|abonar",
+    );
   });
 }
 
 const FILING_OBJECT = /\b(declaraci[oó]n|declaraciones|f29|f22|formulario\s*29|formulario\s*22)\b/i;
-const FILING_SEND =
-  /\b(env[ií]a|enviar|env[ií]es|manda|mandar|mandes)\b(?:\s+\S+){0,4}\s+(?:la\s+)?declaraci[oó]n\b/i;
 
 function isFilingCommand(text: string) {
   return clausesOf(text).some((clause) => {
-    if (FILING_SEND.test(clause) && !negated(clause, "env[ií]a|enviar|env[ií]es|manda|mandar|mandes")) return true;
     if (!FILING_OBJECT.test(clause)) return false;
-    const imperative = /\b(?<!se\s)(presenta|presentá|presenten|presentad)\b/i.test(clause);
-    if (imperative && !negated(clause, "presenta|presentá|presenten|presentad|presentes|presentar")) return true;
-    const request =
-      /\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(presentes|presentar|presenta|presentá|presenten)\b/i.test(
-        clause,
-      );
-    return request && !negated(clause, "puedes|podr[ií]as|quiero|necesito|presentes|presentar|presenta|presentá|presenten");
+    if (negated(clause, "presenta|presentá|presenten|presentad|presentes|presentar|env[ií]a|enviar|env[ií]es|manda|mandar|mandes|puedes|quiero|necesito")) {
+      return false;
+    }
+    return asksAgent(
+      clause,
+      "presenta|presentá|presenten|presentad|env[ií]a|env[ií]es|manda|mandes",
+      "presentes|presentar|presenta|presentá|presenten|enviar|env[ií]es|env[ií]a|manda|mandar|mandes",
+    );
   });
 }
 
 function isRiskyTool(text: string) {
   return clausesOf(text).some((clause) => {
     if (!/\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(clause)) return false;
-    const request =
-      /\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(?:borres|elimines|borrar|eliminar)\b/i.test(
-        clause,
-      );
-    if (request && !negated(clause, "puedes|podr[ií]as|quiero|necesito|borres|elimines|borrar|eliminar")) return true;
-    return /\b(borra|elimina)\b/i.test(clause) && !negated(clause, "borra|elimina");
+    if (negated(clause, "borra|elimina|borrar|eliminar|borres|elimines|puedes|quiero|necesito")) return false;
+    return asksAgent(clause, "borra|elimina", "borres|elimines|borrar|eliminar");
   });
 }
 
