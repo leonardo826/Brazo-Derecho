@@ -6,6 +6,13 @@ import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
 import { listenInBrowser } from "@/lib/chat/browser-speech";
+import {
+  adoptComposerDraft,
+  readComposerDraft,
+  subscribeComposerDraft,
+  writeComposerDraft,
+  type DraftIdentity,
+} from "@/lib/chat/composer-draft";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
 import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
@@ -16,6 +23,18 @@ import { CSRF_HEADER } from "@/lib/csrf-token";
 import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
+
+function selectionInside(log: HTMLElement | null) {
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed && log?.contains(selection.anchorNode));
+}
+
+function focusComposerIfIdle(box: HTMLTextAreaElement | null, log: HTMLElement | null) {
+  if (!box || document.activeElement === box || selectionInside(log)) return;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  box.focus({ preventScroll: true });
+}
 type Ear = {
   id: number;
   live: boolean;
@@ -156,17 +175,34 @@ export function AgentChat({
   used,
   limit,
   voice,
+  draftUserId = "",
+  draftOrganizationId = "",
+  draftConversationId = "",
 }: {
   open: boolean;
   messages: PublicMessage[];
   used: number;
   limit: number;
   voice: VoiceMode;
+  draftUserId?: string;
+  draftOrganizationId?: string;
+  draftConversationId?: string;
 }) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const [items, setItems] = useState(messages);
+  const draftIdentity: DraftIdentity = {
+    userId: draftUserId,
+    organizationId: draftOrganizationId,
+    conversationId: draftConversationId,
+  };
+  const storedDraft = useSyncExternalStore(
+    subscribeComposerDraft,
+    () => readComposerDraft(draftIdentity),
+    () => "",
+  );
   const [composer, setComposer] = useState("");
+  const [draftSource, setDraftSource] = useState("");
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [pending, setPending] = useState(false);
   const [waitingIds, setWaitingIds] = useState<string[]>([]);
@@ -192,11 +228,17 @@ export function AgentChat({
   const stopRequestedRef = useRef(false);
   const committedRef = useRef(false);
   const draftText = useRef("");
+  if (storedDraft !== draftSource) {
+    setDraftSource(storedDraft);
+    setComposer(storedDraft);
+  }
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
   const turnGen = useRef(0);
   const stickToEnd = useRef(true);
   const [atEnd, setAtEnd] = useState(true);
+  const sawReply = useRef(false);
+  const imeGuard = useRef(false);
 
   useEffect(() => {
     const earsNow = ears.current;
@@ -232,11 +274,32 @@ export function AgentChat({
   }, [items, live, status, pending]);
 
   useEffect(() => {
+    draftText.current = composer;
+  }, [composer]);
+
+  useEffect(() => {
+    adoptComposerDraft({
+      userId: draftUserId,
+      organizationId: draftOrganizationId,
+      conversationId: draftConversationId,
+    });
+  }, [draftUserId, draftOrganizationId, draftConversationId]);
+
+  useEffect(() => {
     const node = composerRef.current;
     if (!node) return;
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, 112)}px`;
   }, [composer]);
+
+  useEffect(() => {
+    if (pending) {
+      sawReply.current = true;
+      return;
+    }
+    if (!sawReply.current) return;
+    focusComposerIfIdle(composerRef.current, logRef.current);
+  }, [pending]);
 
   function publishQueue() {
     setWaitingIds(turns.current.waiting.map((item) => item.id));
@@ -245,6 +308,14 @@ export function AgentChat({
   function updateComposer(value: string) {
     draftText.current = value;
     setComposer(value);
+    writeComposerDraft(draftIdentity, value);
+  }
+
+  function endComposition() {
+    imeGuard.current = true;
+    window.setTimeout(() => {
+      imeGuard.current = false;
+    }, 0);
   }
 
   function updateFiles(next: LocalFile[]) {
@@ -256,6 +327,7 @@ export function AgentChat({
     setComposer((current) => {
       const next = current ? `${current} ${text}` : text;
       draftText.current = next;
+      writeComposerDraft(draftIdentity, next);
       return next;
     });
   }
@@ -480,6 +552,8 @@ export function AgentChat({
   function stopResponse() {
     stopRequestedRef.current = true;
     abortRef.current?.abort();
+    if (selectionInside(logRef.current)) return;
+    composerRef.current?.focus({ preventScroll: true });
   }
 
   function releaseQueue() {
@@ -954,8 +1028,10 @@ export function AgentChat({
             placeholder="Escribe al Contador…"
             disabled={!open}
             onChange={(event) => updateComposer(event.target.value)}
+            onCompositionEnd={endComposition}
             onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              const native = event.nativeEvent;
+              if (event.key !== "Enter" || event.shiftKey || native.isComposing || imeGuard.current || native.keyCode === 229) return;
               if (window.matchMedia("(pointer: coarse)").matches) return;
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();

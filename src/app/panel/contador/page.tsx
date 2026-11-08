@@ -2,6 +2,7 @@ import { AgentChat } from "@/components/agent-chat";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
 import { agentIsOpen } from "@/lib/agent-access";
+import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
 import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { ACCOUNTING_DISCLAIMER, limitFor } from "@/lib/catalog";
 import { tasksToday } from "@/lib/meter-store";
@@ -83,6 +84,9 @@ export default async function ContadorPage({
           used={used}
           limit={limit}
           voice={xaiUsesNetwork() ? "xai" : "navegador"}
+          draftUserId={session.userId}
+          draftOrganizationId={session.organizationId}
+          draftConversationId={CONTADOR_CONVERSATION_ID}
         />
       )}
     </div>
