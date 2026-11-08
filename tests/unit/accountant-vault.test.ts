@@ -64,8 +64,11 @@ describe("contador y bóveda", () => {
   test("sin credencial ofrece la bóveda", () => {
     const plan = planPortalAccess("entra al SII a revisar ventas", []);
     expect(plan.kind).toBe("vault");
-    expect(plan.message).toContain("/panel/boveda");
-    expect(plan.message).toMatch(/guarda la clave/i);
+    expect(plan.message).toContain("/panel/boveda?portal=sii#agregar-acceso");
+    expect(plan.message).toContain("Usuario / RUT");
+    expect(plan.message).toMatch(/campo Clave/i);
+    expect(plan.message.toLowerCase()).not.toContain("yo la uso");
+    expect(plan.message).not.toMatch(/Entr[eé] al SII/);
     expect(plan.message.toLowerCase()).not.toContain("no uso claves");
     expect(plan.message.toLowerCase()).not.toContain("no puedo ingresar");
     expect(promptBlocksVaultLogin(plan.message)).toBe(false);

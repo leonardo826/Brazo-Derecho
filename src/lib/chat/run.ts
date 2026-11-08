@@ -2,25 +2,18 @@ import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/cha
 import {
   accountantChatInstructions,
   APPROVED_PORTAL_NOTE,
-  fillDoneMessage,
-  fillFailedMessage,
-  fillNeedsConfirmationMessage,
-  fillQueuedMessage,
-  fillUnavailableMessage,
-  planPortalAccess,
   vaultContext,
-  vaultScreenMessage,
 } from "@/lib/chat/accountant";
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
-import { sensitiveRequest, splitAction, vaultActionFor, wantsPortalAccess } from "@/lib/chat/sensitive";
-import { enqueueComputerTask } from "@/lib/computer/orchestrator";
-import { prismaComputerStore } from "@/lib/computer/store";
+import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
+import { SAFE_CREDENTIAL_ENTRY, shouldDropUserText } from "@/lib/chat/secrets";
+import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensitive";
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
+import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
-import { confirmRisk, listCredentials, prepareCredentialUse } from "@/lib/credentials/service";
-import type { CredentialMeta } from "@/lib/credentials/types";
+import { confirmRisk, listCredentials } from "@/lib/credentials/service";
 import {
   loadHistory,
   missingTable,
@@ -95,16 +88,11 @@ async function* streamModel(input: {
   extra: string;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  const turns = await loadHistory(input.threadId, input.organizationId);
-  const vault = await vaultPrompt(
-    input.organizationId,
-    turns.filter((turn) => turn.role === "user").map((turn) => turn.text),
-  );
-  if (vault) {
-    yield { type: "status", text: "Usando la bóveda…" };
-    turns.push({ role: "user", text: vault });
-  }
-  if (input.extra) turns.push({ role: "user", text: input.extra });
+  const history = await loadHistory(input.threadId, input.organizationId);
+  const latest = lastUserText(history);
+  const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
+  const prepared = prepareModelTurn(history, vault);
+  const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
   const client = createXaiClient();
   let raw = "";
   let final: XaiResponse | null = null;
@@ -112,8 +100,8 @@ async function* streamModel(input: {
   try {
     for await (const event of client.streamRespond({
       model: modelFor("ACCOUNTING"),
-      instructions: chatInstructions(input.organizationName),
-      task: { type: "agent_chat", today: todayCl(), messages: turns },
+      instructions: [chatInstructions(input.organizationName), extra].filter(Boolean).join("\n\n"),
+      task: { type: "agent_chat", today: todayCl(), messages: prepared.messages },
       usage: USAGE_PRESETS.text,
       businessName: input.organizationName,
       maxOutputTokens: 4000,
@@ -193,66 +181,15 @@ async function* streamModel(input: {
   yield { type: "done" };
 }
 
-function hideGrant(text: string, grant: string) {
-  return grant ? text.split(grant).join("[redactado]") : text;
-}
-
-async function* streamPortalAccess(input: {
+async function* streamVaultForm(input: {
   threadId: string;
   organizationId: string;
-  actorUserId: string;
-  text: string;
+  portal: PortalId | null;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  yield { type: "status", text: "Revisando la bóveda…" };
-  let rows: CredentialMeta[] = [];
-  try {
-    rows = metadataForModel(await listCredentials(prismaCredentialRepo(), input.organizationId));
-  } catch (error) {
-    if (!missingVaultTable(error)) logEvent("chat.boveda", { organizationId: input.organizationId });
-  }
-  const plan = planPortalAccess(input.text, rows);
-  let body = plan.message;
-  if (plan.kind === "fill") {
-    try {
-      const prepared = await prepareCredentialUse(
-        prismaCredentialRepo(),
-        {
-          organizationId: input.organizationId,
-          actorUserId: input.actorUserId,
-          goal: input.text,
-          credentialId: plan.credential.id,
-        },
-        process.env,
-      );
-      if (!prepared.ok) {
-        body = fillUnavailableMessage(plan.credential);
-      } else if (!prepared.agentPayload) {
-        body = fillUnavailableMessage(plan.credential);
-      } else {
-        const result = await enqueueComputerTask(
-          {
-            clientId: input.organizationId,
-            goal: input.text,
-            agentUrl: process.env.COMPUTER_AGENT_URL,
-            agentToken: process.env.COMPUTER_AGENT_TOKEN,
-            agentPayload: prepared.agentPayload,
-          },
-          { store: prismaComputerStore() },
-        );
-        const grant = prepared.agentPayload.fillGrant;
-        if (!result.ok) body = hideGrant(fillFailedMessage(plan.credential), grant);
-        else if (result.task.status === "DONE") body = hideGrant(fillDoneMessage(plan.credential), grant);
-        else if (result.task.status === "QUEUED") body = hideGrant(fillQueuedMessage(plan.credential), grant);
-        else if (result.task.status === "PENDING_APPROVAL") body = hideGrant(fillNeedsConfirmationMessage(plan.credential), grant);
-        else body = hideGrant(fillFailedMessage(plan.credential), grant);
-      }
-    } catch (error) {
-      if (!missingVaultTable(error)) logEvent("chat.boveda", { organizationId: input.organizationId });
-      body = vaultScreenMessage(plan.credential.portal);
-    }
-  }
+  yield { type: "status", text: "Te dejo el formulario…" };
   if (streamWasStopped(input.signal)) return;
+  const body = vaultFormMessage(input.portal);
   const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body);
   if (!saved) {
     yield { type: "error", code: "limite" };
@@ -269,15 +206,31 @@ export async function* streamChatTurn(input: {
   actorUserId: string;
   text: string;
   files: PreparedFile[];
+  portal?: PortalId | null;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  const action = sensitiveRequest(input.text);
+  const original = input.text;
+  const drop = shouldDropUserText(original);
+  const text = drop ? SAFE_CREDENTIAL_ENTRY : original;
+  const hinted = input.portal ?? null;
+  const portal = portalPresetFromText(original) ?? hinted;
   const saved = await saveUserMessage({
     organizationId: input.organizationId,
-    body: input.text,
-    files: input.files,
+    body: text,
+    files: drop ? [] : input.files,
   });
   yield { type: "user", message: saved.message };
+  if (drop || (hinted && text === SAFE_CREDENTIAL_ENTRY)) {
+    if (streamWasStopped(input.signal)) return;
+    yield* streamVaultForm({
+      threadId: saved.threadId,
+      organizationId: input.organizationId,
+      portal,
+      signal: input.signal,
+    });
+    return;
+  }
+  const action = sensitiveRequest(text);
   if (action) {
     const card = await saveConfirmation(saved.threadId, action);
     yield { type: "message", message: card };
@@ -285,19 +238,8 @@ export async function* streamChatTurn(input: {
     return;
   }
   if (streamWasStopped(input.signal)) return;
-  if (wantsPortalAccess(input.text)) {
-    yield* streamPortalAccess({
-      threadId: saved.threadId,
-      organizationId: input.organizationId,
-      actorUserId: input.actorUserId,
-      text: input.text,
-      signal: input.signal,
-    });
-    return;
-  }
   yield { type: "status", text: "Revisando…" };
   if (input.files.length > 0) yield { type: "status", text: "Revisando el archivo…" };
-  if (asksVault(input.text)) yield { type: "status", text: "Usando la bóveda…" };
   yield* streamModel({
     threadId: saved.threadId,
     organizationId: input.organizationId,
@@ -346,7 +288,6 @@ export async function* streamDecision(input: {
     return;
   }
   yield { type: "status", text: "Revisando…" };
-  if (vaultActionFor(current.action) || asksVault(current.body)) yield { type: "status", text: "Usando la bóveda…" };
   await recordVaultConfirmation(input.organizationId, input.actorUserId, current.action);
   const files = await prisma.agentAttachment.count({
     where: { organizationId: input.organizationId, message: { threadId: current.threadId, role: "USER" } },

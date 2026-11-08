@@ -1,7 +1,10 @@
-import { confirmRiskAction, createCredentialAction, deleteCredentialAction } from "@/app/actions/boveda";
+import { confirmRiskAction, deleteCredentialAction } from "@/app/actions/boveda";
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
+import { ScrollToId } from "@/components/scroll-to-id";
+import { VaultAccessForm } from "@/components/vault-access-form";
 import { missingVaultTable } from "@/lib/credentials/http";
+import { parseVaultPortalParam, portalPresetById } from "@/lib/credentials/portal-form";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { listAudit, listCredentials } from "@/lib/credentials/service";
 import type { AuditEvent, PublicCredential } from "@/lib/credentials/types";
@@ -38,6 +41,7 @@ export default async function VaultPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
+  const preset = portalPresetById(parseVaultPortalParam(firstParam(params.portal)));
   let migration = false;
   let credentials: PublicCredential[] = [];
   let events: AuditEvent[] = [];
@@ -77,56 +81,9 @@ export default async function VaultPage({
         </p>
       ) : null}
 
-      <article className="panel-card stack">
-        <h2>Qué aceptas al guardar</h2>
-        <div className="stack">
-          <p>
-            <strong>Qué se guarda.</strong> El nombre del acceso, el portal o sitio, una pista del usuario (los últimos 4 caracteres) y la clave cifrada. En la lista no aparece la clave ni el usuario completo.
-          </p>
-          <p>
-            <strong>Cifrado.</strong> Se usa AES-256-GCM. La llave maestra vive solo en el servidor, en la variable <code>CREDENTIALS_MASTER_KEY</code> de Vercel. No está en el código, no se muestra en esta pantalla y no sale en las respuestas.
-          </p>
-          <p>
-            <strong>El modelo de IA.</strong> La clave no se manda como texto al modelo ni entra en los prompts de xAI. El asistente solo puede ver el identificador, el nombre, el portal y la pista del usuario.
-          </p>
-          <p>
-            <strong>Cuándo se usa.</strong> Solo cuando tú pides ese ingreso o esa tarea. Puedes eliminar un acceso cuando quieras: se borra la clave cifrada y queda el registro de la eliminación, sin el secreto.
-          </p>
-          <p>
-            <strong>Declaraciones y pagos.</strong> Presentar declaraciones y pagar siempre piden una confirmación tuya en este panel, aunque la clave ya esté guardada. Guardar la clave no autoriza esas acciones.
-          </p>
-        </div>
-      </article>
-
       <div className="grid-2" style={{ marginTop: "1rem" }}>
-        <form action={createCredentialAction} className="panel-card stack">
-          <CsrfField />
-          <h2>Agregar acceso</h2>
-          <label>
-            Nombre
-            <input name="label" required minLength={2} maxLength={80} placeholder="Clave SII" autoComplete="off" />
-          </label>
-          <label>
-            Portal o sitio
-            <input name="portal" required minLength={2} maxLength={120} placeholder="SII" autoComplete="off" />
-          </label>
-          <label>
-            Usuario
-            <input name="username" required maxLength={160} autoComplete="off" placeholder="12.345.678-9" />
-          </label>
-          <label>
-            Clave
-            <input name="secret" type="password" required minLength={4} maxLength={400} autoComplete="off" />
-          </label>
-          <p className="muted">Después de guardar, la clave no se vuelve a mostrar.</p>
-          <label className="check">
-            <input name="consent" type="checkbox" required />
-            <span>Acepto guardar esta clave en la bóveda de mi empresa, con el cifrado y los límites de arriba.</span>
-          </label>
-          <button className="button" type="submit">
-            Guardar en la bóveda
-          </button>
-        </form>
+        {preset ? <ScrollToId id="agregar-acceso" /> : null}
+        <VaultAccessForm preset={preset} />
 
         <article className="panel-card stack">
           <h2>Accesos guardados</h2>
@@ -169,6 +126,27 @@ export default async function VaultPage({
           )}
         </article>
       </div>
+
+      <article className="panel-card stack" style={{ marginTop: "1rem" }}>
+        <h2>Qué aceptas al guardar</h2>
+        <div className="stack">
+          <p>
+            <strong>Qué se guarda.</strong> El nombre del acceso, el portal o sitio, una pista del usuario (los últimos 4 caracteres) y la clave cifrada. En la lista no aparece la clave ni el usuario completo.
+          </p>
+          <p>
+            <strong>Cifrado.</strong> Se usa AES-256-GCM. La llave maestra vive solo en el servidor, en la variable <code>CREDENTIALS_MASTER_KEY</code> de Vercel. No está en el código, no se muestra en esta pantalla y no sale en las respuestas.
+          </p>
+          <p>
+            <strong>El modelo de IA.</strong> La clave no se manda como texto al modelo ni entra en los prompts de xAI. El asistente solo puede ver el identificador, el nombre, el portal y la pista del usuario.
+          </p>
+          <p>
+            <strong>Cuándo se usa.</strong> Solo cuando tú pides ese ingreso o esa tarea. Puedes eliminar un acceso cuando quieras: se borra la clave cifrada y queda el registro de la eliminación, sin el secreto.
+          </p>
+          <p>
+            <strong>Declaraciones y pagos.</strong> Presentar declaraciones y pagar siempre piden una confirmación tuya en este panel, aunque la clave ya esté guardada. Guardar la clave no autoriza esas acciones.
+          </p>
+        </div>
+      </article>
 
       <article className="panel-card stack" style={{ marginTop: "1rem" }}>
         <h2>Confirmar una acción de riesgo</h2>

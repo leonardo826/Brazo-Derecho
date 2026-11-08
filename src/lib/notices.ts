@@ -79,7 +79,7 @@ export const OKS: Record<string, string> = {
   computador_rechazada: "Esa tarea no se hace: no hay envíos masivos.",
   computador_aprobada: "Quedó marcada como aprobada. El envío y el pago siguen apagados.",
   computador_descartada: "Tarea descartada. No se envió nada.",
-  boveda_guardada: "Clave guardada y cifrada. No se muestra el secreto.",
+  boveda_guardada: "Clave guardada y cifrada. No se muestra el secreto. No entré a ningún portal.",
   boveda_eliminada: "Acceso eliminado. La clave cifrada ya no está.",
   boveda_confirmada:
     "Confirmación anotada. Dura 15 minutos y vale solo para esa acción. No manda la declaración ni el pago.",

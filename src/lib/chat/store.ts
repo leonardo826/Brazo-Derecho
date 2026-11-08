@@ -1,5 +1,6 @@
 import type { PublicMessage } from "@/lib/chat/public";
 import { imageDataUrl, textExcerpt, type PreparedFile } from "@/lib/chat/files";
+import { chronological, historyWhere, MODEL_HISTORY_LIMIT, NEWEST_FIRST, THREAD_VIEW_LIMIT } from "@/lib/chat/history";
 import type { SensitiveAction } from "@/lib/chat/sensitive";
 import { Prisma, prisma } from "@/lib/prisma";
 import { reserveUsage } from "@/lib/usage-store";
@@ -83,12 +84,12 @@ export async function loadAgentThread(organizationId: string) {
   const thread = await ensureThread(organizationId);
   await importLegacy(thread.id, organizationId);
   const messages = await prisma.agentMessage.findMany({
-    where: { threadId: thread.id },
-    orderBy: { createdAt: "asc" },
-    take: 200,
+    where: { threadId: thread.id, thread: { organizationId } },
+    orderBy: NEWEST_FIRST,
+    take: THREAD_VIEW_LIMIT,
     include: messageInclude,
   });
-  return messages.map(toPublic);
+  return chronological(messages).map(toPublic);
 }
 
 export async function saveUserMessage(input: { organizationId: string; body: string; files: PreparedFile[] }) {
@@ -176,12 +177,14 @@ export async function filesForModel(messageId: string, organizationId: string): 
 }
 
 export async function loadHistory(threadId: string, organizationId: string) {
-  const rows = await prisma.agentMessage.findMany({
-    where: { threadId },
-    orderBy: { createdAt: "asc" },
-    take: 24,
-    include: { attachments: { select: { fileName: true, mimeType: true } } },
-  });
+  const rows = chronological(
+    await prisma.agentMessage.findMany({
+      where: historyWhere(threadId, organizationId),
+      orderBy: NEWEST_FIRST,
+      take: MODEL_HISTORY_LIMIT,
+      include: { attachments: { select: { fileName: true, mimeType: true } } },
+    }),
+  );
   let lastUserId = "";
   for (const row of rows) {
     if (row.role === "USER") lastUserId = row.id;

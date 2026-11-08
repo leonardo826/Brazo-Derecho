@@ -7,6 +7,8 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
+import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
+import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-form";
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
@@ -15,7 +17,7 @@ import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
 type LocalFile = { file: File; url: string };
-type Draft = { id: string; text: string; files: LocalFile[] };
+type Draft = { id: string; text: string; files: LocalFile[]; portal: PortalId | null };
 
 const STOPPED_NOTE = "Detuviste la respuesta.";
 
@@ -213,6 +215,7 @@ export function AgentChat({
   const draftText = useRef("");
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
+  const turnGen = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -325,7 +328,7 @@ export function AgentChat({
     }
   }
 
-  async function consume(response: Response, signal: AbortSignal, restore: () => void) {
+  async function consume(response: Response, signal: AbortSignal, restore: () => void, generation: number) {
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !contentType.includes("text/event-stream")) {
       const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -340,6 +343,7 @@ export function AgentChat({
     let failed = false;
     try {
       await readEvents(response, (event) => {
+        if (turnGen.current !== generation) return;
         if (event.type === "error") failed = true;
         apply(event);
         if (event.type === "message" && event.message.role === "ASSISTANT" && event.message.kind === "TEXT") {
@@ -352,7 +356,7 @@ export function AgentChat({
       if (isAbortError(error) || signal.aborted) return "abort" as const;
       throw error;
     }
-    if (signal.aborted || stopRequestedRef.current) return "abort" as const;
+    if (signal.aborted || stopRequestedRef.current || turnGen.current !== generation) return "abort" as const;
     if (failed) return "error" as const;
     return "done" as const;
   }
@@ -390,6 +394,7 @@ export function AgentChat({
   }
 
   async function sendDraft(draft: Draft, followup: boolean) {
+    const generation = ++turnGen.current;
     stopRequestedRef.current = false;
     committedRef.current = false;
     const controller = new AbortController();
@@ -402,6 +407,7 @@ export function AgentChat({
     const form = new FormData();
     form.set("agente", "ACCOUNTING");
     form.set("texto", draft.text);
+    if (draft.portal) form.set("portal", draft.portal);
     for (const item of draft.files) form.append("archivo", item.file);
     let end: TurnEnd = "error";
     let requeue = false;
@@ -414,7 +420,7 @@ export function AgentChat({
       });
       const result = await consume(response, controller.signal, () => {
         requeue = !takeBack(draft);
-      });
+      }, generation);
       if (result === "abort") {
         freezePartial();
         end = "abort";
@@ -445,10 +451,17 @@ export function AgentChat({
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!open) return;
-    const text = composer.trim();
-    const chosen = files;
+    const raw = composer.trim();
+    const drop = shouldDropUserText(raw);
+    const text = sealChatText(raw);
+    const chosen = drop ? [] : files;
     if (!text && chosen.length === 0) return;
-    const draft: Draft = { id: `local-${crypto.randomUUID()}`, text, files: chosen };
+    const draft: Draft = {
+      id: `local-${crypto.randomUUID()}`,
+      text,
+      files: chosen,
+      portal: drop ? portalPresetFromText(raw) : null,
+    };
     updateComposer("");
     updateFiles([]);
     setNotice("");
@@ -479,11 +492,12 @@ export function AgentChat({
 
   async function decide(id: string, decision: "APPROVED" | "CANCELED") {
     if (busyRef.current || !open) return;
-    const sentinel: Draft = { id: `local-decision-${id}`, text: "", files: [] };
+    const sentinel: Draft = { id: `local-decision-${id}`, text: "", files: [], portal: null };
     const pushed = pushTurn(turns.current, sentinel);
     turns.current = pushed.queue;
     if (!pushed.startNow) return;
     busyRef.current = true;
+    const generation = ++turnGen.current;
     stopRequestedRef.current = false;
     committedRef.current = false;
     const controller = new AbortController();
@@ -500,7 +514,7 @@ export function AgentChat({
         body: JSON.stringify({ id, decision }),
         signal: controller.signal,
       });
-      const result = await consume(response, controller.signal, () => undefined);
+      const result = await consume(response, controller.signal, () => undefined, generation);
       if (result === "abort") {
         freezePartial();
         end = "abort";

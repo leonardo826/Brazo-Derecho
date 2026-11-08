@@ -1,4 +1,5 @@
 import { instructionsFor } from "@/lib/catalog";
+import { portalPresetFromText, vaultFormMessage } from "@/lib/credentials/portal-form";
 import type { CredentialMeta } from "@/lib/credentials/types";
 
 const BLOCKS = [
@@ -22,8 +23,8 @@ export function accountantChatInstructions(organizationName: string) {
     instructionsFor("ACCOUNTING", organizationName),
     "Estás en un chat continuo con la persona dueña de la empresa. Usa el hilo anterior y responde en markdown simple, sin HTML.",
     "Por defecto responde en una o dos frases, en español de Chile. Solo alarga si piden detalle, un cálculo o el fundamento legal completo.",
-    "Si piden entrar a un portal (SII, ventas, F29, Previred o Tesorería) y la Bóveda tiene la credencial, el computador entra con fill y credentialId. Tú solo ves id, nombre, portal y pista de usuario.",
-    "Si no hay credencial para ese portal, ofrece guardarla en /panel/boveda. No rechaces el ingreso.",
+    "Si piden entrar a un portal o guardar un RUT o una clave, no pidas el secreto y no digas que entraste: el sistema muestra el formulario de /panel/boveda.",
+    "Si el último mensaje no pide un acceso ni un portal, no repitas instrucciones de la Bóveda ni digas que la estás usando.",
     "Declarar o pagar exige confirmación explícita del cliente, en el hilo o en la Bóveda por 15 minutos. No lo ejecutes sin eso.",
     "Si te piden presentar una declaración, pagar, transferir o borrar datos, no lo hagas en el acto.",
     "En ese caso cierra la respuesta con estas tres líneas y nada después:",
@@ -72,7 +73,7 @@ function toPortal(portal: string) {
 }
 
 export function vaultScreenMessage(portal = "SII") {
-  return `Para entrar ${toPortal(portal)} guarda la clave en la [Bóveda](/panel/boveda). Queda cifrada y yo la uso sin verla.`;
+  return vaultFormMessage(portalPresetFromText(portal));
 }
 
 export function fillQueuedMessage(row: CredentialMeta) {
