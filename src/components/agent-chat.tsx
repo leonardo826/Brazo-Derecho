@@ -13,7 +13,6 @@ import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-fo
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
-import { ACCOUNTING_DISCLAIMER } from "@/lib/catalog";
 import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
@@ -175,6 +174,8 @@ export function AgentChat({
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const stopRecord = useRef<(() => void) | null>(null);
+  const listeningRef = useRef(false);
+  const listenGen = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
   const turns = useRef<TurnQueue<Draft>>({ active: null, waiting: [] });
@@ -194,7 +195,12 @@ export function AgentChat({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      listenGen.current += 1;
       abortRef.current?.abort();
+      const stop = stopRecord.current;
+      stopRecord.current = null;
+      listeningRef.current = false;
+      stop?.();
     };
   }, []);
 
@@ -534,55 +540,74 @@ export function AgentChat({
     });
   }
 
-  async function transcribeBrowser() {
+  function alive(generation: number) {
+    return mountedRef.current && listenGen.current === generation;
+  }
+
+  async function transcribeBrowser(generation: number) {
     for (const lang of ["es-CL", "es-ES"] as const) {
+      if (!alive(generation)) return;
       const session = listenInBrowser(lang);
       if (!session) continue;
-      let cancelled = false;
-      stopRecord.current = () => {
-        cancelled = true;
+      stopRecord.current = () => session.stop();
+      if (!alive(generation)) {
         session.stop();
-      };
+        return;
+      }
       try {
         const text = await session.result;
-        if (cancelled) return;
+        if (!alive(generation)) return;
         if (text) {
           appendComposer(text);
           return;
         }
       } catch (error) {
-        if (cancelled || (error instanceof Error && error.message === "abort")) return;
+        if (!alive(generation)) return;
+        const reason = error instanceof Error ? error.message : "";
+        if (reason === "abort") return;
+        if (reason === "denied") {
+          setNotice(CHAT_ERROR.voz);
+          return;
+        }
       } finally {
-        stopRecord.current = null;
+        if (stopRecord.current) stopRecord.current = null;
       }
     }
-    setNotice(CHAT_ERROR.voz);
+    if (alive(generation)) setNotice(CHAT_ERROR.voz);
+  }
+
+  function endListen(generation: number) {
+    if (listenGen.current !== generation) return;
+    listeningRef.current = false;
+    stopRecord.current = null;
+    if (mountedRef.current) setRecording(false);
   }
 
   async function toggleMic() {
-    if (recording) {
-      stopRecord.current?.();
+    if (listeningRef.current) {
+      listenGen.current += 1;
+      const stop = stopRecord.current;
+      stopRecord.current = null;
+      listeningRef.current = false;
+      stop?.();
+      if (mountedRef.current) setRecording(false);
       return;
     }
+    const generation = listenGen.current + 1;
+    listenGen.current = generation;
+    listeningRef.current = true;
     setNotice("");
-    if (voiceMode === "navegador") {
-      setRecording(true);
-      try {
-        await transcribeBrowser();
-      } finally {
-        setRecording(false);
-      }
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setVoiceMode("navegador");
-      setRecording(true);
-      await transcribeBrowser();
-      setRecording(false);
-      return;
-    }
+    setRecording(true);
     try {
+      if (voiceMode === "navegador" || !navigator.mediaDevices?.getUserMedia) {
+        await transcribeBrowser(generation);
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!alive(generation)) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks: Blob[] = [];
@@ -597,9 +622,8 @@ export function AgentChat({
       });
       stopRecord.current = () => recorder.stop();
       recorder.start();
-      setRecording(true);
       const blob = await stopped;
-      setRecording(false);
+      if (!alive(generation)) return;
       const form = new FormData();
       form.set("audio", blob, "nota.webm");
       const response = await fetch("/api/voz/stt", {
@@ -607,7 +631,9 @@ export function AgentChat({
         headers: { [CSRF_HEADER]: csrf },
         body: form,
       });
+      if (!alive(generation)) return;
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; texto?: string; fallback?: boolean; error?: string };
+      if (!alive(generation)) return;
       if (body.ok && body.texto) {
         appendComposer(body.texto);
         return;
@@ -615,15 +641,14 @@ export function AgentChat({
       if (body.fallback || !response.ok) {
         setVoiceMode("navegador");
         setNotice("No pude transcribir en el servidor. Habla de nuevo: uso el micrófono del navegador.");
-        setRecording(true);
-        await transcribeBrowser();
-        setRecording(false);
+        await transcribeBrowser(generation);
         return;
       }
       setNotice(CHAT_ERROR[body.error ?? ""] ?? CHAT_ERROR.voz);
     } catch {
-      setRecording(false);
-      setNotice(CHAT_ERROR.voz);
+      if (alive(generation)) setNotice(CHAT_ERROR.voz);
+    } finally {
+      endListen(generation);
     }
   }
 
@@ -707,7 +732,7 @@ export function AgentChat({
     const stoppedOnly = message.body.trim() === STOPPED_NOTE;
     return (
       <div className={`agent-row ${message.role === "USER" ? "user" : "assistant"}`} key={message.id}>
-        <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`}>
+        <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`} data-message-id={message.id}>
           <p className="who">{message.role === "USER" ? "Tú" : "Agente"}</p>
           {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
           {message.attachments.length > 0 ? (
@@ -731,7 +756,6 @@ export function AgentChat({
           ) : null}
           {waiting.has(message.id) ? <p className="muted when">En espera</p> : null}
           <p className="muted when">{formatWhen(new Date(message.createdAt))}</p>
-          {message.role === "ASSISTANT" && !stoppedOnly ? <p className="muted disclaimer">{ACCOUNTING_DISCLAIMER}</p> : null}
           {message.role === "ASSISTANT" && message.body.trim() && !stoppedOnly ? (
             <button className="button secondary small" type="button" onClick={() => play(message.body, message.id)}>
               {speakingId === message.id ? "Detener" : "Escuchar"}

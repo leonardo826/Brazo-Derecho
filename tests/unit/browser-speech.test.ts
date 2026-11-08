@@ -29,11 +29,25 @@ describe("escucha del navegador", () => {
     await expect(session?.result).rejects.toThrow("abort");
   });
 
-  test("un fallo del motor no es un aborto del usuario", async () => {
+  test("un permiso denegado no es un fallo genérico", async () => {
     const fake = fakeEngine();
     const session = listenInBrowser("es-CL", fake.create);
     fake.engine.onerror?.({ error: "not-allowed" });
-    await expect(session?.result).rejects.toThrow("voz");
+    await expect(session?.result).rejects.toThrow("denied");
+  });
+
+  test("un resultado no lo pisa un cierre o un error tardío", async () => {
+    const fake = fakeEngine();
+    const session = listenInBrowser("es-CL", fake.create);
+    const onend = fake.engine.onend;
+    const onerror = fake.engine.onerror;
+    fake.engine.onresult?.({ results: [[{ transcript: "hola" }]] });
+    expect(fake.engine.onresult).toBeNull();
+    expect(fake.engine.onend).toBeNull();
+    expect(fake.engine.onerror).toBeNull();
+    onend?.();
+    onerror?.({ error: "not-allowed" });
+    await expect(session?.result).resolves.toBe("hola");
   });
 
   test("detener cierra aunque el motor no avise", async () => {

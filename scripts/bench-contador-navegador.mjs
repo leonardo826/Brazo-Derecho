@@ -22,38 +22,135 @@ const hook = () => {
 
 async function arm(page) {
   await page.evaluate(() => {
-    if (window.__benchReady) return;
-    window.__benchReady = true;
-    const visibleAssistants = () =>
-      [...document.querySelectorAll(".agent-bubble.assistant, .confirm-card")].filter((node) => node.getClientRects().length > 0);
-    window.__arm = () => {
-      const nodes = visibleAssistants();
-      const last = nodes.at(-1);
-      window.__turn = {
-        t0: performance.now(),
-        paints: [],
-        baseCount: nodes.length,
-        lastBase: last ? last.innerText : "",
-      };
-    };
+    if (window.__benchInstalled) return;
+    window.__benchInstalled = true;
+    window.__turns = [];
+    window.__pending = null;
+    const shown = (selector) => [...document.querySelectorAll(selector)].filter((node) => node.getClientRects().length > 0);
     const note = () => {
-      const turn = window.__turn;
+      const turn = window.__activeTurn;
       if (!turn) return;
-      const nodes = visibleAssistants();
-      const lastNode = nodes.at(-1);
-      const text = lastNode ? lastNode.innerText : "";
-      const isNew = nodes.length > turn.baseCount || text !== turn.lastBase;
-      if (!isNew) return;
-      const saved = Boolean(lastNode?.querySelector("button, a"));
-      const prev = turn.paints.at(-1);
-      if (prev && prev.text === text && prev.saved === saved) return;
-      turn.paints.push({ dt: Math.round(performance.now() - turn.t0), text, saved });
+      const assistants = shown(".agent-bubble.assistant, .confirm-card");
+      if (turn.domEstado == null && assistants.some((node) => /Preparando respuesta|Sigo con el siguiente/.test(node.innerText))) {
+        turn.domEstado = performance.now();
+      }
+      if (turn.kind === "form") {
+        const links = shown("a[href*='agregar-acceso']").length;
+        if (turn.domUtil == null && links > turn.linksBefore) turn.domUtil = performance.now();
+      } else if (turn.domUtil == null && assistants.some((node) => node.innerText.includes(turn.token))) {
+        turn.domUtil = performance.now();
+      }
+      if (turn.kind === "queue" && turn.domCola == null) {
+        const queued = shown(".agent-bubble.user").some((node) => node.innerText.includes(turn.token) && /En espera/.test(node.innerText));
+        if (queued) turn.domCola = performance.now();
+      }
+      if (turn.messageId && turn.domId == null && document.querySelector(`[data-message-id="${CSS.escape(turn.messageId)}"]`)) {
+        turn.domId = performance.now();
+      }
+      if (turn.stopVisible == null && [...document.querySelectorAll("button.stop")].some((node) => node.getClientRects().length > 0)) {
+        turn.stopVisible = performance.now();
+      }
+      const stopped = shown(".agent-bubble.assistant").filter((node) => /Detuviste la respuesta/.test(node.innerText)).length;
+      for (const item of window.__turns || []) {
+        if (item.stopClick != null && item.domStop == null && stopped > item.stoppedBefore) item.domStop = performance.now();
+      }
     };
-    new MutationObserver(note).observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("button.stop")) {
+          const now = performance.now();
+          const stopped = [...document.querySelectorAll(".agent-bubble.assistant")].filter((node) => node.getClientRects().length > 0 && /Detuviste la respuesta/.test(node.innerText)).length;
+          const open = [...(window.__turns || [])].reverse().find((item) => item.sseDone == null);
+          if (open && open.stopClick == null) {
+            open.stopClick = now;
+            open.stoppedBefore = stopped;
+          }
+          return;
+        }
+        const button = target?.closest("button.send");
+        if (!button || !window.__pending) return;
+        const pending = window.__pending;
+        window.__pending = null;
+        const turn = {
+          token: pending.token,
+          kind: pending.kind,
+          linksBefore: shown("a[href*='agregar-acceso']").length,
+          click: performance.now(),
+          ackHttp: null,
+          sseByte: null,
+          sseUser: null,
+          sseMessage: null,
+          sseDone: null,
+          httpEnd: null,
+          messageId: null,
+          domEstado: null,
+          domUtil: null,
+          domCola: null,
+          domId: null,
+        };
+        window.__turns.push(turn);
+        window.__activeTurn = turn;
+      },
+      true,
+    );
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+      const turn = method === "POST" && url.includes("/api/chat") ? window.__activeTurn : null;
+      const response = await original(input, init);
+      if (!turn || !response.body) return response;
+      turn.ackHttp = performance.now();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let sawByte = false;
+      const stream = new ReadableStream({
+        async pull(controller) {
+          const step = await reader.read();
+          if (step.done) {
+            turn.httpEnd = performance.now();
+            controller.close();
+            return;
+          }
+          if (!sawByte) {
+            sawByte = true;
+            turn.sseByte = performance.now();
+          }
+          buffer += decoder.decode(step.value, { stream: true });
+          let split = buffer.indexOf("\n\n");
+          while (split >= 0) {
+            const raw = buffer.slice(0, split);
+            buffer = buffer.slice(split + 2);
+            const data = raw
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trimStart())
+              .join("\n");
+            if (data) {
+              try {
+                const event = JSON.parse(data);
+                const now = performance.now();
+                if (event.type === "user" && turn.sseUser == null) turn.sseUser = now;
+                if (event.type === "message" && event.message?.role === "ASSISTANT" && turn.sseMessage == null) {
+                  turn.sseMessage = now;
+                  turn.messageId = typeof event.message.id === "string" ? event.message.id : null;
+                }
+                if (event.type === "done" && turn.sseDone == null) turn.sseDone = now;
+              } catch {
+                // Un ping no es un evento.
+              }
+            }
+            split = buffer.indexOf("\n\n");
+          }
+          controller.enqueue(step.value);
+        },
+      });
+      return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+    };
+    new MutationObserver(note).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
   });
 }
 
@@ -65,10 +162,57 @@ function pct(values, p) {
 }
 
 function pack(rows, key) {
-  const values = rows.map((row) => row[key]);
-  const warm = rows.filter((row) => !row.cold).map((row) => row[key]);
-  const cold = rows.find((row) => row.cold)?.[key] ?? null;
-  return { frio: cold, tibioP50: pct(warm, 50), tibioP90: pct(warm, 90), max: pct(values, 100), n: values.filter((value) => Number.isFinite(value)).length };
+  const ok = rows.filter((row) => row.ok);
+  const values = ok.map((row) => row[key]);
+  const warm = ok.filter((row) => !row.cold).map((row) => row[key]);
+  const cold = ok.find((row) => row.cold)?.[key] ?? null;
+  return {
+    frio: cold,
+    tibioP50: pct(warm, 50),
+    tibioP90: pct(warm, 90),
+    max: pct(values, 100),
+    nOk: values.filter((value) => Number.isFinite(value)).length,
+    n: rows.length,
+  };
+}
+
+function sampleId(prefix, index) {
+  return `${prefix}-${index}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function rowFrom(turn, cold) {
+  if (!turn?.click) return { ok: false, motivo: "sin-clic", cold };
+  const rel = (value) => (typeof value === "number" ? Math.round(value - turn.click) : null);
+  const ackHttp = rel(turn.ackHttp);
+  const sseByte = rel(turn.sseByte);
+  const domUtil = rel(turn.domUtil);
+  const servidorMensaje = rel(turn.sseMessage);
+  const servidorHecho = rel(turn.sseDone);
+  const domId = rel(turn.domId);
+  const domEstado = rel(turn.domEstado);
+  const ordered =
+    ackHttp != null &&
+    sseByte != null &&
+    domUtil != null &&
+    servidorHecho != null &&
+    ackHttp >= 0 &&
+    sseByte >= ackHttp &&
+    domUtil >= sseByte &&
+    servidorHecho >= ackHttp &&
+    (servidorMensaje == null || (servidorMensaje >= ackHttp && servidorHecho >= servidorMensaje)) &&
+    (domId == null || domId >= (servidorMensaje ?? ackHttp));
+  return {
+    ok: Boolean(ordered),
+    motivo: ordered ? "ok" : "secuencia-o-muestra-incompleta",
+    cold,
+    ackHttp,
+    sseByte,
+    domEstado,
+    domCambio: domUtil,
+    servidorMensaje,
+    servidorHecho,
+    domId,
+  };
 }
 
 async function register(page, email) {
@@ -121,73 +265,67 @@ async function openContador(page, viewport) {
   await arm(page);
 }
 
-async function send(page, text, needle) {
+async function send(page, text, kind, until = "done") {
   const input = page.getByRole("textbox", { name: "Mensaje" }).filter({ visible: true });
-  const http = { ttfb: null, done: null };
-  const onResponse = (response) => {
-    if (response.request().method() !== "POST" || !response.url().includes("/api/chat")) return;
-    const timing = response.request().timing();
-    http.ttfb = timing.responseStart;
-    http.done = timing.responseEnd;
-  };
-  page.on("response", onResponse);
+  const sendButton = page.getByRole("button", { name: "Enviar", exact: true }).filter({ visible: true });
   await input.fill(text);
-  await arm(page);
-  await page.evaluate(() => window.__arm());
-  await page.getByRole("button", { name: "Enviar", exact: true }).filter({ visible: true }).click();
-  await page.waitForFunction(
-    (expected) => {
-      const nodes = [...document.querySelectorAll(".agent-bubble.assistant, .confirm-card")];
-      return nodes.some((node) => node.getClientRects().length > 0 && (node.innerText || "").includes(expected) && node.querySelector("button, a"));
-    },
-    needle,
-    { timeout: 25_000 },
-  );
-  page.off("response", onResponse);
-  const turn = await page.evaluate(() => window.__turn);
-  return { ...turn, http };
+  await page.evaluate(({ token, turnKind }) => {
+    window.__pending = { token, kind: turnKind };
+  }, { token: text, turnKind: kind });
+  await sendButton.click();
+  try {
+    await page.waitForFunction(
+      ({ token, mode }) => {
+        const turn = (window.__turns || []).find((item) => item.token === token);
+        if (!turn) return false;
+        const stop = [...document.querySelectorAll("button.stop")].some((node) => node.getClientRects().length > 0);
+        if (mode === "ack") return Boolean(turn.ackHttp) && stop;
+        if (mode === "queue") return turn.domCola != null;
+        return Boolean(turn.sseDone) && turn.domUtil != null && !stop;
+      },
+      { token: text, mode: until },
+      { timeout: 25_000 },
+    );
+  } catch {
+    return { ok: false, motivo: "timeout", cold: false, token: text };
+  }
+  const turn = await page.evaluate((token) => (window.__turns || []).find((item) => item.token === token) ?? null, text);
+  return { ...rowFrom(turn, false), token: text };
 }
 
-function readTurn(turn, needle) {
-  const paints = turn?.paints ?? [];
-  const useful = paints.filter((paint) => paint.text.includes(needle));
-  const gaps = [];
-  for (let index = 1; index < useful.length; index += 1) gaps.push(useful[index].dt - useful[index - 1].dt);
-  const saved = [...paints].reverse().find((paint) => paint.saved && paint.text.includes(needle));
-  return {
-    ackHttp: turn?.http?.ttfb > 0 ? turn.http.ttfb : null,
-    ackCliente: paints.find((paint) => /Preparando respuesta|Sigo con el siguiente/.test(paint.text))?.dt ?? null,
-    ttftUtil: useful[0]?.dt ?? null,
-    total: saved?.dt ?? null,
-    pausaMax: gaps.length ? Math.max(...gaps) : 0,
-  };
-}
-
-async function scenario(browser, name, text, needle, viewport) {
+async function scenario(browser, name, phrase, kind, viewport) {
   const context = await browser.newContext({ baseURL });
   await context.addInitScript(hook);
   const page = await context.newPage();
-  const email = `bench-${name}-${Date.now()}@test.local`;
-  await register(page, email);
+  await register(page, `bench-${name}-${Date.now()}@test.local`);
   await openContador(page, viewport);
   const rows = [];
   for (let index = 0; index < samples; index += 1) {
-    const turn = await send(page, text, needle);
-    const row = readTurn(turn, needle);
+    const token = sampleId(name, index);
+    const text = `${phrase} ${token}`;
+    const row = await send(page, text, kind);
     row.cold = index === 0;
     rows.push(row);
+    if (!row.ok) break;
   }
   await context.close();
+  const failed = rows.filter((row) => !row.ok).length;
   return {
     escenario: name,
-    motor: "simulador local, sin red xAI",
-    n: rows.length,
-    frio: "primera consulta de una sesión nueva",
+    motor: "simulador local, sin red xAI. El cambio de DOM no es un frame pintado.",
+    nPlaneado: samples,
+    nIntentos: rows.length,
+    nOk: rows.filter((row) => row.ok).length,
+    nFallo: failed,
+    motivos: rows.filter((row) => !row.ok).map((row) => row.motivo),
+    reloj: "performance.now del clic del botón Enviar, el mismo origen para HTTP y DOM",
     ackHttp: pack(rows, "ackHttp"),
-    ackCliente: pack(rows, "ackCliente"),
-    ttftUtil: pack(rows, "ttftUtil"),
-    total: pack(rows, "total"),
-    pausaMax: pack(rows, "pausaMax"),
+    primerByte: pack(rows, "sseByte"),
+    domEstado: pack(rows, "domEstado"),
+    domCambio: pack(rows, "domCambio"),
+    servidorMensaje: pack(rows, "servidorMensaje"),
+    servidorHecho: pack(rows, "servidorHecho"),
+    domId: pack(rows, "domId"),
   };
 }
 
@@ -200,28 +338,49 @@ async function queueScenario(browser) {
   const rows = [];
   const pairs = Math.floor(samples / 2);
   for (let index = 0; index < pairs; index += 1) {
-    const stamp = `${index}-${Date.now().toString(36).slice(-4)}`;
-    const first = `A${stamp} resume el IVA`;
-    const second = `B${stamp} sigue con el F29`;
-    const input = page.getByRole("textbox", { name: "Mensaje" });
-    const sendButton = page.getByRole("button", { name: "Enviar", exact: true });
-    const stop = page.getByRole("button", { name: "Detener respuesta", exact: true });
-    await input.fill(first);
-    const t0 = Date.now();
-    await sendButton.click();
-    await stop.waitFor({ timeout: 8_000 });
-    const stopVisible = Date.now() - t0;
-    await input.fill(second);
-    const q0 = Date.now();
-    await sendButton.click();
-    await page.getByText("1 mensaje en espera").first().waitFor({ timeout: 8_000 });
-    const cola = Date.now() - q0;
+    const first = `ColaA ${sampleId("a", index)} resume el IVA`;
+    const second = `ColaB ${sampleId("b", index)} sigue con el F29`;
+    const opened = await send(page, first, "chat", "ack");
+    if (!opened.ok && opened.motivo === "timeout") {
+      rows.push({ ok: false, motivo: "timeout-abrir", cold: index === 0 });
+      break;
+    }
+    const queued = await send(page, second, "queue", "queue");
+    if (queued.motivo === "timeout") {
+      rows.push({ ok: false, motivo: "timeout-cola", cold: index === 0 });
+      break;
+    }
+    const stop = page.getByRole("button", { name: "Detener respuesta", exact: true }).first();
     await stop.click();
-    await page.getByText("Detuviste la respuesta.").first().waitFor({ timeout: 8_000 });
-    const detenido = Date.now() - q0;
-    await page.locator(".agent-bubble.assistant").filter({ hasText: second }).waitFor({ timeout: 20_000 });
-    const totalCola = Date.now() - q0;
-    rows.push({ cold: index === 0, stopVisible, cola, detenido, totalCola });
+    try {
+      await page.waitForFunction(
+        (token) => {
+          const turn = (window.__turns || []).find((item) => item.token === token);
+          const stopButton = [...document.querySelectorAll("button.stop")].some((node) => node.getClientRects().length > 0);
+          return Boolean(turn?.sseDone) && turn.domUtil != null && !stopButton;
+        },
+        second,
+        { timeout: 25_000 },
+      );
+    } catch {
+      rows.push({ ok: false, motivo: "timeout-cola", cold: index === 0 });
+      break;
+    }
+    const measured = await page.evaluate((tokens) => {
+      const firstTurn = (window.__turns || []).find((item) => item.token === tokens.first);
+      const secondTurn = (window.__turns || []).find((item) => item.token === tokens.second);
+      const rel = (turn, value) => (turn && typeof value === "number" ? Math.round(value - turn.click) : null);
+      return {
+        stopVisible: rel(firstTurn, firstTurn?.stopVisible),
+        cola: rel(secondTurn, secondTurn?.domCola),
+        detenido: firstTurn && typeof firstTurn.domStop === "number" && typeof firstTurn.stopClick === "number" ? Math.round(firstTurn.domStop - firstTurn.stopClick) : null,
+        totalCola: rel(secondTurn, secondTurn?.sseDone),
+        secondDone: Boolean(secondTurn?.sseDone && secondTurn.domUtil != null),
+      };
+    }, { first, second });
+    const ok = measured.secondDone && measured.cola != null && measured.cola >= 0 && measured.totalCola != null && measured.totalCola >= measured.cola;
+    rows.push({ ok, motivo: ok ? "ok" : "secuencia-o-muestra-incompleta", cold: index === 0, ...measured });
+    if (!ok) break;
   }
   const mic = page.getByRole("button", { name: "Micrófono" }).filter({ visible: true });
   const grabando = page.getByRole("button", { name: "Detener grabación" }).filter({ visible: true });
@@ -238,8 +397,10 @@ async function queueScenario(browser) {
   return {
     microfono: appeared === "grabando" ? "detener volvió al micrófono; no hay micrófono físico" : appeared,
     escenario: "cola-detener",
-    motor: "simulador local. La pausa entre trozos es CHAT_STREAM_CHUNK_MS, no el modelo.",
-    n: rows.length,
+    motor: "simulador local, sin red xAI. CHAT_STREAM_CHUNK_MS es una pausa inyectada, no inferencia.",
+    nPlaneado: pairs,
+    nOk: rows.filter((row) => row.ok).length,
+    nFallo: rows.filter((row) => !row.ok).length,
     stopVisible: pack(rows, "stopVisible"),
     cola: pack(rows, "cola"),
     detenido: pack(rows, "detenido"),
@@ -265,13 +426,13 @@ async function story(browser) {
   const page = await desktop.newPage();
   await register(page, `bench-historia-${Date.now()}@test.local`);
   await openContador(page, { width: 1440, height: 900 });
-  const simple = await send(page, "Resume el IVA en dos frases", "Respuesta de prueba");
-  const explain = await send(page, "Explícame bien el F29", "Respuesta de prueba");
-  const form = await send(page, "Guarda mi root para el SII", "formulario seguro");
-  const formLink = await page.locator(".agent-bubble.assistant a[href='/panel/boveda?portal=sii#agregar-acceso']").last().getAttribute("href");
-  const formText = await page.locator(".agent-bubble.assistant").filter({ visible: true }).last().innerText();
-  await send(page, "Resume el IVA de una boleta en dos frases", "boleta");
-  const last = await page.locator(".agent-bubble.assistant").last().innerText();
+  const simple = await send(page, `Resume el IVA ${sampleId("hist", 1)} en dos frases`, "chat");
+  const explain = await send(page, `Explicame ${sampleId("hist", 2)} bien el F29`, "chat");
+  const form = await send(page, `Guarda mi root para el SII ${sampleId("hist", 3)}`, "form");
+  const formLink = await page.locator(".agent-bubble.assistant:visible a[href='/panel/boveda?portal=sii#agregar-acceso']").last().getAttribute("href");
+  const formText = await page.locator(".agent-bubble.assistant:visible").last().innerText();
+  const follow = await send(page, `Resume el IVA de una boleta ${sampleId("hist", 4)} en dos frases`, "chat");
+  const last = await page.locator(".agent-bubble.assistant:visible").last().innerText();
   const input = page.getByRole("textbox", { name: "Mensaje" });
   await input.focus();
   await input.fill("Enter escritorio IVA corto");
@@ -291,6 +452,18 @@ async function story(browser) {
       outlineColor: style.outlineColor,
     };
   });
+  const avisos = await page.evaluate(() => {
+    const root = [...document.querySelectorAll(".contador-screen")].find((node) => node.getClientRects().length > 0);
+    const text = root?.innerText ?? "";
+    return {
+      aviso: (text.match(/No reemplaza a un contador certificado/g) || []).length,
+      norma: (text.match(/Normativa verificada/gi) || []).length,
+      simulado: (text.match(/Ejemplo simulado/g) || []).length,
+    };
+  });
+  if (avisos.aviso !== 1 || avisos.norma !== 0) {
+    throw new Error(`Aviso redundante o normativa fingida: ${JSON.stringify(avisos)}`);
+  }
   await page.locator(".contador-screen:visible").screenshot({ path: `${outDir}/shots/desktop-1440-historial.png` });
   const log = await page.evaluate(() => {
     const node = document.querySelector(".agent-log");
@@ -366,20 +539,31 @@ async function story(browser) {
     await phone.getByRole("button", { name: "Enviar", exact: true }).click();
     await phone.locator(".agent-bubble.assistant").first().waitFor({ timeout: 20_000 });
   }
-  await phone.locator(".contador-screen:visible").screenshot({ path: `${outDir}/shots/mobile-390-respuesta.png` });
+  await phone.locator(".contador-screen:visible").screenshot({ path: `${outDir}/shots/mobile-390-simple.png` });
+  await send(phone, `Guarda mi root para el SII ${sampleId("movil", 2)}`, "form");
+  await phone.locator(".contador-screen:visible").screenshot({ path: `${outDir}/shots/mobile-390-form.png` });
+  const movilAvisos = await phone.evaluate(() => {
+    const root = [...document.querySelectorAll(".contador-screen")].find((node) => node.getClientRects().length > 0);
+    const text = root?.innerText ?? "";
+    return {
+      aviso: (text.match(/No reemplaza a un contador certificado/g) || []).length,
+      norma: (text.match(/Normativa verificada/gi) || []).length,
+    };
+  });
   const mobileOverflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   await mobile.close();
 
   return {
     motor: "simulador local, sin red xAI. Viewport, no un celular físico ni un micrófono físico.",
-    simple: readTurn(simple, "Respuesta de prueba"),
-    explicacion: readTurn(explain, "Respuesta de prueba"),
+    simpleOk: simple.ok === true,
+    explicacionOk: explain.ok === true,
     formulario: {
-      ...readTurn(form, "formulario seguro"),
+      ok: form.ok === true,
       enlace: formLink,
       diceQueNoEntra: /No entré al portal|no inicia sesión/.test(formText),
     },
-    siguienteNoRepiteElFormulario: !last.includes("/panel/boveda") && last.includes("boleta"),
+    siguienteOk: follow.ok === true,
+    siguienteNoRepiteElFormulario: !last.includes("/panel/boveda") && last.includes("boleta") && !/normativa verificada/i.test(last),
     enterEscritorioEnvio: enterSent >= 1,
     foco: focus,
     log,
@@ -387,22 +571,18 @@ async function story(browser) {
     microfonoAviso: mic,
     contraste: contrastRows,
     docOverflow: measure.docOverflow,
-    movil: { pointerCoarse: coarse, enterNoEnvia: mobileEnterCount === 0, overflow: mobileOverflow },
+    avisos,
+    movil: { pointerCoarse: coarse, enterNoEnvia: mobileEnterCount === 0, overflow: mobileOverflow, avisos: movilAvisos },
   };
 }
 
 const browser = await chromium.launch();
 const report = { baseURL, mode, medidoEn: new Date().toISOString(), simulador: true, grokBot: "N/D", inferenciaLive: "no corrida" };
 if (mode === "timing") {
-  report.simple = await scenario(browser, "simple", "Resume el IVA en dos frases", "Respuesta de prueba", { width: 1440, height: 900 });
-  report.explicacion = await scenario(browser, "explicacion", "Explícame bien el F29", "Respuesta de prueba", { width: 1440, height: 900 });
-  report.formulario = await scenario(
-    browser,
-    "formulario",
-    "Guarda mi root para el SII",
-    "formulario seguro",
-    { width: 1440, height: 900 },
-  );
+  report.invalidoEn642b017 = "Esa corrida cerraba con una burbuja vieja y mezclaba dos relojes. No es un resultado.";
+  report.simple = await scenario(browser, "simple", "Resume el IVA", "chat", { width: 1440, height: 900 });
+  report.explicacion = await scenario(browser, "explicacion", "Explicame bien el F29", "chat", { width: 1440, height: 900 });
+  report.formulario = await scenario(browser, "formulario", "Guarda mi root para el SII", "form", { width: 1440, height: 900 });
 }
 if (mode === "queue") report.cola = await queueScenario(browser);
 if (mode === "story") report.historia = await story(browser);
