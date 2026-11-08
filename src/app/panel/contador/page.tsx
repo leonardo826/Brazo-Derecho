@@ -83,7 +83,9 @@ export default async function ContadorPage({
           used={used}
           limit={limit}
           voice={xaiUsesNetwork() ? "xai" : "navegador"}
-          draftScope={session.organizationId}
+          draftUserId={session.userId}
+          draftOrganizationId={session.organizationId}
+          draftConversationId="contador"
         />
       )}
     </div>

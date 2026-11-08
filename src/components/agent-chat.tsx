@@ -6,6 +6,13 @@ import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
 import { listenInBrowser } from "@/lib/chat/browser-speech";
+import {
+  adoptComposerDraft,
+  readComposerDraft,
+  subscribeComposerDraft,
+  writeComposerDraft,
+  type DraftIdentity,
+} from "@/lib/chat/composer-draft";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
 import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
@@ -16,6 +23,18 @@ import { CSRF_HEADER } from "@/lib/csrf-token";
 import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
+
+function selectionInside(log: HTMLElement | null) {
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed && log?.contains(selection.anchorNode));
+}
+
+function focusComposerIfIdle(box: HTMLTextAreaElement | null, log: HTMLElement | null) {
+  if (!box || document.activeElement === box || selectionInside(log)) return;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  box.focus({ preventScroll: true });
+}
 type Ear = {
   id: number;
   live: boolean;
@@ -150,59 +169,36 @@ async function readEvents(response: Response, onEvent: (event: ChatClientEvent) 
   }
 }
 
-const DRAFT_PREFIX = "bd-contador-borrador:";
-
-function readDraft(scope: string) {
-  try {
-    return sessionStorage.getItem(DRAFT_PREFIX + scope) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-const draftListeners = new Set<() => void>();
-
-function writeDraft(scope: string, value: string) {
-  try {
-    const key = DRAFT_PREFIX + scope;
-    const current = sessionStorage.getItem(key) ?? "";
-    if (current === value) return;
-    if (value) sessionStorage.setItem(key, value);
-    else sessionStorage.removeItem(key);
-  } catch {
-    return;
-  }
-  for (const listener of draftListeners) listener();
-}
-
-function subscribeDraft(listener: () => void) {
-  draftListeners.add(listener);
-  return () => {
-    draftListeners.delete(listener);
-  };
-}
-
 export function AgentChat({
   open,
   messages,
   used,
   limit,
   voice,
-  draftScope = "",
+  draftUserId = "",
+  draftOrganizationId = "",
+  draftConversationId = "",
 }: {
   open: boolean;
   messages: PublicMessage[];
   used: number;
   limit: number;
   voice: VoiceMode;
-  draftScope?: string;
+  draftUserId?: string;
+  draftOrganizationId?: string;
+  draftConversationId?: string;
 }) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const [items, setItems] = useState(messages);
+  const draftIdentity: DraftIdentity = {
+    userId: draftUserId,
+    organizationId: draftOrganizationId,
+    conversationId: draftConversationId,
+  };
   const storedDraft = useSyncExternalStore(
-    subscribeDraft,
-    () => (draftScope ? readDraft(draftScope) : ""),
+    subscribeComposerDraft,
+    () => readComposerDraft(draftIdentity),
     () => "",
   );
   const [composer, setComposer] = useState("");
@@ -282,6 +278,14 @@ export function AgentChat({
   }, [composer]);
 
   useEffect(() => {
+    adoptComposerDraft({
+      userId: draftUserId,
+      organizationId: draftOrganizationId,
+      conversationId: draftConversationId,
+    });
+  }, [draftUserId, draftOrganizationId, draftConversationId]);
+
+  useEffect(() => {
     const node = composerRef.current;
     if (!node) return;
     node.style.height = "auto";
@@ -294,13 +298,7 @@ export function AgentChat({
       return;
     }
     if (!sawReply.current) return;
-    const box = composerRef.current;
-    if (!box || document.activeElement === box) return;
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed && logRef.current?.contains(selection.anchorNode)) return;
-    const active = document.activeElement;
-    if (active && active !== document.body) return;
-    box.focus({ preventScroll: true });
+    focusComposerIfIdle(composerRef.current, logRef.current);
   }, [pending]);
 
   function publishQueue() {
@@ -310,7 +308,7 @@ export function AgentChat({
   function updateComposer(value: string) {
     draftText.current = value;
     setComposer(value);
-    if (draftScope) writeDraft(draftScope, value);
+    writeComposerDraft(draftIdentity, value);
   }
 
   function endComposition() {
@@ -329,7 +327,7 @@ export function AgentChat({
     setComposer((current) => {
       const next = current ? `${current} ${text}` : text;
       draftText.current = next;
-      if (draftScope) writeDraft(draftScope, next);
+      writeComposerDraft(draftIdentity, next);
       return next;
     });
   }
@@ -554,6 +552,7 @@ export function AgentChat({
   function stopResponse() {
     stopRequestedRef.current = true;
     abortRef.current?.abort();
+    if (selectionInside(logRef.current)) return;
     composerRef.current?.focus({ preventScroll: true });
   }
 

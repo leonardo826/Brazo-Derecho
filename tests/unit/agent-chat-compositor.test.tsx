@@ -3,6 +3,8 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentChat } from "@/components/agent-chat";
+import { LogoutButton } from "@/components/logout-button";
+import { purgeComposerDrafts } from "@/lib/chat/composer-draft";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
@@ -33,6 +35,8 @@ describe("compositor del Contador", () => {
     coarse = false;
     fetches.length = 0;
     sessionStorage.clear();
+    localStorage.clear();
+    purgeComposerDrafts();
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: coarse && query.includes("coarse"),
       media: query,
@@ -57,18 +61,25 @@ describe("compositor del Contador", () => {
     act(() => root.unmount());
     host.remove();
     vi.unstubAllGlobals();
+    purgeComposerDrafts();
   });
 
-  function render(scope = "org-a") {
+  function render(identity: { userId?: string; organizationId?: string; conversationId?: string } = {}) {
+    const userId = identity.userId ?? "usuario-a";
+    const organizationId = identity.organizationId ?? "empresa-a";
+    const conversationId = identity.conversationId ?? "contador";
     const node: ReactNode = createElement(AgentChat, {
       open: true,
       messages: [],
       used: 0,
       limit: 200,
       voice: "navegador",
-      draftScope: scope,
+      draftUserId: userId,
+      draftOrganizationId: organizationId,
+      draftConversationId: conversationId,
     });
-    act(() => root.render(createElement("div", { key: scope }, node)));
+    const key = `${userId}:${organizationId}:${conversationId}`;
+    act(() => root.render(createElement("div", { key }, node)));
   }
 
   test("Enter de escritorio envía y el de un móvil no", () => {
@@ -106,24 +117,83 @@ describe("compositor del Contador", () => {
     expect(fetches.some((url) => url.includes("/api/chat"))).toBe(true);
   });
 
-  test("el borrador vuelve en la misma empresa y no en otra", () => {
-    render("org-a");
+  test("el borrador vive en memoria y se purga al cambiar identidad o salir", () => {
+    render();
     act(() => {
-      setComposer(host, "borrador de esta empresa");
+      setComposer(host, "nota de la misma persona");
     });
-    render("org-b");
+    render({ userId: "usuario-b" });
     expect(host.querySelector("textarea")?.value).toBe("");
-    render("org-a");
-    expect(host.querySelector("textarea")?.value).toBe("borrador de esta empresa");
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("");
+
     act(() => {
-      setComposer(host, "");
+      setComposer(host, "nota de la misma persona");
     });
-    render("org-b");
-    render("org-a");
+    render({ organizationId: "empresa-b" });
+    expect(host.querySelector("textarea")?.value).toBe("");
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("");
+
+    act(() => {
+      setComposer(host, "nota de la misma persona");
+    });
+    render({ conversationId: "otro-hilo" });
+    expect(host.querySelector("textarea")?.value).toBe("");
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("");
+
+    act(() => {
+      setComposer(host, "nota de la misma persona");
+    });
+    act(() => root.render(createElement("div")));
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("nota de la misma persona");
+    const buttonHost = document.createElement("div");
+    document.body.append(buttonHost);
+    const buttonRoot = createRoot(buttonHost);
+    act(() => buttonRoot.render(createElement(LogoutButton)));
+    act(() => {
+      buttonHost.querySelector("button")?.click();
+    });
+    act(() => buttonRoot.unmount());
+    buttonHost.remove();
+    render();
     expect(host.querySelector("textarea")?.value).toBe("");
   });
 
-  test("detener devuelve el foco al compositor", async () => {
+  test("una clave sintética sin enviar no entra a almacenamiento ni a la red", () => {
+    const marker = ["clave", "sintetica", "no-enviar"].join("-");
+    const keys: string[] = [];
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key: string, value: string) {
+      keys.push(key);
+      return setItem.call(this, key, value);
+    });
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map((item) => String(item)).join(" "));
+    });
+    render();
+    act(() => {
+      setComposer(host, marker);
+    });
+    let leaked = false;
+    for (const bag of [localStorage, sessionStorage]) {
+      for (let index = 0; index < bag.length; index += 1) {
+        const key = bag.key(index) ?? "";
+        const value = bag.getItem(key) ?? "";
+        if (key.includes(marker) || value.includes(marker)) leaked = true;
+      }
+    }
+    if (keys.some((key) => key.includes(marker)) || logs.some((line) => line.includes(marker))) leaked = true;
+    if (fetches.some((url) => url.includes(marker))) leaked = true;
+    expect(leaked).toBe(false);
+    expect(fetches).toEqual([]);
+    expect(host.querySelector("textarea")?.value?.length).toBe(marker.length);
+  });
+
+  test("detener devuelve el foco y lo deja si el hilo tiene una selección", async () => {
     render();
     const box = setComposer(host, "detener esta");
     await act(async () => {
@@ -134,9 +204,29 @@ describe("compositor del Contador", () => {
     const stop = [...host.querySelectorAll("button")].find((item) => item.textContent?.includes("Detener respuesta"));
     if (!stop) throw new Error("sin detener");
     (document.activeElement as HTMLElement | null)?.blur();
-    stop.focus();
     act(() => stop.click());
     expect(document.activeElement).toBe(typing);
+    expect(typing.value).toBe("sigo con el borrador");
+
+    const log = host.querySelector(".agent-log");
+    const anchor = document.createTextNode("texto del hilo");
+    log?.append(anchor);
+    const range = document.createRange();
+    range.setStart(anchor, 0);
+    range.setEnd(anchor, 5);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const focused: EventTarget[] = [];
+    const original = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      focused.push(this);
+      return original.call(this, options);
+    };
+    act(() => stop.click());
+    HTMLElement.prototype.focus = original;
+    expect(focused.includes(typing)).toBe(false);
+    expect(selection?.toString()).toBe("texto");
     expect(typing.value).toBe("sigo con el borrador");
   });
 });

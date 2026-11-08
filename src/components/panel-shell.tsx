@@ -3,6 +3,7 @@ import { logoutAction } from "@/app/actions/auth";
 import { CsrfField } from "@/components/csrf-field";
 import { DemoTour, DemoTourProvider, DemoTourRestart } from "@/components/demo-tour";
 import { Logo } from "@/components/logo";
+import { LogoutButton } from "@/components/logout-button";
 import { PanelNav } from "@/components/panel-nav";
 import type { Session } from "@/lib/session";
 
@@ -38,9 +39,7 @@ export function PanelShell({
             <Link href="/privacidad">Aviso de privacidad</Link>
             <form action={logoutAction}>
               <CsrfField />
-              <button className="button ghost" type="submit">
-                Salir
-              </button>
+              <LogoutButton />
             </form>
           </div>
         </aside>
