@@ -18,6 +18,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import type { XaiRequest } from "@/lib/xai/types";
 
 const SECRET = "Sintetica-7f3a";
+const EXAMPLE = "EjemploClavePrueba123";
 const RUT = "12.345.678-5";
 const VAULT_ASK = "Guarda el RUT y la clave en la bóveda para la revisión del SII";
 const IVA = "¿Cuándo se paga el IVA de noviembre?";
@@ -382,6 +383,111 @@ describe("turno de chat", () => {
     vi.mocked(saveCountedAssistantMessage).mockImplementation(async (_org: string, _thread: string, body: string) =>
       bubble("asst-1", "ASSISTANT", body),
     );
+  });
+
+  test("una clave en frase natural no se guarda, no va al modelo ni al log, y suelta el adjunto", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const file = { fileName: "nota.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: `Mi clave del SII es ${EXAMPLE}`,
+      files: [file],
+    })) {
+      events.push(event);
+    }
+    const logged = spy.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    spy.mockRestore();
+    const packed = `${JSON.stringify(events)}\n${logged}\n${JSON.stringify(vi.mocked(saveUserMessage).mock.calls)}`;
+    expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
+    expect(packed).not.toContain(EXAMPLE);
+    expect(createXaiClient).not.toHaveBeenCalled();
+    expect(loadHistory).not.toHaveBeenCalled();
+    const assistant = events.find((event) => event.type === "message");
+    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain(
+      "/panel/boveda?portal=sii#agregar-acceso",
+    );
+  });
+
+  test("el formulario conserva el PDF si no hay un secreto detectado", async () => {
+    const pdf = { fileName: "f29.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    for (const text of [
+      "Revisa el formulario 29 del SII que te adjunto",
+      "Te pego la factura; ¿cuál es la clave del crédito fiscal?",
+    ]) {
+      vi.mocked(saveUserMessage).mockClear();
+      vi.mocked(createXaiClient).mockClear();
+      const events = [];
+      for await (const event of streamChatTurn({
+        organizationId: "org-a",
+        organizationName: "QA Interno",
+        actorUserId: "user-a",
+        text,
+        files: [pdf],
+      })) {
+        events.push(event);
+      }
+      expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({
+        body: SAFE_CREDENTIAL_ENTRY,
+        files: [pdf],
+      });
+      expect(createXaiClient).not.toHaveBeenCalled();
+      expect(loadHistory).not.toHaveBeenCalled();
+      const assistant = events.find((event) => event.type === "message");
+      expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain("/panel/boveda");
+      expect(JSON.stringify(events)).not.toContain("crédito fiscal");
+      expect(JSON.stringify(vi.mocked(saveUserMessage).mock.calls)).not.toContain("crédito fiscal");
+    }
+  });
+
+  test("si la reserva del cupo falla mientras el historial sigue pendiente, no hay rechazo sin manejar", async () => {
+    const reasons: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      reasons.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const failure = new Error("base de cupo no disponible");
+      let rejectSlot: (error: Error) => void = () => {};
+      let resolveHistory: (rows: { role: "user"; text: string }[]) => void = () => {};
+      vi.mocked(reserveDailyTask).mockReturnValue(
+        new Promise((_, reject) => {
+          rejectSlot = reject;
+        }),
+      );
+      vi.mocked(loadHistory).mockReturnValue(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const pending = (async () => {
+        for await (const event of streamChatTurn({
+          organizationId: "org-a",
+          organizationName: "QA Interno",
+          actorUserId: "user-a",
+          text: IVA,
+          files: [],
+        })) {
+          void event;
+        }
+      })();
+      await new Promise((resolve) => setImmediate(resolve));
+      rejectSlot(failure);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(reasons).toEqual([]);
+      const assertion = expect(pending).rejects.toBe(failure);
+      resolveHistory([{ role: "user", text: IVA }]);
+      await assertion;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(reasons).toEqual([]);
+      expect(createXaiClient).not.toHaveBeenCalled();
+      expect(releaseDailyTask).not.toHaveBeenCalled();
+      expect(recordCompletedTask).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   test("un F29 con PDF no se sella ni pierde el adjunto", async () => {
