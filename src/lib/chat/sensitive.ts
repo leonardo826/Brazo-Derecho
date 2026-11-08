@@ -17,33 +17,77 @@ function clip(text: string, max = 500) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-function isPayCommand(text: string) {
-  const stripped = text
-    .replace(/\bse paga\b/gi, " ")
-    .replace(/\bhay que pagar\b/gi, " ")
-    .replace(/\bdebo pagar\b/gi, " ")
-    .replace(/\btengo que pagar\b/gi, " ")
-    .replace(/\bcorresponde pagar\b/gi, " ")
-    .replace(/\bplazo para pagar\b/gi, " ")
-    .replace(/\bfecha de pago\b/gi, " ");
-  if (/\b(transfiere|transferir|transfier[ae]|abona|abonar|haz el pago|realiza el pago|realizar el pago)\b/i.test(stripped)) {
-    return true;
-  }
-  if (/\b(puedes|podr[ií]as|quiero|necesito|por favor)\b[\s\S]{0,40}\bpag(ar|a|ue|uen|á)\b/i.test(stripped)) return true;
-  if (/^\s*(¿\s*)?(paga|pagar|pague|pagá|paguen)\b/i.test(stripped)) return true;
-  if (/\b(paga|pagar|pague|pagá|paguen)\b\s+(el|la|los|las|al)\b/i.test(stripped)) return true;
-  return false;
+function withoutQuotedText(text: string) {
+  return text.replace(/«[^»]*»/g, " ").replace(/“[^”]*”/g, " ").replace(/"[^"]*"/g, " ");
 }
 
+function clausesOf(text: string) {
+  return withoutQuotedText(text)
+    .split(/\s*(?:[.?!;]|\s+y\s+|\s+pero\s+)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function negated(text: string, verbs: string) {
+  return new RegExp(`\\bno(?:\\s+\\w+){0,5}\\s+(?:${verbs})\\b`, "i").test(text);
+}
+
+function clauseLead(clause: string) {
+  return clause.replace(/^[¿¡\s]+/, "");
+}
+
+function asksAgent(clause: string, atStart: string, requested: string) {
+  const lead = clauseLead(clause);
+  if (new RegExp(`^(?:por favor\\s+)?(?:${atStart})\\b`, "i").test(lead)) return true;
+  return new RegExp(
+    `\\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\\s+(?:que\\s+)?(?:me\\s+)?(?:${requested})\\b`,
+    "i",
+  ).test(clause);
+}
+
+function isPayCommand(text: string) {
+  return clausesOf(text).some((clause) => {
+    const stripped = clause
+      .replace(/\bse paga\b/gi, " ")
+      .replace(/\bhay que pagar\b/gi, " ")
+      .replace(/\bdebo pagar\b/gi, " ")
+      .replace(/\btengo que pagar\b/gi, " ")
+      .replace(/\bcorresponde pagar\b/gi, " ")
+      .replace(/\bplazo para pagar\b/gi, " ")
+      .replace(/\bfecha de pago\b/gi, " ");
+    if (negated(stripped, "transfiere|transferir|transfier[ae]|abona|abonar|paga|pagar|pague|pagá|paguen|puedes|quiero|necesito")) {
+      return false;
+    }
+    return asksAgent(
+      stripped,
+      "haz el pago|realiza el pago|realizar el pago|paga|pague|pagá|paguen|transfiere|transferir|transfier[ae]|abona|abonar",
+      "pagar|paga|pague|pagá|paguen|transferir|transfieras|abonar",
+    );
+  });
+}
+
+const FILING_OBJECT = /\b(declaraci[oó]n|declaraciones|f29|f22|formulario\s*29|formulario\s*22)\b/i;
+
 function isFilingCommand(text: string) {
-  const verb = /\b(presenta|presentar|presentes|presentá|presenten|presentad)\b/i.test(text);
-  const object = /\b(declaraci[oó]n|declaraciones|f29|f22|formulario\s*29|formulario\s*22)\b/i.test(text);
-  const send = /\b(env[ií]a|enviar|env[ií]es|manda|mandar|mandes)\b(?:\s+\S+){0,4}\s+(la\s+)?declaraci[oó]n\b/i.test(text);
-  return (verb && object) || send;
+  return clausesOf(text).some((clause) => {
+    if (!FILING_OBJECT.test(clause)) return false;
+    if (negated(clause, "presenta|presentá|presenten|presentad|presentes|presentar|env[ií]a|enviar|env[ií]es|manda|mandar|mandes|puedes|quiero|necesito")) {
+      return false;
+    }
+    return asksAgent(
+      clause,
+      "presenta|presentá|presenten|presentad|env[ií]a|env[ií]es|manda|mandes",
+      "presentes|presentar|presenta|presentá|presenten|enviar|env[ií]es|env[ií]a|manda|mandar|mandes",
+    );
+  });
 }
 
 function isRiskyTool(text: string) {
-  return /\b(borra|borrar|elimina|eliminar)\b[\s\S]{0,40}\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(text);
+  return clausesOf(text).some((clause) => {
+    if (!/\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(clause)) return false;
+    if (negated(clause, "borra|elimina|borrar|eliminar|borres|elimines|puedes|quiero|necesito")) return false;
+    return asksAgent(clause, "borra|elimina", "borres|elimines|borrar|eliminar");
+  });
 }
 
 const PORTAL = /\b(sii|previred|tesorer[ií]a|servicio de impuestos internos)\b/i;

@@ -34,9 +34,13 @@ describe("contador y bóveda", () => {
   test("el prompt ya no prohíbe entrar con la bóveda y pide respuestas breves", () => {
     const prompt = accountingPrompt();
     expect(promptBlocksVaultLogin(prompt)).toBe(false);
-    expect(prompt).toContain("fill");
-    expect(prompt).toContain("credentialId");
+    expect(prompt).not.toMatch(/computador entra con fill/);
+    expect(prompt).not.toMatch(/credentialId/);
     expect(prompt).toContain("/panel/boveda");
+    expect(prompt).toMatch(/Un PDF llega solo como nombre y tipo/);
+    expect(ACCOUNTING_PUBLIC_NOTE).toMatch(/Hoy no entra/);
+    expect(AGENT_CATALOG.ACCOUNTING.does.join(" ")).toMatch(/objetivo posterior/);
+    expect(AGENT_CATALOG.ACCOUNTING.does.join(" ")).not.toMatch(/Entra al SII y otros portales/);
     expect(prompt).toMatch(/una o dos frases/);
     expect(prompt).not.toContain(SECRET);
     expect(AGENT_CATALOG.ACCOUNTING.does.join(" ")).toMatch(/Bóveda/);
