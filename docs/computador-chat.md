@@ -2,26 +2,20 @@
 
 La especialidad contable orienta. No impide una tarea pública que el computador de esa empresa pueda ejecutar. Si falta un dato indispensable, se pregunta solo eso y el turno siguiente sigue la misma intención, aislada por persona, empresa e hilo. Comprar, pagar, declarar, enviar o un cambio irreversible pide confirmación. Entrar a un sitio no autoriza esas acciones.
 
-## Arriendo que sí se puede habilitar
+## Quién puede registrar
 
-`POST /api/computer/lease`, con la sesión de la empresa, guarda `machineId`, el origen del worker y el token cifrado con `CREDENTIALS_MASTER_KEY`. La respuesta no devuelve el token. `loadTenantLease` lee esa fila y solo entonces llama. Sin fila, sin clave maestra o con un origen interno, no llama.
+No hay un POST para que un miembro de la empresa anote una URL y la deje en marcha. El alta es `enrollComputerLease`, solo código de servidor. Hoy no lo llama un usuario ni el script de Fly: ese script imprime el plan y termina. `XAI_MODE=mock` no es un resultado.
 
-El origen tiene que ser `https://` alcanzable desde la app, o `http://127.0.0.1` en local. `*.internal` no se acepta: es la red privada de Fly y esta app no está en ella. El script de provisión sigue solo imprimiendo el plan. `XAI_MODE=mock` no es un resultado.
+Antes de guardar `RUNNING`, el servidor llama `GET /status` con el token, no sigue redirects, y exige el mismo `machineId`. Si la empresa está suspendida, si el nombre resuelve a una IP privada o local, o si el origen no es `https`, no activa. `127.0.0.1` solo se acepta cuando el proceso de prueba pasa `allowLoopback: true`. No depende de `NODE_ENV`. `loadTenantLease` sin esa marca no usa un loopback aunque la fila diga `RUNNING`.
+
+El token va cifrado con AES-GCM y AAD `v1`, empresa y máquina. Otra empresa, otra máquina o un cifrado cambiado no descifra. `STOPPED` o `ERROR` no se llaman. Una máquina ya registrada no se la queda otra empresa: el choque del índice único es un rechazo, no un 500.
 
 ## Qué sigue abierto
 
-La intención pendiente vive en memoria de un proceso. En serverless no dura entre instancias. Un `goto` público no prueba una tarifa. El redirect manual no cubre un click o una tecla que salga del sitio. El tiempo agotado no llama a `/task/cancel` si el abort no llegó a dispararse. El escritorio aún no autoriza cada acción ni mide el consumo por paso. La Bóveda no se inyecta desde el chat. Nada de eso se presenta como capacidad real.
+La intención pendiente vive en memoria de un proceso y no dura en serverless. Citar el host de un `goto` no es una tarifa. Un click o una tecla pueden salir del sitio después. Si el tiempo se agota sin abort, no se llama a `/task/cancel`. El runtime aún no autoriza cada acción ni mide el consumo por paso. La Bóveda no se inyecta desde el chat. El permiso por acción, más allá del texto, queda para la iteración siguiente. Nada de eso es capacidad real.
 
-Un resultado solo se acepta si el runtime responde `DONE`, `xaiMode: live`, y un paso `goto` a una URL pública cuyo nombre aparece en el texto. Una captura inicial no alcanza. El simulador no cuenta.
+Un resultado del chat solo se acepta con `DONE`, `xaiMode: live` y un `goto` público citado. El simulador no cuenta. Una cookie en el navegador de la máquina no aísla un secreto.
 
-El relleno de la Bóveda no sale del chat. Una cookie que ya viva en el navegador de una máquina no demuestra que el secreto quedó aislado. El chat no envía claves.
+## Runtime local y piloto
 
-## Runtime local
-
-`agent-runtime` rechaza la petición si falta `AGENT_RUNTIME_TOKEN` o si `machineId` no es el de ese proceso. Un `goto` a loopback, red privada o un nombre `.internal` no se ejecuta. `POST /task/cancel` con el mismo token y la misma máquina aborta la tarea en curso.
-
-Eso se prueba contra el handler real en `127.0.0.1`. No abre el escritorio de esta sesión ni una aerolínea, y no acredita una tarifa.
-
-## Para un piloto
-
-Hace falta, por empresa, una máquina identificada, un token solo de esa máquina, y una URL alcanzable desde la app que no sea la red privada de Fly. El alta sigue detrás de `FLY_DRY_RUN=false` y `--confirmo-gasto`. Este cambio no la hace y no fija un precio.
+El handler rechaza si falta el token o si la máquina no coincide. El cableado de prueba usa `127.0.0.1` y está rotulado como cableado, no como navegación. Un piloto real sigue exigiendo una máquina propia, un token de esa máquina y un `https` alcanzable que no sea la red privada de Fly. Este cambio no la compra y no fija un precio.

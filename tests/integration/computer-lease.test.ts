@@ -1,38 +1,17 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
-import { afterAll, describe, expect, test, vi } from "vitest";
-
-const { cookieJar } = vi.hoisted(() => ({ cookieJar: new Map<string, string>() }));
-
-vi.mock("next/headers", () => ({
-  cookies: async () => ({
-    get: (name: string) => {
-      const value = cookieJar.get(name);
-      return value ? { name, value } : undefined;
-    },
-    set: (name: string, value: string) => {
-      cookieJar.set(name, value);
-    },
-    delete: (name: string) => {
-      cookieJar.delete(name);
-    },
-  }),
-}));
-
-import { POST } from "@/app/api/computer/lease/route";
+import { afterAll, describe, expect, test } from "vitest";
 import { handleAgent } from "../../agent-runtime/src/http";
 import type { Desktop, DesktopStatus } from "../../agent-runtime/src/desktop";
 import { DESKTOP_COPY, executeDesktopRequest } from "@/lib/chat/desktop-task";
-import { loadTenantLease } from "@/lib/computer/lease";
-import { SESSION_COOKIE } from "@/lib/cookie";
+import { enrollComputerLease, loadTenantLease, revokeComputerLease, rotateComputerLease } from "@/lib/computer/lease";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
-import { createSessionToken } from "@/lib/session-token";
 
 const createdUsers: string[] = [];
 const createdOrgs: string[] = [];
 
-const quietDesktop = (): Desktop => {
+function quietDesktop(): Desktop {
   const status: DesktopStatus = { ok: true, display: ":99", chromium: "up", whatsappTab: false, profileDir: "/tmp/none" };
   return {
     async screenshot() {
@@ -45,19 +24,15 @@ const quietDesktop = (): Desktop => {
       return status;
     },
   };
-};
+}
 
-async function listen(machineId: string, token: string, seen: { authorization: string; machineId: string; path: string }[]) {
+async function listen(env: { token: string; machineId: string }, seen: { authorization: string; machineId: string; path: string }[]) {
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const raw = Buffer.concat(chunks).toString("utf8");
     const body = raw ? (JSON.parse(raw) as { machineId?: string }) : {};
-    seen.push({
-      authorization: req.headers.authorization ?? "",
-      machineId: body.machineId ?? "",
-      path: req.url ?? "",
-    });
+    seen.push({ authorization: req.headers.authorization ?? "", machineId: body.machineId ?? "", path: req.url ?? "" });
     const response = await handleAgent(
       {
         method: req.method ?? "GET",
@@ -65,7 +40,7 @@ async function listen(machineId: string, token: string, seen: { authorization: s
         body: raw ? body : undefined,
         headers: { authorization: req.headers.authorization },
       },
-      { env: { AGENT_RUNTIME_TOKEN: token, MACHINE_ID: machineId, XAI_MODE: "mock" }, desktop: quietDesktop() },
+      { env: { AGENT_RUNTIME_TOKEN: env.token, MACHINE_ID: env.machineId, XAI_MODE: "mock" }, desktop: quietDesktop() },
     );
     res.writeHead(response.status);
     res.end(response.body);
@@ -76,100 +51,137 @@ async function listen(machineId: string, token: string, seen: { authorization: s
   return { server, origin: `http://127.0.0.1:${port}` };
 }
 
+async function org(name: string, suspended = false) {
+  const user = await prisma.user.create({
+    data: { email: `${name}-${Date.now()}-${randomBytes(2).toString("hex")}@test.local`, name, passwordHash: await hashPassword("Clave-demo-2026") },
+  });
+  createdUsers.push(user.id);
+  const organization = await prisma.organization.create({
+    data: { name, slug: `${name}-${Date.now()}-${randomBytes(3).toString("hex")}`, suspendedAt: suspended ? new Date() : null },
+  });
+  createdOrgs.push(organization.id);
+  return { user, organization };
+}
+
 afterAll(async () => {
   if (createdOrgs.length > 0) await prisma.organization.deleteMany({ where: { id: { in: createdOrgs } } });
   if (createdUsers.length > 0) await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
   await prisma.$disconnect();
 });
 
-describe("arriendo persistido del computador, solo cableado", () => {
-  test("la sesión guarda el token cifrado y loadTenantLease llama al handler real", async () => {
-    if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
-      process.env.SESSION_SECRET = "integration-session-secret-de-32-chars";
-    }
+describe("alta del computador solo en el servidor, cableado local", () => {
+  test("no activa sin prueba del runtime, y producción no acepta el loopback", async () => {
     const master = randomBytes(32).toString("base64");
     process.env.CREDENTIALS_MASTER_KEY = master;
     const token = `lease-${randomBytes(18).toString("hex")}`;
-    const machineId = `machine-${randomBytes(4).toString("hex")}`;
+    const machineId = `mach-${randomBytes(4).toString("hex")}`;
     const seen: { authorization: string; machineId: string; path: string }[] = [];
-    const worker = await listen(machineId, token, seen);
+    const env = { token, machineId };
+    const worker = await listen(env, seen);
+    const { user, organization } = await org("alta");
+    const suspended = await org("susp", true);
 
-    const user = await prisma.user.create({
-      data: { email: `lease-${Date.now()}@test.local`, name: "Ana", passwordHash: await hashPassword("Clave-demo-2026") },
-    });
-    createdUsers.push(user.id);
-    const organization = await prisma.organization.create({
-      data: { name: "Lease", slug: `lease-${Date.now()}-${randomBytes(3).toString("hex")}` },
-    });
-    createdOrgs.push(organization.id);
-    const other = await prisma.organization.create({
-      data: { name: "Otra", slug: `otra-${Date.now()}-${randomBytes(3).toString("hex")}` },
-    });
-    createdOrgs.push(other.id);
-    await prisma.membership.create({ data: { userId: user.id, organizationId: organization.id, role: "OWNER" } });
-    const session = await createSessionToken({
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      organizationId: organization.id,
-      organizationName: organization.name,
-      role: "OWNER",
-      authVersion: user.authVersion,
-    });
-    cookieJar.set(SESSION_COOKIE, session);
-
-    const response = await POST(
-      new Request("http://local/api/computer/lease", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ machineId, endpoint: worker.origin, token }),
-      }),
+    const closed = await enrollComputerLease(
+      { organizationId: organization.id, machineId, endpoint: worker.origin, token },
+      process.env,
     );
-    const payload = await response.json();
-    expect(response.status).toBe(200);
-    expect(payload).toEqual({ ok: true, configured: true, machineId });
-    expect(JSON.stringify(payload)).not.toContain(token);
+    expect(closed).toMatchObject({ ok: false, error: "datos" });
 
-    const stored = await prisma.computer.findUniqueOrThrow({ where: { clientId: organization.id } });
-    expect(stored.agentTokenCiphertext).not.toContain(token);
-    expect(stored.agentEndpoint).toBe(worker.origin);
+    const paused = await enrollComputerLease(
+      { organizationId: suspended.organization.id, machineId, endpoint: worker.origin, token },
+      process.env,
+      { allowLoopback: true },
+    );
+    expect(paused).toMatchObject({ ok: false, error: "suspendida" });
 
-    const own = await loadTenantLease(organization.id);
-    expect(own.state).toBe("listo");
-    if (own.state !== "listo") return;
-    expect(own.lease.token).toBe(token);
-    expect(own.lease.machineId).toBe(machineId);
-    expect(own.lease.baseUrl).toBe(worker.origin);
-    expect((await loadTenantLease(other.id)).state).toBe("ausente");
+    const enrolled = await enrollComputerLease(
+      { organizationId: organization.id, machineId, endpoint: worker.origin, token },
+      process.env,
+      { allowLoopback: true },
+    );
+    expect(enrolled).toEqual({ ok: true, machineId, configured: true });
+    const row = await prisma.computer.findUniqueOrThrow({ where: { clientId: organization.id } });
+    expect(row.status).toBe("RUNNING");
+    expect(row.agentTokenCiphertext).not.toContain(token);
 
-    const status = await fetch(`${worker.origin}/status`, { headers: { authorization: `Bearer ${own.lease.token}` } });
+    expect((await loadTenantLease(organization.id)).state).toBe("transporte");
+    const ready = await loadTenantLease(organization.id, process.env, { allowLoopback: true });
+    expect(ready.state).toBe("listo");
+    if (ready.state !== "listo") return;
+
+    const status = await fetch(`${worker.origin}/status`, { headers: { authorization: `Bearer ${ready.lease.token}` } });
     expect(status.status).toBe(200);
-    const open = await fetch(`${worker.origin}/status`);
-    expect(open.status).toBe(401);
+    expect((await fetch(`${worker.origin}/status`)).status).toBe(401);
 
     const result = await executeDesktopRequest({
       organizationId: organization.id,
       userId: user.id,
       conversationId: "contador",
       text: "Usa el computador y abre https://example.com",
-      loadLease: (organizationId) => loadTenantLease(organizationId),
+      allowLoopback: true,
+      loadLease: (organizationId) => loadTenantLease(organizationId, process.env, { allowLoopback: true }),
       reserve: async () => ({ ok: true, reservationId: null }),
     });
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.NOT_REAL });
-    const task = seen.find((item) => item.path === "/task");
-    expect(task?.authorization).toBe(`Bearer ${token}`);
-    expect(task?.machineId).toBe(machineId);
+    expect(seen.some((item) => item.path === "/task" && item.authorization === `Bearer ${token}` && item.machineId === machineId)).toBe(true);
 
-    const blocked = await POST(
-      new Request("http://local/api/computer/lease", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ machineId, endpoint: "http://app.internal:8787", token }),
-      }),
+    const other = await org("otra");
+    const stolen = await enrollComputerLease(
+      { organizationId: other.organization.id, machineId, endpoint: worker.origin, token: `otro-${randomBytes(18).toString("hex")}` },
+      process.env,
+      { allowLoopback: true },
     );
-    expect(blocked.status).toBe(400);
-    expect(JSON.stringify(await blocked.json())).not.toContain(token);
+    expect(stolen).toMatchObject({ ok: false, error: "maquina" });
 
+    await prisma.computer.update({
+      where: { clientId: organization.id },
+      data: { status: "RUNNING", agentTokenCiphertext: "forjado", agentTokenIv: "forjado", agentTokenAuthTag: "forjado" },
+    });
+    expect((await loadTenantLease(organization.id, process.env, { allowLoopback: true })).state).toBe("transporte");
+
+    await revokeComputerLease(organization.id);
+    expect((await loadTenantLease(organization.id, process.env, { allowLoopback: true })).state).toBe("ausente");
+
+    await new Promise<void>((resolve, reject) => worker.server.close((error) => (error ? reject(error) : resolve())));
+    delete process.env.CREDENTIALS_MASTER_KEY;
+  });
+
+  test("un redirect no activa y rotar a un token que el runtime niega no reemplaza el anterior", async () => {
+    const master = randomBytes(32).toString("base64");
+    process.env.CREDENTIALS_MASTER_KEY = master;
+    const token = `lease-${randomBytes(18).toString("hex")}`;
+    const machineId = `mach-${randomBytes(4).toString("hex")}`;
+    const redirector = http.createServer((_req, res) => {
+      res.writeHead(302, { location: "http://127.0.0.1:9/" });
+      res.end();
+    });
+    await new Promise<void>((resolve) => redirector.listen(0, "127.0.0.1", () => resolve()));
+    const redirectAddress = redirector.address();
+    const redirectPort = typeof redirectAddress === "object" && redirectAddress ? redirectAddress.port : 0;
+    const { organization } = await org("redir");
+    const bounced = await enrollComputerLease(
+      { organizationId: organization.id, machineId, endpoint: `http://127.0.0.1:${redirectPort}`, token },
+      process.env,
+      { allowLoopback: true },
+    );
+    expect(bounced).toMatchObject({ ok: false, error: "no_verificado" });
+    expect(await prisma.computer.findUnique({ where: { clientId: organization.id } })).toBeNull();
+    await new Promise<void>((resolve, reject) => redirector.close((error) => (error ? reject(error) : resolve())));
+
+    const env = { token, machineId };
+    const seen: { authorization: string; machineId: string; path: string }[] = [];
+    const worker = await listen(env, seen);
+    const enrolled = await enrollComputerLease(
+      { organizationId: organization.id, machineId, endpoint: worker.origin, token },
+      process.env,
+      { allowLoopback: true },
+    );
+    expect(enrolled.ok).toBe(true);
+    const kept = await rotateComputerLease(organization.id, `nuevo-${randomBytes(18).toString("hex")}`, process.env, { allowLoopback: true });
+    expect(kept).toMatchObject({ ok: false, error: "no_verificado" });
+    const still = await loadTenantLease(organization.id, process.env, { allowLoopback: true });
+    expect(still.state).toBe("listo");
+    if (still.state === "listo") expect(still.lease.token).toBe(token);
     await new Promise<void>((resolve, reject) => worker.server.close((error) => (error ? reject(error) : resolve())));
     delete process.env.CREDENTIALS_MASTER_KEY;
   });

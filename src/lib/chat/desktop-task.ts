@@ -104,7 +104,7 @@ function loopback(url: URL) {
   return url.hostname === "127.0.0.1" || url.hostname === "localhost";
 }
 
-export function usableLease(lease: ComputerLease | null, organizationId: string) {
+export function usableLease(lease: ComputerLease | null, organizationId: string, allowLoopback = false) {
   if (!lease || lease.organizationId !== organizationId) return null;
   if (!lease.token.trim() || !lease.machineId.trim() || lease.machineId.length > 80) return null;
   let url: URL;
@@ -115,9 +115,13 @@ export function usableLease(lease: ComputerLease | null, organizationId: string)
   }
   if (url.username || url.password) return null;
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  const host = url.hostname.toLowerCase();
-  if (host.endsWith(".internal") || host.endsWith(".local")) return null;
-  if (!loopback(url) && url.protocol !== "https:") return null;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local")) return null;
+  if (host === "127.0.0.1") {
+    if (!allowLoopback || url.protocol !== "http:") return null;
+    return { ...lease, token: lease.token.trim(), machineId: lease.machineId.trim(), baseUrl: url.origin };
+  }
+  if (loopback(url) || url.protocol !== "https:") return null;
   return { ...lease, token: lease.token.trim(), machineId: lease.machineId.trim(), baseUrl: url.origin };
 }
 
@@ -153,6 +157,8 @@ export async function executeDesktopRequest(input: {
   signal?: AbortSignal;
   timeoutMs?: number;
   loadLease: (organizationId: string) => Promise<LeaseState>;
+  /** Solo el proceso de prueba. Producción no lo pasa: 127.0.0.1 no es un destino. */
+  allowLoopback?: boolean;
   reserve?: () => Promise<{ ok: boolean; reservationId?: string | null }>;
   release?: (reservationId: string) => Promise<void>;
   fetchImpl?: typeof fetch;
@@ -181,7 +187,7 @@ export async function executeDesktopRequest(input: {
 
   const looked = await input.loadLease(input.organizationId);
   if (looked.state === "ausente") return finish("ausente", false, ABSENT);
-  const lease = looked.state === "listo" ? usableLease(looked.lease, input.organizationId) : null;
+  const lease = looked.state === "listo" ? usableLease(looked.lease, input.organizationId, input.allowLoopback === true) : null;
   if (!lease) return finish("transporte", false, TRANSPORT);
 
   const slot = await input.reserve?.();

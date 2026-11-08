@@ -79,6 +79,7 @@ describe("contrato del computador en el chat", () => {
       userId: USER,
       conversationId: THREAD,
       text: "12 de diciembre, solo ida",
+      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl: (async () => {
         throw new Error("no debía llamar");
@@ -122,6 +123,7 @@ describe("contrato del computador en el chat", () => {
       );
     }) as typeof fetch;
     const result = await run("Cotiza vuelos CCP SCL el 12 de diciembre, solo ida", {
+      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl,
     });
@@ -134,6 +136,7 @@ describe("contrato del computador en el chat", () => {
   test("la reserva ocurre antes de la llamada y el tope no llama", async () => {
     const order: string[] = [];
     const blocked = await run("Usa el computador y abre https://example.com", {
+      allowLoopback: true,
       loadLease: async () => ready(),
       reserve: async () => {
         order.push("reserva");
@@ -150,6 +153,7 @@ describe("contrato del computador en el chat", () => {
 
   test("comprar pide confirmación", async () => {
     const result = await run("Compra el pasaje del viaje el 12 de diciembre, solo ida", {
+      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl: (async () => {
         throw new Error("no debía llamar");
@@ -185,6 +189,7 @@ describe("contrato del computador en el chat", () => {
     const port = typeof address === "object" && address ? address.port : 0;
     const controller = new AbortController();
     const pending = run("Usa el computador y abre https://example.com", {
+      allowLoopback: true,
       loadLease: async () => ({
         state: "listo",
         lease: { ...lease(), baseUrl: `http://127.0.0.1:${port}` },
