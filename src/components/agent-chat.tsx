@@ -16,6 +16,13 @@ import { CSRF_HEADER } from "@/lib/csrf-token";
 import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
+type Ear = {
+  id: number;
+  live: boolean;
+  phase: "acquire" | "record" | "stt" | "browser";
+  tracks: { stop: () => void }[];
+  stopDevice: () => void;
+};
 type LocalFile = { file: File; url: string };
 type Draft = { id: string; text: string; files: LocalFile[]; portal: PortalId | null };
 
@@ -174,9 +181,8 @@ export function AgentChat({
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const stopRecord = useRef<(() => void) | null>(null);
-  const listeningRef = useRef(false);
-  const listenGen = useRef(0);
-  const captures = useRef(new Set<{ accept: boolean; stop: () => void }>());
+  const activeEar = useRef<Ear | null>(null);
+  const ears = useRef(new Set<Ear>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
   const turns = useRef<TurnQueue<Draft>>({ active: null, waiting: [] });
@@ -193,17 +199,30 @@ export function AgentChat({
   const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
-    const capturesNow = captures.current;
+    const earsNow = ears.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      listenGen.current += 1;
       abortRef.current?.abort();
-      for (const capture of capturesNow) capture.accept = false;
-      const stop = stopRecord.current;
+      for (const ear of earsNow) {
+        ear.live = false;
+        try {
+          ear.stopDevice();
+        } catch {
+          // El dispositivo ya estaba detenido.
+        }
+        for (const track of ear.tracks) {
+          try {
+            track.stop();
+          } catch {
+            // La pista ya estaba cerrada.
+          }
+        }
+        ear.tracks = [];
+      }
+      earsNow.clear();
+      activeEar.current = null;
       stopRecord.current = null;
-      listeningRef.current = false;
-      stop?.();
     };
   }, []);
 
@@ -543,30 +562,60 @@ export function AgentChat({
     });
   }
 
-  function alive(generation: number) {
-    return mountedRef.current && listenGen.current === generation;
+  function owns(ear: Ear) {
+    return ear.live && mountedRef.current && activeEar.current === ear;
   }
 
-  async function transcribeBrowser(generation: number) {
+  function closeTracks(ear: Ear) {
+    for (const track of ear.tracks) {
+      try {
+        track.stop();
+      } catch {
+        // La pista ya estaba cerrada.
+      }
+    }
+    ear.tracks = [];
+  }
+
+  function releaseEar(ear: Ear) {
+    ear.live = false;
+    try {
+      ear.stopDevice();
+    } catch {
+      // El dispositivo ya estaba detenido.
+    }
+    closeTracks(ear);
+    ears.current.delete(ear);
+    if (activeEar.current === ear) {
+      activeEar.current = null;
+      stopRecord.current = null;
+      if (mountedRef.current) setRecording(false);
+    }
+  }
+
+  async function transcribeBrowser(ear: Ear) {
+    ear.phase = "browser";
+    if (mountedRef.current) setRecording(true);
     for (const lang of ["es-CL", "es-ES"] as const) {
-      if (!alive(generation)) return;
+      if (!owns(ear)) return;
       const session = listenInBrowser(lang);
       if (!session) continue;
       const stopThis = () => session.stop();
+      ear.stopDevice = stopThis;
       stopRecord.current = stopThis;
-      if (!alive(generation)) {
+      if (!owns(ear)) {
         session.stop();
         return;
       }
       try {
         const text = await session.result;
-        if (!alive(generation)) return;
+        if (!owns(ear)) return;
         if (text) {
           appendComposer(text);
           return;
         }
       } catch (error) {
-        if (!alive(generation)) return;
+        if (!owns(ear)) return;
         const reason = error instanceof Error ? error.message : "";
         if (reason === "abort") return;
         if (reason === "denied") {
@@ -577,41 +626,38 @@ export function AgentChat({
         if (stopRecord.current === stopThis) stopRecord.current = null;
       }
     }
-    if (alive(generation)) setNotice(CHAT_ERROR.voz);
-  }
-
-  function endListen(generation: number, stopThis: (() => void) | null) {
-    if (listenGen.current !== generation) return;
-    listeningRef.current = false;
-    if (stopThis && stopRecord.current === stopThis) stopRecord.current = null;
-    if (mountedRef.current) setRecording(false);
+    if (owns(ear)) setNotice(CHAT_ERROR.voz);
   }
 
   async function toggleMic() {
-    if (listeningRef.current) {
-      // Parar entrega el audio de esta captura. No invalida su identidad:
-      // un reinicio siguiente instala otro stop y el finally viejo no lo borra.
-      listeningRef.current = false;
-      if (mountedRef.current) setRecording(false);
-      stopRecord.current?.();
+    const current = activeEar.current;
+    if (current) {
+      if (current.phase === "record") {
+        current.phase = "stt";
+        try {
+          current.stopDevice();
+        } catch {
+          // La grabación ya estaba cerrada.
+        }
+        return;
+      }
+      releaseEar(current);
       return;
     }
-    const generation = listenGen.current + 1;
-    listenGen.current = generation;
-    listeningRef.current = true;
-    const capture = { accept: true, stop: () => {} };
-    captures.current.add(capture);
-    let stopThis: (() => void) | null = null;
+    const ear: Ear = { id: ears.current.size + 1, live: true, phase: "acquire", tracks: [], stopDevice: () => {} };
+    ears.current.add(ear);
+    activeEar.current = ear;
     setNotice("");
     setRecording(true);
     try {
       if (voiceMode === "navegador" || !navigator.mediaDevices?.getUserMedia) {
-        await transcribeBrowser(generation);
+        await transcribeBrowser(ear);
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!capture.accept || !mountedRef.current) {
-        for (const track of stream.getTracks()) track.stop();
+      ear.tracks.push(...stream.getTracks());
+      if (!owns(ear)) {
+        closeTracks(ear);
         return;
       }
       const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
@@ -622,16 +668,24 @@ export function AgentChat({
       };
       const stopped = new Promise<Blob>((resolve) => {
         recorder.onstop = () => {
-          for (const track of stream.getTracks()) track.stop();
           resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
         };
       });
-      stopThis = () => recorder.stop();
-      capture.stop = stopThis;
+      const stopThis = () => {
+        try {
+          recorder.stop();
+        } catch {
+          // Ya estaba detenida.
+        }
+      };
+      ear.stopDevice = stopThis;
       stopRecord.current = stopThis;
+      ear.phase = "record";
       recorder.start();
       const blob = await stopped;
-      if (!mountedRef.current || !capture.accept) return;
+      closeTracks(ear);
+      if (!owns(ear)) return;
+      ear.phase = "stt";
       const form = new FormData();
       form.set("audio", blob, "nota.webm");
       const response = await fetch("/api/voz/stt", {
@@ -639,26 +693,25 @@ export function AgentChat({
         headers: { [CSRF_HEADER]: csrf },
         body: form,
       });
-      if (!mountedRef.current || !capture.accept) return;
+      if (!owns(ear)) return;
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; texto?: string; fallback?: boolean; error?: string };
-      if (!mountedRef.current || !capture.accept) return;
+      if (!owns(ear)) return;
       if (body.ok && body.texto) {
         appendComposer(body.texto);
         return;
       }
       if (body.fallback || !response.ok) {
-        if (!alive(generation)) return;
+        if (!owns(ear)) return;
         setVoiceMode("navegador");
         setNotice("No pude transcribir en el servidor. Habla de nuevo: uso el micrófono del navegador.");
-        await transcribeBrowser(generation);
+        await transcribeBrowser(ear);
         return;
       }
       setNotice(CHAT_ERROR[body.error ?? ""] ?? CHAT_ERROR.voz);
     } catch {
-      if (capture.accept && mountedRef.current) setNotice(CHAT_ERROR.voz);
+      if (owns(ear)) setNotice(CHAT_ERROR.voz);
     } finally {
-      captures.current.delete(capture);
-      endListen(generation, stopThis);
+      releaseEar(ear);
     }
   }
 

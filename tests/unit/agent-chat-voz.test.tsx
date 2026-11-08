@@ -20,8 +20,24 @@ type FakeEngine = {
 
 const engines: FakeEngine[] = [];
 const recorders: FakeRecorder[] = [];
+const tracks: FakeTrack[] = [];
+const grants: Array<(stream: { getTracks: () => FakeTrack[] }) => void> = [];
 let denyMic = false;
+let deferMic = false;
 let sttBody: { ok?: boolean; texto?: string; fallback?: boolean; error?: string } = { ok: true, texto: "nota de voz" };
+
+type FakeTrack = { stopped: boolean; stop: () => void };
+
+function makeTrack() {
+  const track: FakeTrack = {
+    stopped: false,
+    stop() {
+      this.stopped = true;
+    },
+  };
+  tracks.push(track);
+  return track;
+}
 
 class FakeRecorder {
   state = "inactive";
@@ -79,6 +95,9 @@ describe("micrófono del Contador", () => {
     recorders.length = 0;
     fetches.length = 0;
     denyMic = false;
+    deferMic = false;
+    grants.length = 0;
+    tracks.length = 0;
     sttBody = { ok: true, texto: "nota de voz" };
     vi.stubGlobal("SpeechRecognition", FakeRecognition);
     vi.stubGlobal("MediaRecorder", FakeRecorder);
@@ -91,9 +110,15 @@ describe("micrófono del Contador", () => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: async () => {
-          if (denyMic) throw new DOMException("denied", "NotAllowedError");
-          return { getTracks: () => [{ stop() {} }] };
+        getUserMedia: () => {
+          if (denyMic) return Promise.reject(new DOMException("denied", "NotAllowedError"));
+          if (deferMic) {
+            return new Promise((resolve) => {
+              grants.push(resolve);
+            });
+          }
+          const track = makeTrack();
+          return Promise.resolve({ getTracks: () => [track] });
         },
       },
     });
@@ -266,6 +291,10 @@ describe("micrófono del Contador", () => {
     const first = recorders[0];
     await act(async () => {
       mic().click();
+      first?.finish();
+    });
+    await flush();
+    await act(async () => {
       mic().click();
     });
     await flush();
@@ -281,6 +310,109 @@ describe("micrófono del Contador", () => {
     });
     expect(recorders[1]?.state).toBe("inactive");
     expect(fetches.some((url) => url.includes("/api/chat"))).toBe(false);
+  });
+
+  test("un permiso que llega después de parar cierra las pistas y no graba", async () => {
+    deferMic = true;
+    render("xai");
+    await act(async () => {
+      mic().click();
+    });
+    await flush();
+    expect(grants).toHaveLength(1);
+    await act(async () => {
+      mic().click();
+    });
+    const track = makeTrack();
+    await act(async () => {
+      grants[0]?.({ getTracks: () => [track] });
+    });
+    await flush();
+    expect(track.stopped).toBe(true);
+    expect(recorders).toHaveLength(0);
+    expect(fetches.filter((url) => url.includes("/api/voz/stt"))).toEqual([]);
+    expect(fetches.some((url) => url.includes("/api/chat"))).toBe(false);
+    expect(tracks.every((item) => item.stopped)).toBe(true);
+  });
+
+  test("dos permisos resueltos al revés no dejan la primera captura viva", async () => {
+    deferMic = true;
+    render("xai");
+    await act(async () => {
+      mic().click();
+    });
+    await flush();
+    await act(async () => {
+      mic().click();
+      mic().click();
+    });
+    await flush();
+    expect(grants).toHaveLength(2);
+    const second = makeTrack();
+    const first = makeTrack();
+    await act(async () => {
+      grants[1]?.({ getTracks: () => [second] });
+    });
+    await flush();
+    expect(recorders).toHaveLength(1);
+    expect(second.stopped).toBe(false);
+    await act(async () => {
+      grants[0]?.({ getTracks: () => [first] });
+    });
+    await flush();
+    expect(first.stopped).toBe(true);
+    expect(recorders).toHaveLength(1);
+    expect(recorders[0]?.state).toBe("recording");
+    expect(tracks.every((item) => item === second || item.stopped)).toBe(true);
+  });
+
+  test("inicio, parar y desmontar no dejan pistas colgadas", async () => {
+    deferMic = true;
+    render("xai");
+    await act(async () => {
+      mic().click();
+    });
+    await flush();
+    await act(async () => {
+      mic().click();
+    });
+    act(() => root.unmount());
+    const track = makeTrack();
+    await act(async () => {
+      grants[0]?.({ getTracks: () => [track] });
+    });
+    await flush();
+    expect(track.stopped).toBe(true);
+    expect(recorders).toHaveLength(0);
+    expect(fetches.filter((url) => url.includes("/api/voz/stt"))).toEqual([]);
+    expect(fetches.some((url) => url.includes("/api/chat"))).toBe(false);
+  });
+
+  test("el fallback del navegador sigue siendo la captura activa y se puede parar", async () => {
+    sttBody = { ok: false, fallback: true };
+    render("xai");
+    writeDraft("borrador");
+    await act(async () => {
+      mic().click();
+    });
+    await flush();
+    await act(async () => {
+      mic().click();
+      recorders[0]?.finish();
+    });
+    await flush();
+    expect(engines).toHaveLength(1);
+    expect(mic().textContent).toMatch(/Detener grabación/);
+    await act(async () => {
+      mic().click();
+    });
+    await flush();
+    expect(engines[0]?.aborted).toBe(true);
+    expect(engines).toHaveLength(1);
+    expect(recorders).toHaveLength(1);
+    expect(composer().value).toBe("borrador");
+    expect(fetches.some((url) => url.includes("/api/chat"))).toBe(false);
+    expect(tracks.every((item) => item.stopped)).toBe(true);
   });
 
   test("sin permiso de xAI no cae al otro idioma", async () => {
