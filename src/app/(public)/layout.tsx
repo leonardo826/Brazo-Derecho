@@ -6,10 +6,10 @@ export default async function PublicLayout({ children }: { children: React.React
   const pathname = (await headers()).get("x-pathname") ?? "";
   if (pathname === "/") return children;
   return (
-    <>
+    <div className="iabot">
       <SiteHeader />
       <main id="contenido">{children}</main>
       <SiteFooter />
-    </>
+    </div>
   );
 }

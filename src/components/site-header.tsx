@@ -1,14 +1,17 @@
-import { Logo } from "@/components/logo";
+import Link from "next/link";
 import { PublicNav } from "@/components/public-nav";
 
 export function SiteHeader() {
   return (
-    <header className="site-header">
+    <header className="iabot-header">
       <a className="skip" href="#contenido">
         Saltar al contenido
       </a>
-      <div className="wrap inner">
-        <Logo />
+      <div className="iabot-wrap iabot-bar">
+        <Link className="iabot-logo" href="/">
+          <span className="iabot-mark" aria-hidden="true" />
+          IA Bot
+        </Link>
         <PublicNav />
       </div>
     </header>

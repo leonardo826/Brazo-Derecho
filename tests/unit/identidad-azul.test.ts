@@ -26,4 +26,21 @@ describe("identidad azul con tokens ya definidos", () => {
   test("el foco visible usa el azul de acción y no se recorta el desplazamiento", () => {
     expect(css).toContain(":focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }");
   });
+
+  test("catálogo y precios usan la marca IA Bot y el azul de la portada", () => {
+    const layout = readFileSync(new URL("../../src/app/(public)/layout.tsx", import.meta.url), "utf8");
+    const header = readFileSync(new URL("../../src/components/site-header.tsx", import.meta.url), "utf8");
+    const footer = readFileSync(new URL("../../src/components/site-footer.tsx", import.meta.url), "utf8");
+    const logo = readFileSync(new URL("../../src/components/logo.tsx", import.meta.url), "utf8");
+    const config = readFileSync(new URL("../../next.config.ts", import.meta.url), "utf8");
+    expect(layout).toContain('className="iabot"');
+    expect(header).toContain("IA Bot");
+    expect(header).toContain("iabot-logo");
+    expect(footer).toContain("iabot-footer");
+    expect(css).toContain(".iabot h3");
+    expect(css).toContain(".iabot .price");
+    expect(logo).toContain("<em>Brazo</em> Derecho");
+    expect(config).toContain('source: "/panel"');
+    expect(config).toContain('value: "no-store"');
+  });
 });

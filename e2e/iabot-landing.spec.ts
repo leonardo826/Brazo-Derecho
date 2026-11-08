@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function expectPublishedPlanFooter(page: Page) {
-  const footer = page.locator("footer.site-footer");
+  const footer = page.locator("footer.iabot-footer");
   await expect(footer).toContainText("IA Bot Profesional: $63.546 al mes, IVA incluido.");
   await expect(footer).not.toContainText("netos");
   await expect(footer).not.toContainText("más IVA");

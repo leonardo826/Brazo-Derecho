@@ -10,6 +10,14 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders(),
       },
+      {
+        source: "/panel",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
+        source: "/panel/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
     ];
   },
 };
