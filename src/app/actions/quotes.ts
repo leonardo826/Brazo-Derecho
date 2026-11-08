@@ -166,10 +166,17 @@ export async function createQuoteAction(formData: FormData) {
   }
   if (!gated.ok) redirect("/panel/cotizador?error=limite");
   const response = gated.value;
-  await recordModelCall({ organizationId: session.organizationId, response });
+  const reservationId = gated.reservationId;
 
   let quoteId: string | null = null;
+  let quoteSlotOpen = true;
+  async function releaseQuoteSlot() {
+    if (!quoteSlotOpen) return;
+    quoteSlotOpen = false;
+    await releaseDailyTask(reservationId);
+  }
   try {
+    await recordModelCall({ organizationId: session.organizationId, response });
     quoteId = await prisma.$transaction(async (tx) => {
     const usage = await reserveUsage(tx, {
       organizationId: session.organizationId,
@@ -184,7 +191,7 @@ export async function createQuoteAction(formData: FormData) {
       organizationId: session.organizationId,
       model: response.model,
       synthetic: response.mocked,
-      reservationId: gated.reservationId,
+      reservationId,
     });
     const aggregate = await tx.quote.aggregate({
       where: { organizationId: session.organizationId },
@@ -214,7 +221,7 @@ export async function createQuoteAction(formData: FormData) {
     return quote.id;
   });
   } catch (error) {
-    await releaseDailyTask(gated.reservationId);
+    await releaseQuoteSlot();
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       redirect("/panel/cotizador?error=datos");
     }
@@ -222,7 +229,7 @@ export async function createQuoteAction(formData: FormData) {
   }
 
   if (!quoteId) {
-    await releaseDailyTask(gated.reservationId);
+    await releaseQuoteSlot();
     redirect("/panel/cotizador?error=limite");
   }
   redirect(`/panel/cotizador/${quoteId}?ok=cotizacion`);

@@ -64,6 +64,13 @@ export async function generatePostsAction(formData: FormData) {
   let textModel: string = modelFor("MARKETING");
   let imageModel: string = routineModel();
   let synthetic = false;
+
+  async function releaseHeld() {
+    const pending = held.splice(0);
+    for (const id of pending) await releaseDailyTask(id);
+  }
+
+  let failed = false;
   try {
     for (let index = 0; index < count; index += 1) {
       const checks: PlanCheck[] = [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }];
@@ -118,12 +125,12 @@ export async function generatePostsAction(formData: FormData) {
           await releaseDailyTask(held.pop());
           break;
         }
+        held.push(image.reservationId);
         imageModel = image.value.model;
         imageTokens = addUsage(imageTokens, image.value.usage);
         await recordModelCall({ organizationId: session.organizationId, response: image.value });
         imagePrompt = image.value.outputText;
         imageSvg = draftImageSvg(channel, imagePrompt);
-        held.push(image.reservationId);
       }
       drafts.push(
         toMarketingRecord({
@@ -136,55 +143,60 @@ export async function generatePostsAction(formData: FormData) {
       );
     }
   } catch {
-    for (const id of held) await releaseDailyTask(id);
+    failed = true;
+  }
+
+  if (failed || drafts.length < 1) {
+    await releaseHeld();
+    redirect(failed ? "/panel/marketing?error=ia" : "/panel/marketing?error=limite");
+  }
+
+  let saved = false;
+  try {
+    saved = await prisma.$transaction(async (tx) => {
+      const texts = await reserveUsage(tx, {
+        organizationId: session.organizationId,
+        agent: "MARKETING",
+        metric: "TEXTS",
+        quantity: drafts.length,
+        tokens: textTokens,
+        model: textModel,
+      });
+      if (!texts.ok) return false;
+      for (const reservationId of held) {
+        await recordCompletedTask(tx, {
+          organizationId: session.organizationId,
+          model: textModel,
+          synthetic,
+          reservationId,
+        });
+      }
+      if (withImage) {
+        const images = await reserveUsage(tx, {
+          organizationId: session.organizationId,
+          agent: "MARKETING",
+          metric: "IMAGES",
+          quantity: drafts.length,
+          tokens: imageTokens,
+          model: imageModel,
+        });
+        if (!images.ok) return false;
+      }
+      await tx.marketingPost.createMany({
+        data: drafts.map((draft) => ({
+          organizationId: session.organizationId,
+          ...draft,
+        })),
+      });
+      return true;
+    });
+  } catch {
+    await releaseHeld();
     redirect("/panel/marketing?error=ia");
   }
 
-  if (drafts.length < 1) {
-    for (const id of held) await releaseDailyTask(id);
-    redirect("/panel/marketing?error=limite");
-  }
-
-  const saved = await prisma.$transaction(async (tx) => {
-    const texts = await reserveUsage(tx, {
-      organizationId: session.organizationId,
-      agent: "MARKETING",
-      metric: "TEXTS",
-      quantity: drafts.length,
-      tokens: textTokens,
-      model: textModel,
-    });
-    if (!texts.ok) return false;
-    for (const reservationId of held) {
-      await recordCompletedTask(tx, {
-        organizationId: session.organizationId,
-        model: textModel,
-        synthetic,
-        reservationId,
-      });
-    }
-    if (withImage) {
-      const images = await reserveUsage(tx, {
-        organizationId: session.organizationId,
-        agent: "MARKETING",
-        metric: "IMAGES",
-        quantity: drafts.length,
-        tokens: imageTokens,
-        model: imageModel,
-      });
-      if (!images.ok) return false;
-    }
-    await tx.marketingPost.createMany({
-      data: drafts.map((draft) => ({
-        organizationId: session.organizationId,
-        ...draft,
-      })),
-    });
-    return true;
-  });
-
   if (!saved) {
-    for (const id of held) await releaseDailyTask(id);
+    await releaseHeld();
     redirect("/panel/marketing?error=limite");
   }
   redirect("/panel/marketing?ok=borradores");
