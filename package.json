@@ -42,6 +42,7 @@
     "dotenv": "^18.0.9",
     "eslint": "^9.36.0",
     "eslint-config-next": "^16.4.3",
+    "happy-dom": "^20.0.10",
     "prisma": "^7.10.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

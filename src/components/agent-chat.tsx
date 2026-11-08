@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
+import { listenInBrowser } from "@/lib/chat/browser-speech";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
 import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
@@ -12,10 +13,16 @@ import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-fo
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
-import { ACCOUNTING_DISCLAIMER } from "@/lib/catalog";
 import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
+type Ear = {
+  id: number;
+  live: boolean;
+  phase: "acquire" | "record" | "stt" | "browser";
+  tracks: { stop: () => void }[];
+  stopDevice: () => void;
+};
 type LocalFile = { file: File; url: string };
 type Draft = { id: string; text: string; files: LocalFile[]; portal: PortalId | null };
 
@@ -52,36 +59,6 @@ function localAssistant(body: string): PublicMessage {
     createdAt: new Date().toISOString(),
     attachments: [],
   };
-}
-
-type BrowserSpeech = {
-  lang: string;
-  interimResults: boolean;
-  start: () => void;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
-};
-
-function speechCtor() {
-  if (typeof window === "undefined") return null;
-  const host = window as Window & {
-    SpeechRecognition?: new () => BrowserSpeech;
-    webkitSpeechRecognition?: new () => BrowserSpeech;
-  };
-  return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
-}
-
-function listenInBrowser(lang: "es-CL" | "es-ES") {
-  const Ctor = speechCtor();
-  if (!Ctor) return Promise.reject(new Error("voz"));
-  return new Promise<string>((resolve, reject) => {
-    const recognition = new Ctor();
-    recognition.lang = lang;
-    recognition.interimResults = false;
-    recognition.onresult = (event) => resolve(event.results[0]?.[0]?.transcript?.trim() ?? "");
-    recognition.onerror = () => reject(new Error("voz"));
-    recognition.start();
-  });
 }
 
 function ComposerIcon({ children }: { children: React.ReactNode }) {
@@ -204,6 +181,8 @@ export function AgentChat({
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const stopRecord = useRef<(() => void) | null>(null);
+  const activeEar = useRef<Ear | null>(null);
+  const ears = useRef(new Set<Ear>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
   const turns = useRef<TurnQueue<Draft>>({ active: null, waiting: [] });
@@ -220,10 +199,30 @@ export function AgentChat({
   const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
+    const earsNow = ears.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       abortRef.current?.abort();
+      for (const ear of earsNow) {
+        ear.live = false;
+        try {
+          ear.stopDevice();
+        } catch {
+          // El dispositivo ya estaba detenido.
+        }
+        for (const track of ear.tracks) {
+          try {
+            track.stop();
+          } catch {
+            // La pista ya estaba cerrada.
+          }
+        }
+        ear.tracks = [];
+      }
+      earsNow.clear();
+      activeEar.current = null;
+      stopRecord.current = null;
     };
   }, []);
 
@@ -563,42 +562,104 @@ export function AgentChat({
     });
   }
 
-  async function transcribeBrowser() {
-    try {
-      const text = await listenInBrowser("es-CL");
-      if (text) appendComposer(text);
-      return;
-    } catch {
+  function owns(ear: Ear) {
+    return ear.live && mountedRef.current && activeEar.current === ear;
+  }
+
+  function closeTracks(ear: Ear) {
+    for (const track of ear.tracks) {
       try {
-        const text = await listenInBrowser("es-ES");
-        if (text) appendComposer(text);
+        track.stop();
       } catch {
-        setNotice(CHAT_ERROR.voz);
+        // La pista ya estaba cerrada.
       }
+    }
+    ear.tracks = [];
+  }
+
+  function releaseEar(ear: Ear) {
+    ear.live = false;
+    try {
+      ear.stopDevice();
+    } catch {
+      // El dispositivo ya estaba detenido.
+    }
+    closeTracks(ear);
+    ears.current.delete(ear);
+    if (activeEar.current === ear) {
+      activeEar.current = null;
+      stopRecord.current = null;
+      if (mountedRef.current) setRecording(false);
     }
   }
 
+  async function transcribeBrowser(ear: Ear) {
+    ear.phase = "browser";
+    if (mountedRef.current) setRecording(true);
+    for (const lang of ["es-CL", "es-ES"] as const) {
+      if (!owns(ear)) return;
+      const session = listenInBrowser(lang);
+      if (!session) continue;
+      const stopThis = () => session.stop();
+      ear.stopDevice = stopThis;
+      stopRecord.current = stopThis;
+      if (!owns(ear)) {
+        session.stop();
+        return;
+      }
+      try {
+        const text = await session.result;
+        if (!owns(ear)) return;
+        if (text) {
+          appendComposer(text);
+          return;
+        }
+      } catch (error) {
+        if (!owns(ear)) return;
+        const reason = error instanceof Error ? error.message : "";
+        if (reason === "abort") return;
+        if (reason === "denied") {
+          setNotice(CHAT_ERROR.voz);
+          return;
+        }
+      } finally {
+        if (stopRecord.current === stopThis) stopRecord.current = null;
+      }
+    }
+    if (owns(ear)) setNotice(CHAT_ERROR.voz);
+  }
+
   async function toggleMic() {
-    if (recording) {
-      stopRecord.current?.();
+    const current = activeEar.current;
+    if (current) {
+      if (current.phase === "record") {
+        current.phase = "stt";
+        try {
+          current.stopDevice();
+        } catch {
+          // La grabación ya estaba cerrada.
+        }
+        return;
+      }
+      releaseEar(current);
       return;
     }
+    const ear: Ear = { id: ears.current.size + 1, live: true, phase: "acquire", tracks: [], stopDevice: () => {} };
+    ears.current.add(ear);
+    activeEar.current = ear;
     setNotice("");
-    if (voiceMode === "navegador") {
-      setRecording(true);
-      await transcribeBrowser();
-      setRecording(false);
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setVoiceMode("navegador");
-      setRecording(true);
-      await transcribeBrowser();
-      setRecording(false);
-      return;
-    }
+    setRecording(true);
     try {
+      if (voiceMode === "navegador" || !navigator.mediaDevices?.getUserMedia) {
+        await transcribeBrowser(ear);
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ear.tracks.push(...stream.getTracks());
+      if (!owns(ear)) {
+        closeTracks(ear);
+        return;
+      }
       const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks: Blob[] = [];
@@ -607,15 +668,24 @@ export function AgentChat({
       };
       const stopped = new Promise<Blob>((resolve) => {
         recorder.onstop = () => {
-          for (const track of stream.getTracks()) track.stop();
           resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
         };
       });
-      stopRecord.current = () => recorder.stop();
+      const stopThis = () => {
+        try {
+          recorder.stop();
+        } catch {
+          // Ya estaba detenida.
+        }
+      };
+      ear.stopDevice = stopThis;
+      stopRecord.current = stopThis;
+      ear.phase = "record";
       recorder.start();
-      setRecording(true);
       const blob = await stopped;
-      setRecording(false);
+      closeTracks(ear);
+      if (!owns(ear)) return;
+      ear.phase = "stt";
       const form = new FormData();
       form.set("audio", blob, "nota.webm");
       const response = await fetch("/api/voz/stt", {
@@ -623,23 +693,25 @@ export function AgentChat({
         headers: { [CSRF_HEADER]: csrf },
         body: form,
       });
+      if (!owns(ear)) return;
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; texto?: string; fallback?: boolean; error?: string };
+      if (!owns(ear)) return;
       if (body.ok && body.texto) {
         appendComposer(body.texto);
         return;
       }
       if (body.fallback || !response.ok) {
+        if (!owns(ear)) return;
         setVoiceMode("navegador");
         setNotice("No pude transcribir en el servidor. Habla de nuevo: uso el micrófono del navegador.");
-        setRecording(true);
-        await transcribeBrowser();
-        setRecording(false);
+        await transcribeBrowser(ear);
         return;
       }
       setNotice(CHAT_ERROR[body.error ?? ""] ?? CHAT_ERROR.voz);
     } catch {
-      setRecording(false);
-      setNotice(CHAT_ERROR.voz);
+      if (owns(ear)) setNotice(CHAT_ERROR.voz);
+    } finally {
+      releaseEar(ear);
     }
   }
 
@@ -723,7 +795,7 @@ export function AgentChat({
     const stoppedOnly = message.body.trim() === STOPPED_NOTE;
     return (
       <div className={`agent-row ${message.role === "USER" ? "user" : "assistant"}`} key={message.id}>
-        <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`}>
+        <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`} data-message-id={message.id}>
           <p className="who">{message.role === "USER" ? "Tú" : "Agente"}</p>
           {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
           {message.attachments.length > 0 ? (
@@ -747,7 +819,6 @@ export function AgentChat({
           ) : null}
           {waiting.has(message.id) ? <p className="muted when">En espera</p> : null}
           <p className="muted when">{formatWhen(new Date(message.createdAt))}</p>
-          {message.role === "ASSISTANT" && !stoppedOnly ? <p className="muted disclaimer">{ACCOUNTING_DISCLAIMER}</p> : null}
           {message.role === "ASSISTANT" && message.body.trim() && !stoppedOnly ? (
             <button className="button secondary small" type="button" onClick={() => play(message.body, message.id)}>
               {speakingId === message.id ? "Detener" : "Escuchar"}
