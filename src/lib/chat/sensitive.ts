@@ -72,18 +72,18 @@ export function wantsVaultSave(text: string) {
   if (!clean || isFilingCommand(clean) || isPayCommand(clean)) return false;
   if (!SAVE_VERB.test(clean)) return false;
   if (/\b(b[oó]veda|clave|contrase(?:ñ|n)a|credencial)\b/i.test(clean)) return true;
-  return PORTAL.test(clean) && /\b(acceso|usuario|rut|root|formulario)\b/i.test(clean);
+  // Un F29 o una declaración no es un acceso. «formulario» solo no basta.
+  if (/\b(?:formulario\s*\d+|f29|f22|declaraci)/i.test(clean)) return false;
+  return PORTAL.test(clean) && /\b(acceso|usuario|rut|root)\b/i.test(clean);
 }
+
+const HAND_OFF = /\b(te (mando|env[ií]o|paso)|pego|pegar|por (el |este )?chat)\b/i;
 
 /** Quiere pasar la clave por el chat. El formulario es el camino; borrar el mensaje no basta. */
 export function wantsChatSecretHandoff(text: string) {
   const clean = text.replace(/\s+/g, " ").trim();
   const secret = /\b(clave|contrase(?:ñ|n)a|password|passwd)\b/i.test(clean);
-  if (!secret) return false;
-  return (
-    /\b(te (mando|env[ií]o|paso)|por (el |este )?chat|aqu[ií])\b/i.test(clean) ||
-    /\b(la borr\w*|borrar|elimina\w*)\b/i.test(clean)
-  );
+  return secret && HAND_OFF.test(clean);
 }
 
 /** El pedido vigente es el formulario seguro, no una respuesta del modelo ni un ingreso simulado. */

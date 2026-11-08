@@ -383,6 +383,44 @@ describe("turno de chat", () => {
     );
   });
 
+  test("un F29 con PDF no se sella ni pierde el adjunto", async () => {
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: "Guarda el formulario 29 del SII" }]);
+    vi.mocked(createXaiClient).mockReturnValue({
+      async respond() {
+        throw new Error("no");
+      },
+      async *streamRespond() {
+        yield {
+          type: "done" as const,
+          response: {
+            id: "f29",
+            model: "grok-4.7",
+            outputText: "El F29 es la declaración mensual.",
+            usage: USAGE_PRESETS.text,
+            mocked: true,
+          },
+        };
+      },
+    });
+    const file = { fileName: "f29.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1, 2]) };
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: "Guarda el formulario 29 del SII",
+      files: [file],
+    })) {
+      events.push(event);
+    }
+    expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({
+      body: "Guarda el formulario 29 del SII",
+      files: [file],
+    });
+    expect(createXaiClient).toHaveBeenCalled();
+    expect(JSON.stringify(events)).not.toContain("/panel/boveda");
+  });
+
   test("el pedido de RUT y clave no llama al modelo ni a la bóveda y no guarda el secreto", async () => {
     const events = [];
     for await (const event of streamChatTurn({
@@ -530,6 +568,47 @@ describe("turno de chat", () => {
     expect(releaseDailyTask).toHaveBeenCalledWith("reserva-chat");
     expect(recordCompletedTask).not.toHaveBeenCalled();
     expect(events.some((event) => event.type === "done")).toBe(false);
+  });
+
+  test("una respuesta incompleta no se cobra como tarea hecha", async () => {
+    vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: "reserva-corta" });
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: "Haz el cálculo del IVA" }]);
+    vi.mocked(createXaiClient).mockReturnValue({
+      async respond() {
+        throw new Error("no");
+      },
+      async *streamRespond() {
+        yield { type: "delta" as const, text: "El 19% es una parte." };
+        yield {
+          type: "done" as const,
+          response: {
+            id: "corta",
+            model: "grok-4.7",
+            outputText: "El 19% es una parte.",
+            usage: USAGE_PRESETS.text,
+            mocked: true,
+            incomplete: true,
+          },
+        };
+      },
+    });
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: "Haz el cálculo del IVA",
+      files: [],
+    })) {
+      events.push(event);
+    }
+    const saved = events.find((event) => event.type === "message");
+    const body = saved && saved.type === "message" ? saved.message.body : "";
+    expect(body).toContain("El 19% es una parte.");
+    expect(body).toContain("(Respuesta resumida; pide detalle si lo necesitas)");
+    expect(body).not.toMatch(/cancel|reembol/i);
+    expect(recordCompletedTask).not.toHaveBeenCalled();
+    expect(releaseDailyTask).toHaveBeenCalledWith("reserva-corta");
   });
 
   test("sin cupo diario no llama al modelo", async () => {

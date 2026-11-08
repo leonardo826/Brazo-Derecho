@@ -183,7 +183,8 @@ describe("la reserva no se pierde si el contexto falla", () => {
     const cutBody = cutSaved && cutSaved.type === "message" ? cutSaved.message.body : "";
     expect(cutBody).toContain("tramo 1");
     expect(cutBody).toContain("tramo 4");
-    expect(cutBody).toContain("quedó cortada antes de terminar lo pedido");
+    expect(cutBody).toContain("(Respuesta resumida; pide detalle si lo necesitas)");
     expect(calls).toBe(4);
+    expect((await counts(organizationId)).tasks).toBe(BASELINE + 1);
   });
 });

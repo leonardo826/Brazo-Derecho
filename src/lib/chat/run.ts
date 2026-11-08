@@ -216,12 +216,14 @@ async function* streamModel(input: {
       model: response.model,
     });
     if (!reserved.ok) return null;
-    await recordCompletedTask(tx, {
-      organizationId: input.organizationId,
-      model: response.model,
-      synthetic: response.mocked,
-      reservationId,
-    });
+    if (!finished.truncated) {
+      await recordCompletedTask(tx, {
+        organizationId: input.organizationId,
+        model: response.model,
+        synthetic: response.mocked,
+        reservationId,
+      });
+    }
     return tx.agentMessage.create({
       data: {
         threadId: input.threadId,
@@ -235,7 +237,7 @@ async function* streamModel(input: {
     yield { type: "error", code: "limite" };
     return;
   }
-  keepSlot = true;
+  if (!finished.truncated) keepSlot = true;
   yield { type: "message", message: toPublic(saved) };
   if (split.action) {
     const card = await saveConfirmation(input.threadId, split.action);

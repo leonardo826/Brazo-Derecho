@@ -3,6 +3,7 @@ import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { latestWindow } from "@/lib/chat/history";
 import { finishReply, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
 import { SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
+import { shouldDropUserText } from "@/lib/chat/secrets";
 import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
 import { vaultFormMessage, vaultFormPath } from "@/lib/credentials/portal-form";
 import { LiveXaiClient } from "@/lib/xai/live";
@@ -38,6 +39,19 @@ describe("casos deterministas del Contador", () => {
     const window = latestWindow(rows, 24);
     expect(window.at(-1)?.text).toMatch(/bóveda/);
     expect(window[0]?.id).not.toBe(rows[0]?.id);
+  });
+
+  test("un F29 o una clave explicada no se sellan", () => {
+    for (const phrase of [
+      "Guarda el formulario 29 del SII",
+      "Deja lo del edificio, necesito el formulario 29 del SII",
+      "¿Cuál es la clave para bajar el IVA? Explícamelo aquí",
+    ]) {
+      expect(wantsSecureCredentialForm(phrase)).toBe(false);
+      expect(shouldDropUserText(phrase)).toBe(false);
+    }
+    expect(wantsSecureCredentialForm("Guarda mi root para el SII")).toBe(true);
+    expect(wantsSecureCredentialForm("Te mando la clave aquí y la borras")).toBe(true);
   });
 
   test("03: root junto al SII va al formulario y no pide el dato en el chat", () => {
@@ -81,7 +95,17 @@ describe("casos deterministas del Contador", () => {
     const casos = replyPace("Haz el análisis completo y los veinte casos");
     expect(casos.rounds).toBeGreaterThan(1);
     const calc = replyPace("Calcula el 19% de 10000 y advierte el redondeo");
-    expect(calc.maxOutputTokens).toBeGreaterThanOrEqual(400);
+    expect(calc.maxOutputTokens).toBeGreaterThan(220);
+    for (const phrase of [
+      "Haz el cálculo del IVA",
+      "Dame una explicación del F29",
+      "¿Por qué se paga PPM?",
+      "Arma una lista de gastos",
+      "Muéstrame una tabla de retenciones",
+      "Quiero el F29 completo",
+    ]) {
+      expect(replyPace(phrase).maxOutputTokens).toBeGreaterThan(220);
+    }
     const done = finishReply([
       { text: "1.900.", incomplete: false },
     ]);

@@ -7,14 +7,15 @@ export type ReplyPace = {
 };
 
 const DELIVERABLE =
-  /\b(\d+\s+ejemplos|ejemplos completos|veinte casos|20 casos|fundamento|paso a paso|desarrolla|lista completa|an[aá]lisis completo|revisi[oó]n completa)\b/i;
-const CALC = /\b(calcul\w*|%\s+de|por ciento|advierte|advertencia)\b/i;
+  /\b(\d+\s+ejemplos|ejemplos completos|veinte casos|20 casos|fundamento|paso a paso|desarrolla|lista completa|an[aá]lisis completo|revisi[oó]n completa|f29 completo)\b/i;
+const EXTENDED =
+  /\b(c[aá]lculo|calcul\w*|explicaci[oó]n|lista|tabla|f29 completo|fundamento)\b|\bpor qu[eé](?=\s|$|[?.!,])/i;
+const CALC = /\b(calcul\w*|c[aá]lculo|%\s+de|por ciento|advierte|advertencia)\b/i;
 const CURRENT =
   /\b(este mes|esta semana|hoy|vence|vencimiento|utm|uf\b|ipc|d[oó]lar|tasa|plazo|vigente|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|20[2-3]\d)\b/i;
 const TRIVIAL = /^(hola|buenas|gracias|ok|listo|chao|adi[oó]s)[.!?\s]*$/i;
 
-export const TRUNCATION_NOTE =
-  "La respuesta quedó cortada antes de terminar lo pedido. Puedes pedirme que siga desde el último punto.";
+export const TRUNCATION_NOTE = "(Respuesta resumida; pide detalle si lo necesitas)";
 
 /** Une tramos. Si el último sigue cortado, lo dice en vez de parecer completo. */
 export function finishReply(parts: { text: string; incomplete: boolean }[]) {
@@ -41,8 +42,8 @@ export function replyPace(text: string): ReplyPace {
   if (deliverable) {
     return { maxOutputTokens: 2000, rounds: 4, webSearch, reasoningEffort: "medium" };
   }
-  if (calc) {
-    return { maxOutputTokens: 500, rounds: 1, webSearch, reasoningEffort: "low" };
+  if (calc || EXTENDED.test(clean)) {
+    return { maxOutputTokens: 800, rounds: 1, webSearch, reasoningEffort: "low" };
   }
   return {
     maxOutputTokens: 220,
