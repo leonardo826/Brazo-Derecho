@@ -7,7 +7,7 @@ import {
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
-import { SAFE_CREDENTIAL_ENTRY, shouldDropUserText } from "@/lib/chat/secrets";
+import { carriesSuspectedSecret, SAFE_CREDENTIAL_ENTRY, shouldDropUserText } from "@/lib/chat/secrets";
 import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensitive";
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
@@ -100,6 +100,8 @@ async function* streamModel(input: {
   try {
   if (streamWasStopped(input.signal)) return;
   const slotPromise = reserveDailyTask(input.organizationId);
+  // Si la reserva rechaza mientras loadHistory sigue pendiente, el rechazo ya tiene manejador.
+  void slotPromise.catch(() => undefined);
   let history;
   try {
     history = await loadHistory(input.threadId, input.organizationId);
@@ -307,7 +309,8 @@ export async function* streamChatTurn(input: {
   const saved = await saveUserMessage({
     organizationId: input.organizationId,
     body: text,
-    files: drop ? [] : input.files,
+    // Intención de formulario, sin secreto: se responde el formulario y se conservan los archivos.
+    files: carriesSuspectedSecret(original) ? [] : input.files,
   });
   yield { type: "user", message: saved.message };
   if (drop || (hinted && text === SAFE_CREDENTIAL_ENTRY)) {

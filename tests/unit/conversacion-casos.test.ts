@@ -2,9 +2,15 @@ import { describe, expect, test } from "vitest";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { latestWindow } from "@/lib/chat/history";
 import { FAILURE_NOTE, finishReply, LIMIT_NOTE, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
-import { SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
-import { shouldDropUserText } from "@/lib/chat/secrets";
-import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
+import { prepareModelTurn } from "@/lib/chat/model-turn";
+import {
+  carriesSuspectedSecret,
+  prepareComposerTurn,
+  SAFE_CREDENTIAL_ENTRY,
+  sealChatText,
+  shouldDropUserText,
+} from "@/lib/chat/secrets";
+import { wantsChatSecretHandoff, wantsSecureCredentialForm } from "@/lib/chat/sensitive";
 import { vaultFormMessage, vaultFormPath } from "@/lib/credentials/portal-form";
 import { LiveXaiClient } from "@/lib/xai/live";
 import { USAGE_PRESETS } from "@/lib/pricing";
@@ -15,6 +21,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
  * El simulador no cuenta como prueba live.
  */
 const SECRET = "Sintetica-7f3a";
+const EXAMPLE = "EjemploClavePrueba123";
 
 function form(text: string) {
   return vaultFormMessage("sii", text);
@@ -46,12 +53,109 @@ describe("casos deterministas del Contador", () => {
       "Guarda el formulario 29 del SII",
       "Deja lo del edificio, necesito el formulario 29 del SII",
       "¿Cuál es la clave para bajar el IVA? Explícamelo aquí",
+      "La clave del F29 es el plazo.",
+      "La clave del F29 es el plazo de declaración.",
+      "¿Puedo dejarte la clave aquí y la borras?",
+      "Te escribo la clave y después la borras",
     ]) {
       expect(wantsSecureCredentialForm(phrase)).toBe(false);
       expect(shouldDropUserText(phrase)).toBe(false);
+      expect(carriesSuspectedSecret(phrase)).toBe(false);
+      expect(sealChatText(phrase)).toBe(phrase);
     }
     expect(wantsSecureCredentialForm("Guarda mi root para el SII")).toBe(true);
+    expect(shouldDropUserText("Guarda mi root para el SII")).toBe(true);
+    expect(carriesSuspectedSecret("Guarda mi root para el SII")).toBe(false);
     expect(wantsSecureCredentialForm("Te mando la clave aquí y la borras")).toBe(true);
+    expect(shouldDropUserText("Te mando la clave aquí y la borras")).toBe(true);
+    expect(carriesSuspectedSecret("Te mando la clave aquí y la borras")).toBe(false);
+  });
+
+  test("09: una clave en frase natural no llega al texto ni al turno del modelo", () => {
+    const phrases = [
+      `Mi clave del SII es ${EXAMPLE}`,
+      `La clave del SII es ${EXAMPLE}`,
+      `Te dejo la clave aquí: ${EXAMPLE}`,
+      "Toma la clave del SII: abcdefgh",
+      `clave SII ${EXAMPLE}`,
+      `Ahí va la clave: ${EXAMPLE}`,
+      `Aquí va la contraseña ${EXAMPLE}`,
+      `Mi clave de la empresa nueva es ${EXAMPLE}`,
+    ];
+    for (const phrase of phrases) {
+      expect(carriesSuspectedSecret(phrase)).toBe(true);
+      const sealed = sealChatText(phrase);
+      expect(sealed).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(sealed).not.toContain(EXAMPLE);
+      expect(sealed).not.toContain("abcdefgh");
+      const prepared = prepareModelTurn([{ role: "user", text: phrase }], "Bóveda (nunca la clave):");
+      const packed = JSON.stringify(prepared);
+      expect(packed).not.toContain(EXAMPLE);
+      expect(packed).not.toContain("abcdefgh");
+      expect(prepared.messages[0]?.text).toBe(SAFE_CREDENTIAL_ENTRY);
+    }
+    expect(wantsChatSecretHandoff("Te dejo la clave aquí")).toBe(true);
+    expect(wantsChatSecretHandoff("Toma la clave del SII")).toBe(true);
+    expect(wantsChatSecretHandoff("Ahí va la clave")).toBe(true);
+    expect(wantsChatSecretHandoff("Aqui va la contraseña")).toBe(true);
+    expect(wantsChatSecretHandoff("Aquí va la contraseña")).toBe(true);
+    expect(carriesSuspectedSecret("Mi clave de la empresa nueva chilena es el plazo.")).toBe(false);
+    expect(carriesSuspectedSecret("La clave del éxito es constancia.")).toBe(false);
+    // Posesivo + portal + asignación cierra aunque el valor empiece por palabra funcional.
+    for (const phrase of ["Mi clave del SII es la de siempre", "Mi clave del SII es esto", "Mi clave del SII es cuando"]) {
+      expect(carriesSuspectedSecret(phrase)).toBe(true);
+      expect(sealChatText(phrase)).toBe(SAFE_CREDENTIAL_ENTRY);
+    }
+    expect(carriesSuspectedSecret("La clave del éxito es tu")).toBe(false);
+    expect(sealChatText("La clave del éxito es tu")).toBe("La clave del éxito es tu");
+    expect(carriesSuspectedSecret("Mi contraseña del SII es la de invierno")).toBe(true);
+    expect(sealChatText("Mi contraseña del SII es la de invierno")).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(sealChatText("Mi contraseña del SII es esto")).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(wantsChatSecretHandoff("Te pego la clave")).toBe(true);
+    expect(wantsChatSecretHandoff("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toBe(false);
+    const pdf = ["f29.pdf"];
+    for (const phrase of [
+      "Revisa el formulario 29 del SII que te adjunto",
+      "Te pego la factura; ¿cuál es la clave del crédito fiscal?",
+    ]) {
+      expect(carriesSuspectedSecret(phrase)).toBe(false);
+      expect(wantsSecureCredentialForm(phrase)).toBe(false);
+      expect(shouldDropUserText(phrase)).toBe(false);
+      const turn = prepareComposerTurn(phrase, pdf);
+      expect(turn.files).toEqual(pdf);
+      expect(turn.seal).toBe(false);
+      expect(turn.text).toBe(phrase);
+      expect(sealChatText(phrase)).toBe(phrase);
+    }
+    expect(sealChatText("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toContain("crédito fiscal");
+    const shortSecrets = [
+      { text: "Mi clave del SII es hola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es abc", secret: "abc" },
+      { text: "Mi contraseña del SII es パスワード", secret: "パスワード" },
+      { text: "Mi clave del SII es\nhola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es\nabc", secret: "abc" },
+      { text: "Mi contraseña del SII es tu", secret: "tu" },
+      { text: "Mi contraseña de la empresa es «la»", secret: "«la»" },
+      { text: "Mi contraseña del SII es\nmi", secret: "mi" },
+      { text: "Mi clave del SII es tu", secret: "tu" },
+      { text: "Mi contraseña del SII es la de invierno", secret: "invierno" },
+    ];
+    for (const item of shortSecrets) {
+      expect(carriesSuspectedSecret(item.text)).toBe(true);
+      const sealed = sealChatText(item.text);
+      expect(sealed).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(sealed).not.toContain(item.secret);
+      const turn = prepareComposerTurn(item.text, pdf);
+      expect(turn.text).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(turn.text).not.toContain(item.secret);
+      expect(turn.files).toEqual([]);
+      expect(turn.seal).toBe(true);
+    }
+    const secretTurn = prepareComposerTurn(`Te dejo la clave aquí: ${EXAMPLE}`, pdf);
+    expect(secretTurn.text).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(secretTurn.text).not.toContain(EXAMPLE);
+    expect(secretTurn.files).toEqual([]);
+    expect(secretTurn.seal).toBe(true);
   });
 
   test("03: root junto al SII va al formulario y no pide el dato en el chat", () => {
