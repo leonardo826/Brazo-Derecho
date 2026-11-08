@@ -1,6 +1,7 @@
 import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/chat/abort";
-import { executeDesktopRequest, type LeaseState } from "@/lib/chat/desktop-task";
+import { executeDesktopRequest } from "@/lib/chat/desktop-task";
 import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
+import { loadTenantLease } from "@/lib/computer/lease";
 import {
   accountantChatInstructions,
   APPROVED_PORTAL_NOTE,
@@ -292,21 +293,6 @@ async function* streamVaultForm(input: {
   yield { type: "message", message: saved };
   yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
   yield { type: "done" };
-}
-
-async function loadTenantLease(organizationId: string): Promise<LeaseState> {
-  try {
-    const row = await prisma.computer.findUnique({
-      where: { clientId: organizationId },
-      select: { status: true, machineId: true },
-    });
-    if (!row || row.status !== "RUNNING" || !row.machineId.trim()) return { state: "ausente" };
-    // flyApp.internal exige la red privada de Fly. Desde esta app no está acreditada,
-    // y no hay un token de esa máquina. No se fabrica una URL ni se reutiliza un token global.
-    return { state: "transporte" };
-  } catch {
-    return { state: "ausente" };
-  }
 }
 
 export async function* streamChatTurn(input: {
