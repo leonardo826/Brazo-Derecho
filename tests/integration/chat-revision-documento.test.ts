@@ -120,6 +120,33 @@ describe("revisión documental con PostgreSQL y modelo simulado", () => {
     expect(model).toHaveBeenCalled();
   });
 
+  test("la clave del éxito y su PDF llegan al modelo", async () => {
+    const organizationId = await makeOrg();
+    const text = "Mi clave del éxito es constancia. Revisa el formulario que adjunto";
+    const { seen } = captureReview();
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId,
+      organizationName: "Revision",
+      actorUserId: "user",
+      text,
+      files: [PDF],
+    })) {
+      events.push(event);
+    }
+    const stored = await lastTurn(organizationId);
+    const request = seen[0];
+    const task = request?.task.type === "agent_chat" ? request.task : null;
+    const last = task?.messages.at(-1);
+    expect(stored.user?.body).toBe(text);
+    expect(stored.user?.attachments).toHaveLength(1);
+    expect(last?.text).toBe(text);
+    expect(last?.files?.[0]?.name).toBe(PDF.fileName);
+    expect(stored.assistant?.body).toBe(REVIEW);
+    expect(JSON.stringify(events)).toContain(REVIEW);
+    expect(JSON.stringify(events)).not.toContain("/panel/boveda");
+  });
+
   test("la factura y la pregunta por el crédito fiscal llegan juntas al modelo", async () => {
     const organizationId = await makeOrg();
     const text = "Te pego la factura; ¿cuál es la clave del crédito fiscal?";
@@ -198,6 +225,10 @@ describe("revisión documental con PostgreSQL y modelo simulado", () => {
       { text: "Mi clave del SII es la de siempre", absent: ["siempre", "Mi clave del SII es la de siempre"] },
       { text: "Mi clave del SII es esto mismo", absent: ["mismo", "Mi clave del SII es esto mismo"] },
       { text: "Mi clave del SII es cuando llegue", absent: ["llegue", "Mi clave del SII es cuando llegue"] },
+      {
+        text: `Mi contraseña de la cuenta del SII ${Array.from({ length: 20 }, () => "zona").join(" ")} es la de siempre`,
+        absent: ["siempre", "zona zona"],
+      },
     ];
     for (const item of cases) {
       const organizationId = await makeOrg();

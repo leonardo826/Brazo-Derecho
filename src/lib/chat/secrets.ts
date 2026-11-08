@@ -5,23 +5,14 @@ import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
  * No incluye ningún carácter del texto original.
  *
  * Una asignación pegada a la etiqueta, o con «:» o «=», cierra el mensaje
- * entero. Con hasta cuatro palabras entre la etiqueta y «es», «sea» o «is»,
- * también lo cierra si el contexto es de credencial (contraseña, «mi clave»,
- * SII, empresa u otro acceso) y lo que sigue no es una frase explicativa.
- * Ese valor puede ser corto, alfabético o unicode, y puede ir en la línea
- * siguiente: no se descarta por entropía ni por apariencia.
- * Contraseña, password, passwd y passcode son etiqueta inequívoca: el mensaje
- * se cierra aunque el valor sea o empiece por una palabra funcional, vaya
- * entre comillas o en la línea siguiente: «es tu», el valor citado «la», «es la de siempre».
- * Un solo token funcional, citado o no, tampoco es una explicación. Con
- * «mi clave», el SII o la empresa, cierra («Mi clave del SII es tu»).
- * Posesivo más portal, acceso o empresa, y una asignación, cierran el mensaje
- * entero aunque el valor sea «la de siempre», «esto» o «cuando». «La clave del
- * F29 es el plazo», una consulta de IVA y «la clave del éxito es constancia»
- * siguen abiertas: no hay esa asignación de credencial. Sin posesivo, sin
- * ancla y sin etiqueta de contraseña, «La clave del éxito es tu» tampoco cierra.
- * Sin asignación, un token con aspecto de clave también cierra, con el mismo
- * margen. No reconoce un secreto suelto sin esa etiqueta, ni mira archivos.
+ * entero. Entre la etiqueta y «es», «sea» o «is» se lee la cláusula, sin un
+ * tope de palabras: el límite es el punto, la pregunta o la exclamación.
+ * Contraseña, password, passwd y passcode cierran esa cláusula aunque el
+ * descriptor sea largo y el valor sea «la de siempre», «esto» o «cuando».
+ * «Clave» solo cierra si el descriptor nombra un portal o una cuenta (SII,
+ * empresa, cuenta, banco, acceso). El posesivo no basta: «mi clave del éxito
+ * es constancia» sigue abierta. «La clave del F29 es el plazo» y una consulta
+ * de IVA también. No reconoce un secreto suelto sin esa etiqueta, ni mira archivos.
  */
 export const SAFE_CREDENTIAL_ENTRY =
   "Quiero usar el formulario seguro de la Bóveda. No dejo la clave en el chat.";
@@ -80,8 +71,8 @@ export function prepareComposerTurn<T>(raw: string, files: readonly T[]) {
   return { text: SAFE_CREDENTIAL_ENTRY, files: [] as readonly T[], seal: true };
 }
 
-const GAP_WORDS = 4;
 const BRIDGE = /^(?:[:=]|\uFF1A|\uFF1D|(?:es|sea|is)\b)/iu;
+const CLAUSE_END = /^[.?!。？！]/u;
 
 /**
  * El texto trae un valor de clave. La intención de formulario, sin valor, no cuenta:
@@ -119,6 +110,7 @@ const CREDENTIAL_ANCHOR = new Set([
   "tesoreria",
   "tesorería",
   "empresa",
+  "cuenta",
   "banco",
   "portal",
   "boveda",
@@ -178,42 +170,39 @@ function isExplanatoryPhrase(line: string) {
   return opensClause(word);
 }
 
+function descriptorNamesAccount(before: string, gap: readonly string[]) {
+  if (gap.some((token) => CREDENTIAL_ANCHOR.has(token.toLowerCase()))) return true;
+  return /\b(sii|previred|tesorer[ií]a|empresa|cuenta|banco|portal|b[oó]veda|acceso|usuario|rut|login)\b/iu.test(
+    `${before} ${gap.join(" ")}`,
+  );
+}
+
 function copulaAssignsCredential(label: string, before: string, gap: readonly string[], line: string) {
-  // La etiqueta inequívoca no acepta en silencio un valor funcional ni una frase que empiece por uno.
+  // Contraseña no depende de lo que diga el valor ni de cuántas palabras haya antes.
   if (labelIsPassword(label)) return true;
+  // «Clave» sin portal ni cuenta es un concepto, aunque lleve posesivo.
+  if (!descriptorNamesAccount(before, gap)) return false;
   const possessive =
     hasPossessive(before) || gap.some((token) => /^(?:mi|mis|tu|tus|su|sus|my|your)$/iu.test(token));
-  const anchor =
-    gap.some((token) => CREDENTIAL_ANCHOR.has(token.toLowerCase())) ||
-    /\b(sii|previred|tesorer[ií]a|empresa|banco|portal|b[oó]veda|acceso|usuario|rut|login)\b/iu.test(
-      `${before} ${gap.join(" ")}`,
-    );
-  // Posesivo + portal, acceso o empresa + «es» cierra antes de mirar el valor.
-  if (possessive && anchor) return true;
+  if (possessive) return true;
   if (isExplanatoryPhrase(line)) return false;
-  if (hasPossessive(before)) return true;
-  return gap.some((token) => CREDENTIAL_ANCHOR.has(token.toLowerCase()));
+  return true;
 }
 
 function secretValueFollows(rest: string, label: string, before: string) {
   let pending = rest;
-  let skipped = 0;
   const gap: string[] = [];
-  while (skipped <= GAP_WORDS) {
-    const head = pending.replace(/^\s+/, "");
+  while (pending.length > 0) {
+    const head = pending.replace(/^\s+/u, "");
     if (!head) return false;
+    if (CLAUSE_END.test(head)) return false;
     const bridge = head.match(BRIDGE);
     if (bridge) {
       const line = assignedLine(head.slice(bridge[0].length));
       if (!line) return false;
-      // Pegada a la etiqueta, o con «:»/«=», cualquier valor cierra el mensaje.
-      // Con palabras de por medio, «es»/«is» cierra la credencial entera sin
-      // mirar si el valor parece una clave. Contraseña cierra aunque el valor
-      // sea o empiece por una palabra funcional. «El plazo» después de «clave» no.
-      if (skipped === 0 || isAssignment(bridge[0])) return true;
+      if (gap.length === 0 || isAssignment(bridge[0])) return true;
       return copulaAssignsCredential(label, before, gap, line);
     }
-    if (skipped === GAP_WORDS) return false;
     const word = head.match(/^(\S+)/u);
     const token = word?.[1];
     if (!token) return false;
@@ -224,10 +213,8 @@ function secretValueFollows(rest: string, label: string, before: string) {
     }
     if (tokenLooksSecret(token)) return true;
     const bare = bareToken(token);
-    if (bare) {
-      skipped += 1;
-      gap.push(bare);
-    }
+    if (bare) gap.push(bare);
+    if (/[.?!。？！]/u.test(token) && !token.includes("://")) return false;
     pending = head.slice(token.length);
   }
   return false;

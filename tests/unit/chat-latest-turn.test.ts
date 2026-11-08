@@ -440,6 +440,10 @@ describe("turno de chat", () => {
       { text: "Mi clave del SII es la de siempre", secret: "siempre" },
       { text: "Mi clave del SII es esto mismo", secret: "mismo" },
       { text: "Mi clave del SII es cuando llegue", secret: "llegue" },
+      {
+        text: `Mi contraseña de la cuenta del SII ${Array.from({ length: 20 }, () => "zona").join(" ")} es la de siempre`,
+        secret: "siempre",
+      },
     ];
     for (const item of cases) {
       const composer = prepareComposerTurn(item.text, [pdf]);
@@ -498,12 +502,25 @@ describe("turno de chat", () => {
       "La clave del F29 es el plazo de declaración",
     );
     expect(sealChatText("La clave del éxito es constancia.")).toBe("La clave del éxito es constancia.");
+    expect(sealChatText("Mi clave del éxito es constancia.")).toBe("Mi clave del éxito es constancia.");
     expect(sealChatText("¿Cuándo se paga el IVA de noviembre?")).toBe("¿Cuándo se paga el IVA de noviembre?");
     expect(sealChatText("Mi clave del SII es la de siempre")).toBe(SAFE_CREDENTIAL_ENTRY);
     expect(sealChatText("Mi clave del SII es esto")).toBe(SAFE_CREDENTIAL_ENTRY);
     expect(sealChatText("Mi clave del SII es cuando")).toBe(SAFE_CREDENTIAL_ENTRY);
     expect(sealChatText("La clave del éxito es tu")).toBe("La clave del éxito es tu");
     expect(sealChatText("Mi contraseña del SII es esto")).toBe(SAFE_CREDENTIAL_ENTRY);
+    for (const length of [4, 8, 20, 40]) {
+      const descriptor = Array.from({ length }, () => "zona").join(" ");
+      const text = `Mi contraseña de la cuenta del SII ${descriptor} es la de siempre`;
+      expect(sealChatText(text)).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(prepareComposerTurn(text, ["nota.pdf"]).files).toEqual([]);
+    }
+    expect(
+      sealChatText("Mi contraseña de la oficina Ñuñoa del SII\nde la sucursal oriente\nes la de siempre"),
+    ).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(
+      sealChatText("La clave del éxito es constancia. Mi contraseña de la cuenta del SII es la de siempre"),
+    ).toBe(SAFE_CREDENTIAL_ENTRY);
   });
 
   test("un formulario o una factura llegan al modelo con su texto y su PDF", async () => {
@@ -512,6 +529,7 @@ describe("turno de chat", () => {
     for (const text of [
       "Revisa el formulario 29 del SII que te adjunto",
       "Te pego la factura; ¿cuál es la clave del crédito fiscal?",
+      "Mi clave del éxito es constancia. Revisa el formulario que adjunto",
     ]) {
       vi.mocked(saveUserMessage).mockClear();
       vi.mocked(createXaiClient).mockClear();

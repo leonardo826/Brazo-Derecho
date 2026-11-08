@@ -99,10 +99,16 @@ describe("casos deterministas del Contador", () => {
     expect(wantsChatSecretHandoff("Ahí va la clave")).toBe(true);
     expect(wantsChatSecretHandoff("Aqui va la contraseña")).toBe(true);
     expect(wantsChatSecretHandoff("Aquí va la contraseña")).toBe(true);
-    expect(carriesSuspectedSecret("Mi clave de la empresa nueva chilena es el plazo.")).toBe(false);
+    expect(carriesSuspectedSecret("Mi clave de la empresa nueva chilena es el plazo.")).toBe(true);
     expect(carriesSuspectedSecret("La clave del éxito es constancia.")).toBe(false);
+    expect(carriesSuspectedSecret("Mi clave del éxito es constancia.")).toBe(false);
     // Posesivo + portal + asignación cierra aunque el valor empiece por palabra funcional.
-    for (const phrase of ["Mi clave del SII es la de siempre", "Mi clave del SII es esto", "Mi clave del SII es cuando"]) {
+    for (const phrase of [
+      "Mi clave del SII es la de siempre",
+      "Mi contraseña de la cuenta del SII es la de siempre",
+      "Mi clave del SII es esto",
+      "Mi clave del SII es cuando",
+    ]) {
       expect(carriesSuspectedSecret(phrase)).toBe(true);
       expect(sealChatText(phrase)).toBe(SAFE_CREDENTIAL_ENTRY);
     }
