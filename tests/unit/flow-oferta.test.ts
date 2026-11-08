@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+
+const { subscriptionFind, subscriptionUpdate } = vi.hoisted(() => ({
+  subscriptionFind: vi.fn(),
+  subscriptionUpdate: vi.fn(),
+}));
 import { FlowApiError, flowCall } from "@/lib/flow/client";
 import { startFlowSubscription } from "@/lib/flow/checkout";
 import { mercadoPagoCall } from "@/lib/mercadopago/client";
@@ -14,7 +19,12 @@ vi.mock("@/lib/flow/client", async () => {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     organization: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
-    subscription: { findUnique: vi.fn(), update: vi.fn() },
+    subscription: { findUnique: subscriptionFind, update: subscriptionUpdate },
+    $transaction: async (run: (tx: unknown) => unknown) =>
+      run({
+        subscription: { findUnique: subscriptionFind },
+        $executeRaw: async () => 1,
+      }),
   },
 }));
 
@@ -29,12 +39,13 @@ vi.mock("@/lib/mercadopago/client", async () => {
 });
 
 vi.mock("@/lib/qa-account", () => ({ assertBillableOrganization: vi.fn() }));
-vi.mock("@/lib/trial-guard", () => ({ beginTrialIfIdle: vi.fn() }));
+vi.mock("@/lib/trial-guard", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/trial-guard")>("@/lib/trial-guard");
+  return { ...actual, beginTrialIfIdle: vi.fn() };
+});
 
 const call = vi.mocked(flowCall);
 const organization = vi.mocked(prisma.organization.findUniqueOrThrow);
-const subscriptionFind = vi.mocked(prisma.subscription.findUnique);
-const subscriptionUpdate = vi.mocked(prisma.subscription.update);
 
 function paths() {
   return call.mock.calls.map((entry) => entry[0]);
@@ -222,6 +233,61 @@ describe("oferta publicada en Flow", () => {
     expect(call).not.toHaveBeenCalled();
     expect(subscriptionUpdate).not.toHaveBeenCalled();
   });
+
+  test("un contrato activo de Mercado Pago no abre otro en Flow", async () => {
+    subscriptionFind.mockResolvedValue({
+      id: "sub-1",
+      status: "ACTIVE",
+      provider: "MERCADOPAGO",
+      flowSubscriptionId: null,
+      mpPreapprovalId: "pre-viejo",
+      amountClp: 47588,
+      periodEnd: new Date("2026-12-01T00:00:00.000Z"),
+    } as never);
+
+    await expect(
+      startFlowSubscription({
+        organizationId: "org-1",
+        organizationName: "Taller",
+        email: "ana@test.local",
+        name: "Ana",
+        agent: "ACCOUNTING",
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "flow_activa" });
+
+    expect(call).not.toHaveBeenCalled();
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
+  });
+
+  test("una prueba sin contrato de proveedor sí puede consultar el plan", async () => {
+    subscriptionFind.mockResolvedValue({
+      id: "sub-1",
+      status: "TRIAL",
+      flowSubscriptionId: null,
+      mpPreapprovalId: null,
+      amountClp: null,
+      periodEnd: new Date("2026-12-01T00:00:00.000Z"),
+    } as never);
+    call.mockImplementation(async (path: string) => {
+      if (path === "plans/get") {
+        return { planId: "brazo-contador", amount: 63546, currency: "CLP", interval: 3, interval_count: 1 };
+      }
+      if (path === "customer/create") return { customerId: "cus_1" };
+      if (path === "subscription/create") return { subscriptionId: "sus_1" };
+      if (path === "customer/register") return { url: "https://sandbox.flow.cl/app/pay", token: "tok" };
+      throw new Error(path);
+    });
+
+    await startFlowSubscription({
+      organizationId: "org-1",
+      organizationName: "Taller",
+      email: "ana@test.local",
+      name: "Ana",
+      agent: "ACCOUNTING",
+    });
+
+    expect(paths()).toContain("subscription/create");
+  });
 });
 
 describe("oferta publicada en Mercado Pago", () => {
@@ -263,6 +329,30 @@ describe("oferta publicada en Mercado Pago", () => {
       id: "sub-1",
       status: "ACTIVE",
       mpPreapprovalId: "pre-viejo",
+      amountClp: 47588,
+      periodEnd: new Date("2026-12-01T00:00:00.000Z"),
+    } as never);
+
+    await expect(
+      startMercadoPagoSubscription({
+        organizationId: "org-1",
+        agent: "ACCOUNTING",
+        payerEmail: "ana@test.local",
+        amountClp: 63546,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(vi.mocked(mercadoPagoCall)).not.toHaveBeenCalled();
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
+  });
+
+  test("un contrato activo de Flow no abre otro en Mercado Pago", async () => {
+    subscriptionFind.mockResolvedValue({
+      id: "sub-1",
+      status: "ACTIVE",
+      provider: "FLOW",
+      flowSubscriptionId: "sus_vieja",
+      mpPreapprovalId: null,
       amountClp: 47588,
       periodEnd: new Date("2026-12-01T00:00:00.000Z"),
     } as never);

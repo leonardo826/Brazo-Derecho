@@ -5,7 +5,7 @@ import { flowRedirectUrl, planFor, trialDaysToAsk } from "@/lib/flow/plans";
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
 import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
-import { beginTrialIfIdle } from "@/lib/trial-guard";
+import { beginTrialIfIdle, hasOpenActiveContract } from "@/lib/trial-guard";
 
 type CustomerResponse = { customerId?: string };
 type PlanResponse = {
@@ -123,6 +123,9 @@ export async function startFlowSubscription(input: {
 }) {
   await assertBillableOrganization(input.organizationId);
   const now = input.now ?? new Date();
+  if (await hasOpenActiveContract({ organizationId: input.organizationId, agent: input.agent, now })) {
+    throw new FlowApiError("Ya hay una suscripción activa. No se reemplaza.", 409, "flow_activa");
+  }
   const existing = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
   });

@@ -5,6 +5,18 @@ import { trialEnd } from "@/lib/subscription";
 
 export type TrialGate = "opened" | "kept-active" | "kept-trial";
 
+/** Contrato pagado vigente de esta empresa y este agente, sea cual sea el proveedor. */
+export async function hasOpenActiveContract(input: { organizationId: string; agent: AgentId; now?: Date }) {
+  const now = input.now ?? new Date();
+  return prisma.$transaction(async (tx) => {
+    await lockTransaction(tx, trialLockName(input.organizationId, input.agent));
+    const row = await tx.subscription.findUnique({
+      where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
+    });
+    return Boolean(row?.status === "ACTIVE" && row.periodEnd.getTime() > now.getTime());
+  });
+}
+
 /**
  * Abre una prueba solo si no hay un plan o una prueba vigentes.
  * El candado y el WHERE impiden que un aviso de pago ACTIVE quede pisado por TRIAL.
