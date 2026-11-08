@@ -261,7 +261,10 @@ describe("revisión documental con PostgreSQL y modelo simulado", () => {
       expect(stored.assistant?.body).toMatch(/No entré al portal/);
       expect(packed).not.toContain(item.text);
       expect(packed).not.toContain(JSON.stringify(item.text).slice(1, -1));
-      for (const marker of item.absent) expect(packed).not.toContain(marker);
+      for (const marker of item.absent) {
+        if (/^\w{1,3}$/.test(marker)) expect(packed).not.toMatch(new RegExp(`\\b${marker}\\b`, "i"));
+        else expect(packed).not.toContain(marker);
+      }
       if (item.text.endsWith("\nmi")) expect(packed).not.toMatch(/\bmi\b/i);
       expect(model).not.toHaveBeenCalled();
     }
