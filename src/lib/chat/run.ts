@@ -7,11 +7,11 @@ import {
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
-import { redactChatSecrets } from "@/lib/chat/secrets";
-import { sensitiveRequest, splitAction, vaultActionFor, wantsSecureCredentialForm } from "@/lib/chat/sensitive";
+import { SAFE_CREDENTIAL_ENTRY, shouldDropUserText } from "@/lib/chat/secrets";
+import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensitive";
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
-import { portalPresetFromText, vaultFormMessage } from "@/lib/credentials/portal-form";
+import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, listCredentials } from "@/lib/credentials/service";
 import {
@@ -184,12 +184,12 @@ async function* streamModel(input: {
 async function* streamVaultForm(input: {
   threadId: string;
   organizationId: string;
-  text: string;
+  portal: PortalId | null;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   yield { type: "status", text: "Te dejo el formulario…" };
   if (streamWasStopped(input.signal)) return;
-  const body = vaultFormMessage(portalPresetFromText(input.text));
+  const body = vaultFormMessage(input.portal);
   const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body);
   if (!saved) {
     yield { type: "error", code: "limite" };
@@ -206,16 +206,31 @@ export async function* streamChatTurn(input: {
   actorUserId: string;
   text: string;
   files: PreparedFile[];
+  portal?: PortalId | null;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  const text = redactChatSecrets(input.text);
-  const action = sensitiveRequest(text);
+  const original = input.text;
+  const drop = shouldDropUserText(original);
+  const text = drop ? SAFE_CREDENTIAL_ENTRY : original;
+  const hinted = input.portal ?? null;
+  const portal = portalPresetFromText(original) ?? hinted;
   const saved = await saveUserMessage({
     organizationId: input.organizationId,
     body: text,
-    files: input.files,
+    files: drop ? [] : input.files,
   });
   yield { type: "user", message: saved.message };
+  if (drop || (hinted && text === SAFE_CREDENTIAL_ENTRY)) {
+    if (streamWasStopped(input.signal)) return;
+    yield* streamVaultForm({
+      threadId: saved.threadId,
+      organizationId: input.organizationId,
+      portal,
+      signal: input.signal,
+    });
+    return;
+  }
+  const action = sensitiveRequest(text);
   if (action) {
     const card = await saveConfirmation(saved.threadId, action);
     yield { type: "message", message: card };
@@ -223,15 +238,6 @@ export async function* streamChatTurn(input: {
     return;
   }
   if (streamWasStopped(input.signal)) return;
-  if (wantsSecureCredentialForm(text)) {
-    yield* streamVaultForm({
-      threadId: saved.threadId,
-      organizationId: input.organizationId,
-      text,
-      signal: input.signal,
-    });
-    return;
-  }
   yield { type: "status", text: "Revisando…" };
   if (input.files.length > 0) yield { type: "status", text: "Revisando el archivo…" };
   yield* streamModel({

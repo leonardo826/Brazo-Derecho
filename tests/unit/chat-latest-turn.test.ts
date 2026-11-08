@@ -7,7 +7,7 @@ import { VaultAccessForm } from "@/components/vault-access-form";
 import { completeTurn, pushTurn } from "@/lib/chat/followups";
 import { historyWhere, latestWindow, MODEL_HISTORY_LIMIT } from "@/lib/chat/history";
 import { prepareModelTurn } from "@/lib/chat/model-turn";
-import { redactChatSecrets } from "@/lib/chat/secrets";
+import { SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
 import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
 import { createCredential } from "@/lib/credentials/service";
 import { portalPresetFromText, vaultFormMessage, vaultFormPath } from "@/lib/credentials/portal-form";
@@ -286,6 +286,8 @@ describe("un IVA posterior no hereda la bóveda", () => {
     expect(prepared.messages.some((message) => message.text.includes(VAULT_NOTE.slice(0, 24)))).toBe(false);
     expect(JSON.stringify(prepared.messages)).not.toContain(SECRET);
     expect(JSON.stringify(prepared.messages)).not.toContain(RUT);
+    expect(JSON.stringify(prepared.messages)).not.toContain("Demo");
+    expect(prepared.messages.some((message) => message.text === SAFE_CREDENTIAL_ENTRY)).toBe(true);
     const answer = renderMockTask({
       type: "agent_chat",
       today: "7 de noviembre de 2026",
@@ -294,7 +296,43 @@ describe("un IVA posterior no hereda la bóveda", () => {
     expect(answer).toContain(IVA);
     expect(answer).not.toContain("Respuesta de prueba para: Sigue con Torre San Isidro");
     expect(answer).not.toContain("Bóveda (solo id");
-    expect(redactChatSecrets(`mi clave es ${SECRET}`)).toBe("mi clave es [redactado]");
+    expect(sealChatText(`mi clave es ${SECRET}`)).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(sealChatText("El RUT 76.123.456-7 va en la factura del cliente.")).toBe(
+      "El RUT 76.123.456-7 va en la factura del cliente.",
+    );
+    expect(sealChatText("¿Cuál es la clave del F29?")).toBe("¿Cuál es la clave del F29?");
+  });
+});
+
+describe("corpus de claves sintéticas", () => {
+  const samples = [
+    { name: "punto", text: "clave: Demo.1234", fragments: ["Demo.1234", "Demo", ".1234", "1234"] },
+    { name: "punto y coma", text: "clave: Demo;1234", fragments: ["Demo;1234", ";1234", "Demo", "1234"] },
+    { name: "coma", text: "clave: Demo,1234", fragments: ["Demo,1234", "Demo", "1234"] },
+    { name: "símbolos", text: "clave: p@ss/w0rd!", fragments: ["p@ss/w0rd!", "p@ss", "w0rd"] },
+    { name: "espacio sin dos puntos", text: "clave Demo1234", fragments: ["Demo1234", "Demo", "1234"] },
+    { name: "password en inglés", text: "my password is Demo.1234", fragments: ["Demo.1234", "Demo", "1234"] },
+    { name: "contraseña", text: "contraseña: Demo;1234", fragments: ["Demo;1234", ";1234", "1234"] },
+    { name: "igual", text: "passwd=Demo.1234", fragments: ["Demo.1234", "Demo", "1234"] },
+    { name: "varias líneas", text: "usuario: 12.345.678-5\nclave:\nDemo.1234", fragments: ["12.345.678-5", "Demo.1234", "Demo", "1234"] },
+    { name: "mezcla", text: "Guarda el RUT 12.345.678-5 y la clave Demo.1234 en la bóveda", fragments: ["12.345.678-5", "Demo.1234", "Demo", "1234"] },
+  ];
+
+  test.each(samples)("$name no conserva fragmentos", ({ text, fragments }) => {
+    const sealed = sealChatText(text);
+    expect(sealed).toBe(SAFE_CREDENTIAL_ENTRY);
+    for (const fragment of fragments) expect(sealed).not.toContain(fragment);
+    const prepared = prepareModelTurn(
+      [
+        { role: "user", text },
+        { role: "user", text: "¿Cuándo se paga el IVA de noviembre?" },
+      ],
+      "Bóveda (solo id, nombre, portal y pista de usuario; nunca la clave):",
+    );
+    const packed = JSON.stringify(prepared);
+    for (const fragment of fragments) expect(packed).not.toContain(fragment);
+    expect(prepared.messages[1]?.text).toBe("¿Cuándo se paga el IVA de noviembre?");
+    expect(prepared.vaultNote).toBe("");
   });
 });
 
@@ -327,6 +365,8 @@ describe("turno de chat", () => {
     }
     const user = events.find((event) => event.type === "user");
     const assistant = events.find((event) => event.type === "message");
+    expect(user && user.type === "user" ? user.message.body : "").toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
     expect(user && user.type === "user" && user.message.body).not.toContain(SECRET);
     expect(user && user.type === "user" && user.message.body).not.toContain(RUT);
     expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain(
@@ -339,6 +379,47 @@ describe("turno de chat", () => {
     expect(loadHistory).not.toHaveBeenCalled();
     expect(createXaiClient).not.toHaveBeenCalled();
     expect(prismaCredentialRepo).not.toHaveBeenCalled();
+  });
+
+  test("clave: Demo.1234 no se guarda, no va al modelo y no entra al log", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: "clave: Demo.1234",
+      files: [{ fileName: "nota.txt", mimeType: "text/plain", bytes: new Uint8Array([1]) }],
+    })) {
+      events.push(event);
+    }
+    const logged = spy.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    spy.mockRestore();
+    const packed = `${JSON.stringify(events)}\n${logged}`;
+    expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
+    for (const fragment of ["Demo.1234", "Demo", ".1234", "1234", "nota.txt"]) expect(packed).not.toContain(fragment);
+    expect(createXaiClient).not.toHaveBeenCalled();
+    const assistant = events.find((event) => event.type === "message");
+    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain("/panel/boveda#agregar-acceso");
+  });
+
+  test("un texto ya sellado con portal permitido abre el formulario del SII", async () => {
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: SAFE_CREDENTIAL_ENTRY,
+      portal: "sii",
+      files: [],
+    })) {
+      events.push(event);
+    }
+    const assistant = events.find((event) => event.type === "message");
+    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain(
+      "/panel/boveda?portal=sii#agregar-acceso",
+    );
+    expect(createXaiClient).not.toHaveBeenCalled();
   });
 
   test("el IVA siguiente se responde solo y no arrastra la nota de la bóveda", async () => {

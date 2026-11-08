@@ -4,6 +4,7 @@ import { sseResponse } from "@/lib/chat/sse";
 import { streamChatTurn } from "@/lib/chat/run";
 import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { sensitiveRequest } from "@/lib/chat/sensitive";
+import { parseVaultPortalParam, type PortalId } from "@/lib/credentials/portal-form";
 import { agentIsOpen } from "@/lib/agent-access";
 import { planRoom } from "@/lib/plan-limit";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -11,20 +12,22 @@ import { consumeRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function readTurn(request: Request): Promise<{ text: string; files: PreparedFile[] } | Response> {
+async function readTurn(request: Request): Promise<{ text: string; files: PreparedFile[]; portal: PortalId | null } | Response> {
   const contentType = request.headers.get("content-type") ?? "";
   let text = "";
   let agent = "ACCOUNTING";
+  let portal: PortalId | null = null;
   const files: PreparedFile[] = [];
   if (contentType.includes("application/json")) {
-    let body: { texto?: unknown; agente?: unknown };
+    let body: { texto?: unknown; agente?: unknown; portal?: unknown };
     try {
-      body = (await request.json()) as { texto?: unknown; agente?: unknown };
+      body = (await request.json()) as { texto?: unknown; agente?: unknown; portal?: unknown };
     } catch {
       return Response.json({ error: "datos" }, { status: 400 });
     }
     text = typeof body.texto === "string" ? body.texto.trim() : "";
     agent = typeof body.agente === "string" ? body.agente : "ACCOUNTING";
+    portal = parseVaultPortalParam(body.portal);
   } else {
     let form: FormData;
     try {
@@ -34,6 +37,7 @@ async function readTurn(request: Request): Promise<{ text: string; files: Prepar
     }
     text = String(form.get("texto") ?? "").trim();
     agent = String(form.get("agente") ?? "ACCOUNTING");
+    portal = parseVaultPortalParam(form.get("portal"));
     for (const item of form.getAll("archivo")) {
       if (!(item instanceof File) || item.size === 0) continue;
       if (files.length >= MAX_FILES) return Response.json({ error: "archivo" }, { status: 400 });
@@ -44,7 +48,7 @@ async function readTurn(request: Request): Promise<{ text: string; files: Prepar
   }
   if (agent !== "ACCOUNTING") return Response.json({ error: "datos" }, { status: 400 });
   if (text.length > 4000 || (!text && files.length === 0)) return Response.json({ error: "datos" }, { status: 400 });
-  return { text, files };
+  return { text, files, portal };
 }
 
 export async function GET(request: Request) {
@@ -86,6 +90,7 @@ export async function POST(request: Request) {
         actorUserId: session.userId,
         text: parsed.text,
         files: parsed.files,
+        portal: parsed.portal,
         signal,
       }),
     request.signal,

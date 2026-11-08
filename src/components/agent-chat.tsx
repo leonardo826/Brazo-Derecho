@@ -7,7 +7,8 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
-import { redactChatSecrets } from "@/lib/chat/secrets";
+import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
+import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-form";
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
 import { CSRF_HEADER } from "@/lib/csrf-token";
@@ -16,7 +17,7 @@ import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
 type LocalFile = { file: File; url: string };
-type Draft = { id: string; text: string; files: LocalFile[] };
+type Draft = { id: string; text: string; files: LocalFile[]; portal: PortalId | null };
 
 const STOPPED_NOTE = "Detuviste la respuesta.";
 
@@ -406,6 +407,7 @@ export function AgentChat({
     const form = new FormData();
     form.set("agente", "ACCOUNTING");
     form.set("texto", draft.text);
+    if (draft.portal) form.set("portal", draft.portal);
     for (const item of draft.files) form.append("archivo", item.file);
     let end: TurnEnd = "error";
     let requeue = false;
@@ -449,10 +451,17 @@ export function AgentChat({
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!open) return;
-    const text = redactChatSecrets(composer.trim());
-    const chosen = files;
+    const raw = composer.trim();
+    const drop = shouldDropUserText(raw);
+    const text = sealChatText(raw);
+    const chosen = drop ? [] : files;
     if (!text && chosen.length === 0) return;
-    const draft: Draft = { id: `local-${crypto.randomUUID()}`, text, files: chosen };
+    const draft: Draft = {
+      id: `local-${crypto.randomUUID()}`,
+      text,
+      files: chosen,
+      portal: drop ? portalPresetFromText(raw) : null,
+    };
     updateComposer("");
     updateFiles([]);
     setNotice("");
@@ -483,7 +492,7 @@ export function AgentChat({
 
   async function decide(id: string, decision: "APPROVED" | "CANCELED") {
     if (busyRef.current || !open) return;
-    const sentinel: Draft = { id: `local-decision-${id}`, text: "", files: [] };
+    const sentinel: Draft = { id: `local-decision-${id}`, text: "", files: [], portal: null };
     const pushed = pushTurn(turns.current, sentinel);
     turns.current = pushed.queue;
     if (!pushed.startNow) return;

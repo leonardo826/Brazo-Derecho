@@ -1,4 +1,4 @@
-import { redactChatSecrets } from "@/lib/chat/secrets";
+import { sealChatText } from "@/lib/chat/secrets";
 import { wantsPortalAccess, wantsVaultSave } from "@/lib/chat/sensitive";
 import { clientAskedForLogin, explicitVaultAsk } from "@/lib/credentials/policy";
 
@@ -22,7 +22,7 @@ export function lastUserText(messages: readonly ModelTurn[]) {
 /** La nota de bóveda no se agrega como mensaje del cliente ni contamina otro tema. */
 export function prepareModelTurn(history: readonly ModelTurn[], vaultNote: string) {
   const messages = history.map((message) =>
-    message.role === "user" ? { ...message, text: redactChatSecrets(message.text) } : message,
+    message.role === "user" ? { ...message, text: sealChatText(message.text) } : message,
   );
   const attach = shouldAttachVaultNote(lastUserText(messages));
   return { messages, vaultNote: attach ? vaultNote.trim() : "" };
