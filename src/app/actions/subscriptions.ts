@@ -3,9 +3,8 @@
 import { redirect } from "next/navigation";
 import { isAgentId } from "@/lib/catalog";
 import { assertOwnOrganizationActive, guardMutation, withNotice } from "@/lib/guard";
-import { flowIsConfigured } from "@/lib/flow/client";
+import { FlowApiError, flowIsConfigured } from "@/lib/flow/client";
 import { activateMockPlan } from "@/lib/flow/mock-checkout";
-import { planFor } from "@/lib/flow/plans";
 import { mercadoPagoIsConfigured } from "@/lib/mercadopago/client";
 import { paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { getPaymentProvider } from "@/lib/payments/registry";
@@ -28,7 +27,7 @@ export async function activateTrialAction(formData: FormData) {
   if (await organizationIsQa(session.organizationId)) redirect(withNotice(back, "ok", "qa_sin_cobro"));
   const provider = providerParsed.data;
   const guia = formData.get("guia") === "1" ? "&guia=1" : "";
-  const flowAmountClp = planFor(agentRaw).amountClp;
+  const offerClp = iabotChargeClp();
 
   if (provider === "mercadopago" && mercadoPagoIsConfigured()) {
     let redirectUrl = "";
@@ -37,7 +36,7 @@ export async function activateTrialAction(formData: FormData) {
         organizationId: session.organizationId,
         agent: agentRaw,
         payerEmail: session.email,
-        amountClp: iabotChargeClp(),
+        amountClp: offerClp,
       });
       redirectUrl = started.redirectUrl;
     } catch (error) {
@@ -56,11 +55,12 @@ export async function activateTrialAction(formData: FormData) {
         organizationId: session.organizationId,
         agent: agentRaw,
         payerEmail: session.email,
-        amountClp: flowAmountClp,
+        amountClp: offerClp,
       });
       url = started.redirectUrl || null;
     } catch (error) {
       if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
+      if (error instanceof FlowApiError && error.status === 409) redirect(`${back}?error=flow_precio`);
       console.error("Flow no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(`${back}?error=flow`);
     }

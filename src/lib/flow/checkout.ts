@@ -1,14 +1,14 @@
 import type { AgentId } from "@/lib/catalog";
 import { appUrl } from "@/lib/env";
-import { flowCall } from "@/lib/flow/client";
+import { FlowApiError, flowCall } from "@/lib/flow/client";
 import { flowRedirectUrl, planFor, trialDaysToAsk } from "@/lib/flow/plans";
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
-import { TRIAL_DAYS } from "@/lib/subscription";
+import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
 import { beginTrialIfIdle } from "@/lib/trial-guard";
 
 type CustomerResponse = { customerId?: string };
-type PlanResponse = { planId?: string };
+type PlanResponse = { planId?: string; amount?: number | string };
 type SubscriptionResponse = {
   subscriptionId?: string;
   status?: number | string;
@@ -46,18 +46,33 @@ async function ensureCustomer(input: { organizationId: string; name: string; ema
   return created.customerId;
 }
 
-async function ensurePlan(agent: AgentId) {
+function readFlowAmount(amount: number | string | undefined) {
+  if (typeof amount === "number" && Number.isInteger(amount) && amount > 0) return amount;
+  if (typeof amount === "string" && /^[1-9]\d*$/.test(amount)) return Number(amount);
+  return null;
+}
+
+/** El plan remoto tiene que ser el precio publicado. Si no se puede comprobar, no se cobra. */
+async function ensurePublishedPlan(agent: AgentId) {
   const plan = planFor(agent);
+  const offer = iabotChargeClp();
+  if (!Number.isInteger(offer) || offer <= 0) {
+    throw new FlowApiError("El precio publicado no es válido", 400);
+  }
+  let remote: PlanResponse | null = null;
   try {
-    await flowCall<PlanResponse>("plans/get", { planId: plan.planId }, "GET");
+    remote = await flowCall<PlanResponse>("plans/get", { planId: plan.planId }, "GET");
   } catch {
+    remote = null;
+  }
+  if (!remote) {
     await flowCall<PlanResponse>(
       "plans/create",
       {
         planId: plan.planId,
         name: plan.name,
         currency: "CLP",
-        amount: plan.amountClp,
+        amount: offer,
         interval: 3,
         interval_count: 1,
         trial_period_days: TRIAL_DAYS,
@@ -66,8 +81,12 @@ async function ensurePlan(agent: AgentId) {
       },
       "POST",
     );
+    return { ...plan, amountClp: offer };
   }
-  return plan;
+  if (readFlowAmount(remote.amount) !== offer) {
+    throw new FlowApiError("Flow no tiene el precio publicado de esta oferta", 409);
+  }
+  return { ...plan, amountClp: offer };
 }
 
 export async function startFlowSubscription(input: {
@@ -83,12 +102,12 @@ export async function startFlowSubscription(input: {
   const existing = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
   });
+  const plan = await ensurePublishedPlan(input.agent);
   const customerId = await ensureCustomer({
     organizationId: input.organizationId,
     name: `${input.name} · ${input.organizationName}`.slice(0, 120),
     email: input.email,
   });
-  const plan = await ensurePlan(input.agent);
   const trialDays = trialDaysToAsk(existing, now);
   let flowSubscriptionId = existing?.flowSubscriptionId ?? "";
 
@@ -128,7 +147,7 @@ export async function startFlowSubscription(input: {
   } else {
     await prisma.subscription.update({
       where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
-      data: { flowPlanId: plan.planId, amountClp: plan.amountClp },
+      data: { flowPlanId: plan.planId },
     });
   }
 
