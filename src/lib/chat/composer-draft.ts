@@ -35,7 +35,21 @@ export function subscribeComposerDraft(listener: () => void) {
   };
 }
 
+function dropIfEpochRevoked() {
+  const remote = visibleEpoch();
+  if (remote === null || remote === String(epoch)) return false;
+  const parsed = Number(remote);
+  if (Number.isSafeInteger(parsed)) epoch = parsed;
+  else {
+    epoch += 1;
+    publishEpoch();
+  }
+  held = null;
+  return true;
+}
+
 export function readComposerDraft(identity: DraftIdentity) {
+  dropIfEpochRevoked();
   const key = identityKey(identity);
   if (!key || held?.key !== key) return "";
   return held.text;
@@ -85,6 +99,10 @@ export function alignComposerDraftEpoch() {
 alignComposerDraftEpoch();
 
 export function adoptComposerDraft(identity: DraftIdentity) {
+  if (dropIfEpochRevoked()) {
+    emitDraft();
+    return;
+  }
   const key = identityKey(identity);
   if (!key || !held || held.key === key) return;
   held = null;
@@ -100,14 +118,8 @@ export function purgeComposerDrafts() {
 }
 
 export function restoreComposerDraft(identity: DraftIdentity) {
-  const remote = visibleEpoch();
-  if (remote !== null && remote !== String(epoch)) {
-    const parsed = Number(remote);
-    epoch = Number.isSafeInteger(parsed) ? parsed : epoch + 1;
-    if (held) {
-      held = null;
-      emitDraft();
-    }
+  if (dropIfEpochRevoked()) {
+    emitDraft();
     return "";
   }
   return readComposerDraft(identity);

@@ -168,6 +168,24 @@ describe("el marco del panel purga el borrador", () => {
     expect(readComposerDraft(personA)).toBe("");
   });
 
+  test("remontar la misma persona tras una purga externa no devuelve el borrador", () => {
+    show(personA, "contador");
+    act(() => setComposer(host, "nota que otro documento purgó"));
+    expect(composerValue()).toBe("nota que otro documento purgó");
+    act(() => root.unmount());
+    host.remove();
+    sessionStorage.setItem("brazo-draft-epoch", "9001");
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    show(personA, "contador");
+    expect(composerValue()).toBe("");
+    expect(readComposerDraft(personA)).toBe("");
+    expect(sessionStorage.getItem("brazo-draft-epoch")).toBe("9001");
+    expect(sessionStorage.getItem("brazo-draft-epoch")).not.toContain("nota");
+    expect(localStorage.getItem("brazo-draft-epoch")).toBeNull();
+  });
+
   test("salir desde la Bóveda borra el borrador antes de volver al Contador", () => {
     show(personA, "contador");
     act(() => setComposer(host, "nota antes de salir"));
