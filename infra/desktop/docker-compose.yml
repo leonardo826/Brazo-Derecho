@@ -18,13 +18,15 @@ services:
       CHROME_PROFILE: /data/chrome-profile
       AGENT_BIND: 0.0.0.0
       AGENT_PORT: "8787"
+      AGENT_RUNTIME_TOKEN: ${AGENT_RUNTIME_TOKEN:-local}
+      MACHINE_ID: ${MACHINE_ID:-desktop-local}
       SCREEN_WIDTH: "1280"
       SCREEN_HEIGHT: "800"
     volumes:
       - chrome_profile:/data
     shm_size: "1gb"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/status').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/status',{headers:{authorization:'Bearer '+process.env.AGENT_RUNTIME_TOKEN}}).then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 10

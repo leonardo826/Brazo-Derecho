@@ -1,160 +1,220 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import http from "node:http";
+import { afterEach, describe, expect, test } from "vitest";
+import { handleAgent } from "../../agent-runtime/src/http";
+import type { Desktop, DesktopStatus } from "../../agent-runtime/src/desktop";
+import type { DesktopAction } from "../../agent-runtime/src/actions";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { AGENT_CATALOG } from "@/lib/catalog";
-import { DESKTOP_COPY, executeDesktopRequest, planDesktopTask, type TenantComputer } from "@/lib/chat/desktop-task";
+import {
+  DESKTOP_COPY,
+  executeDesktopRequest,
+  planDesktopTask,
+  resetDesktopIntent,
+  type ComputerLease,
+  type LeaseState,
+} from "@/lib/chat/desktop-task";
 
 const SECRET = "Secreto-latam-88";
-const FLIGHT = "Entra a una aerolínea chilena y cotiza vuelos Concepción a Santiago el 12 de diciembre, solo ida";
-const OPEN = "Cotiza vuelos Concepción a Santiago";
+const ORG = "org-a";
+const USER = "persona-a";
+const THREAD = "contador";
 
-const running = (clientId: string, flyApp = "iabot-desk-empresa"): TenantComputer => ({
-  clientId,
-  status: "RUNNING",
-  flyApp,
+const lease = (organizationId = ORG): ComputerLease => ({
+  organizationId,
   machineId: "machine-1",
+  baseUrl: "http://127.0.0.1:9",
+  token: "lease-de-esa-maquina",
 });
 
-const liveBody = {
-  status: "DONE",
-  xaiMode: "live",
-  steps: [{ kind: "screenshot" }],
-  result: `Tarifa publicada en el sitio. clave: ${SECRET}`,
-};
+const ready = (organizationId = ORG): LeaseState => ({ state: "listo", lease: lease(organizationId) });
+
+function run(text: string, extra: Partial<Parameters<typeof executeDesktopRequest>[0]> = {}) {
+  return executeDesktopRequest({
+    organizationId: ORG,
+    userId: USER,
+    conversationId: THREAD,
+    text,
+    loadLease: async () => ({ state: "ausente" }),
+    reserve: async () => ({ ok: true, reservationId: "reserva" }),
+    ...extra,
+  });
+}
 
 afterEach(() => {
+  resetDesktopIntent();
   delete process.env.COMPUTER_AGENT_URL;
   delete process.env.COMPUTER_AGENT_TOKEN;
-  vi.restoreAllMocks();
 });
 
-describe("tarea de computador desde el chat", () => {
-  test("la especialidad no prohíbe el computador", () => {
+describe("contrato del computador en el chat", () => {
+  test("la especialidad no prohíbe la herramienta y un viaje pide la fecha", async () => {
     const instructions = `${AGENT_CATALOG.ACCOUNTING.instructions}\n${accountantChatInstructions("QA")}`;
     expect(instructions).not.toMatch(/no operas un computador/i);
     expect(instructions).toMatch(/no rechaces un pedido por ser el contador/i);
-    expect(instructions).toMatch(/no afirmes una visita, una tarifa/i);
-    expect(planDesktopTask(OPEN).kind).toBe("ask");
     expect(planDesktopTask("Explícame el IVA del F29").kind).toBe("chat");
+    const asked = await run("Cotiza vuelos CCP SCL");
+    expect(asked).toEqual({ kind: "reply", text: "¿Qué fecha y es solo ida o ida y vuelta?" });
   });
 
-  test("un vuelo sin fecha pregunta lo mínimo y no llama al computador", async () => {
-    const fetchImpl = vi.fn();
-    const logs: string[] = [];
-    const result = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: OPEN,
-      loadComputer: async () => running("org-a"),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      log: (fields) => logs.push(JSON.stringify(fields)),
-    });
-    expect(result).toEqual({ kind: "reply", text: "¿Qué fecha y es solo ida o ida y vuelta?" });
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(logs.join(" ")).not.toContain(SECRET);
-  });
-
-  test("con fecha e ida llama solo al computador de esa empresa", async () => {
-    process.env.COMPUTER_AGENT_URL = "http://compartido.example";
-    process.env.COMPUTER_AGENT_TOKEN = "token-global";
-    const bodies: string[] = [];
-    const headers: HeadersInit[] = [];
-    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
-      bodies.push(String(init?.body ?? ""));
-      headers.push(init?.headers ?? {});
-      expect(url).toBe("http://iabot-desk-empresa.internal:8787/task");
-      return new Response(JSON.stringify(liveBody), { status: 200 });
-    });
-    const result = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: FLIGHT,
-      loadComputer: async (organizationId) => (organizationId === "org-a" ? running("org-a") : null),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+  test("la segunda respuesta completa la intención y no cae en el chat", async () => {
+    const order: string[] = [];
+    await run("Cotiza vuelos CCP SCL");
+    const result = await run("12 de diciembre, solo ida", {
+      loadLease: async () => ({ state: "transporte" }),
+      reserve: async () => {
+        order.push("reserva");
+        return { ok: true, reservationId: "reserva" };
+      },
+      fetchImpl: (async () => {
+        order.push("fetch");
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
     });
     expect(result.kind).toBe("reply");
     if (result.kind !== "reply") return;
-    expect(result.text).toContain("Tarifa publicada");
-    expect(result.text).not.toContain(SECRET);
-    expect(result.text).toContain("[redactado]");
+    expect(result.text).toBe(DESKTOP_COPY.TRANSPORT);
+    expect(order).toEqual([]);
+    const other = await executeDesktopRequest({
+      organizationId: "org-b",
+      userId: USER,
+      conversationId: THREAD,
+      text: "12 de diciembre, solo ida",
+      loadLease: async () => ready(),
+      fetchImpl: (async () => {
+        throw new Error("no debía llamar");
+      }) as typeof fetch,
+    });
+    expect(other.kind).toBe("chat");
+  });
+
+  test("sin arriendo alcanzable no usa la red interna ni un token global", async () => {
+    process.env.COMPUTER_AGENT_URL = "http://app.internal:8787";
+    process.env.COMPUTER_AGENT_TOKEN = "token-global";
+    const fetchImpl = (async () => {
+      throw new Error("no debía llamar");
+    }) as typeof fetch;
+    const absent = await run("Cotiza vuelos CCP SCL el 12 de diciembre, solo ida", { fetchImpl });
+    expect(absent).toEqual({ kind: "reply", text: DESKTOP_COPY.ABSENT });
+    const internal = await run("Cotiza vuelos CCP SCL el 12 de diciembre, solo ida", {
+      loadLease: async () => ({
+        state: "listo",
+        lease: { ...lease(), baseUrl: "http://iabot-desk-empresa.internal:8787" },
+      }),
+      fetchImpl,
+    });
+    expect(internal).toEqual({ kind: "reply", text: DESKTOP_COPY.TRANSPORT });
+  });
+
+  test("un DONE con solo captura no acredita fuente y la respuesta no trae secreto", async () => {
+    const bodies: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      bodies.push(String(init?.body ?? ""));
+      expect(JSON.stringify(init?.headers)).toContain("lease-de-esa-maquina");
+      expect(JSON.stringify(init?.headers)).not.toContain(SECRET);
+      return new Response(
+        JSON.stringify({
+          status: "DONE",
+          xaiMode: "live",
+          steps: [{ kind: "screenshot", bytes: 10 }],
+          result: `Listo. clave: ${SECRET}`,
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const result = await run("Cotiza vuelos CCP SCL el 12 de diciembre, solo ida", {
+      loadLease: async () => ready(),
+      fetchImpl,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.NOT_REAL });
     const sent = JSON.parse(bodies[0]) as Record<string, unknown>;
-    expect(Object.keys(sent)).toEqual(["goal"]);
-    expect(JSON.stringify(headers)).not.toContain("token-global");
+    expect(Object.keys(sent).sort()).toEqual(["goal", "machineId"]);
     expect(JSON.stringify(sent)).not.toContain(SECRET);
   });
 
-  test("otra empresa no usa el computador ajeno", async () => {
-    const fetchImpl = vi.fn();
-    const result = await executeDesktopRequest({
-      organizationId: "org-b",
-      text: FLIGHT,
-      loadComputer: async (organizationId) => (organizationId === "org-a" ? running("org-a") : null),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+  test("la reserva ocurre antes de la llamada y el tope no llama", async () => {
+    const order: string[] = [];
+    const blocked = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      reserve: async () => {
+        order.push("reserva");
+        return { ok: false };
+      },
+      fetchImpl: (async () => {
+        order.push("fetch");
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
     });
-    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.ABSENT });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(blocked).toEqual({ kind: "reply", text: DESKTOP_COPY.LIMITE });
+    expect(order).toEqual(["reserva"]);
   });
 
-  test("sin computador en marcha el error es honesto y no hay éxito simulado", async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ status: "DONE", xaiMode: "mock", result: "tarifa 1" }), { status: 200 }));
-    const stopped = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: FLIGHT,
-      loadComputer: async () => ({ ...running("org-a"), status: "STOPPED" }),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-    expect(stopped).toEqual({ kind: "reply", text: DESKTOP_COPY.ABSENT });
-    expect(fetchImpl).not.toHaveBeenCalled();
-    const mock = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: FLIGHT,
-      loadComputer: async () => running("org-a"),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-    expect(mock).toEqual({ kind: "reply", text: DESKTOP_COPY.NOT_REAL });
-  });
-
-  test("comprar el pasaje pide confirmación y no llama", async () => {
-    const fetchImpl = vi.fn();
-    const result = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: "Compra el pasaje LATAM el 12 de diciembre, solo ida",
-      loadComputer: async () => running("org-a"),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+  test("comprar pide confirmación", async () => {
+    const result = await run("Compra el pasaje del viaje el 12 de diciembre, solo ida", {
+      loadLease: async () => ready(),
+      fetchImpl: (async () => {
+        throw new Error("no debía llamar");
+      }) as typeof fetch,
     });
     expect(result).toEqual({ kind: "confirm" });
-    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  test("cancelar y el tiempo agotado no dejan una tarifa", async () => {
+  test("cancelar avisa al runtime y no deja un resultado", async () => {
+    const cancelled: string[] = [];
+    const server = http.createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { machineId?: string };
+      if ((req.url ?? "").startsWith("/task/cancel")) cancelled.push("cancel");
+      const response = await handleAgent(
+        {
+          method: req.method ?? "GET",
+          path: req.url ?? "/",
+          body,
+          headers: { authorization: req.headers.authorization },
+        },
+        {
+          env: { AGENT_RUNTIME_TOKEN: "lease-de-esa-maquina", MACHINE_ID: "machine-1", XAI_MODE: "mock" },
+          desktop: waitingDesktop(cancelled),
+        },
+      );
+      res.writeHead(response.status);
+      res.end(response.body);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
     const controller = new AbortController();
-    controller.abort();
-    const fetchImpl = vi.fn();
-    const cancelled = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: FLIGHT,
+    const pending = run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ({
+        state: "listo",
+        lease: { ...lease(), baseUrl: `http://127.0.0.1:${port}` },
+      }),
       signal: controller.signal,
-      loadComputer: async () => running("org-a"),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      timeoutMs: 2_000,
     });
-    expect(cancelled).toEqual({ kind: "reply", text: DESKTOP_COPY.CANCELLED });
-    expect(fetchImpl).not.toHaveBeenCalled();
-
-    const slow = vi.fn((_url: string, init?: RequestInit) => {
-      return new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
-          reject(Object.assign(new Error("tiempo"), { name: "TimeoutError" }));
-        });
-      });
-    });
-    const logs: { outcome: string; ms: number }[] = [];
-    const timed = await executeDesktopRequest({
-      organizationId: "org-a",
-      text: FLIGHT,
-      timeoutMs: 5,
-      loadComputer: async () => running("org-a"),
-      fetchImpl: slow as unknown as typeof fetch,
-      log: (fields) => logs.push(fields),
-    });
-    expect(timed).toEqual({ kind: "reply", text: DESKTOP_COPY.TIMEOUT });
-    expect(logs.some((item) => item.outcome === "timeout" && item.ms >= 0)).toBe(true);
-    expect(JSON.stringify(logs)).not.toContain("Concepción");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    const result = await pending;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.CANCELLED });
+    expect(cancelled).toContain("cancel");
   });
 });
+
+function waitingDesktop(marks: string[]): Desktop {
+  const status: DesktopStatus = { ok: true, display: ":99", chromium: "up", whatsappTab: false, profileDir: "/tmp/none" };
+  return {
+    async screenshot() {
+      marks.push("shot");
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      return Buffer.from("png");
+    },
+    async perform(action: DesktopAction) {
+      marks.push(action.type);
+    },
+    async status() {
+      return status;
+    },
+  };
+}

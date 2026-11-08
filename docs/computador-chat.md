@@ -1,19 +1,21 @@
 # Computador desde el chat
 
-La especialidad contable orienta. No impide una tarea que el computador de esa empresa pueda ejecutar. Comprar, pagar, declarar, enviar o un cambio irreversible sigue pidiendo confirmación. Entrar a un sitio no autoriza esas acciones.
+La especialidad contable orienta. No impide una tarea pública que el computador de esa empresa pueda ejecutar. Si falta un dato indispensable, se pregunta solo eso y el turno siguiente sigue la misma intención, aislada por persona, empresa e hilo. Comprar, pagar, declarar, enviar o un cambio irreversible pide confirmación. Entrar a un sitio no autoriza esas acciones.
 
-El chat no inventa una tarifa. Solo muestra un resultado si el computador de la organización respondió `DONE`, con `xaiMode` `live` y al menos un paso. Si no hay máquina en marcha, la respuesta dice que no entró a ningún sitio. Un simulador no cuenta como tarifa.
+## Qué está deshabilitado a propósito
 
-La dirección sale de la fila `Computer` de esa organización: `status` `RUNNING`, `flyApp` y `machineId` presentes. La URL es `http://<flyApp>.internal:8787`. No se usa `COMPUTER_AGENT_URL` ni `COMPUTER_AGENT_TOKEN`: son valores globales y no aíslan al cliente. El cuerpo hacia `/task` lleva solo el objetivo. No lleva claves, grants ni el identificador de otra empresa.
+La app no llama a `*.internal`. Esa dirección pertenece a la red privada de Fly y desde el proceso de la app no hay una conexión acreditada. La fila `Computer` tampoco guarda un token de esa máquina. Sin las dos cosas, el chat responde que no entró a ningún sitio. No usa `COMPUTER_AGENT_URL` ni `COMPUTER_AGENT_TOKEN`.
 
-## Qué no está conectado
+Un resultado solo se acepta si el runtime responde `DONE`, `xaiMode: live`, y un paso `goto` a una URL pública cuyo nombre aparece en el texto. Una captura inicial no alcanza. El simulador no cuenta.
 
-El relleno de la Bóveda (`POST /api/credenciales/rellenar`) sigue existiendo para el agente, pero el chat no lo llama. Un acceso guardado no se inyecta en el navegador desde esta conversación. Conectarlo ahora, sin un token por empresa y sin una máquina aislada, abriría una ruta con un secreto compartido. Queda pendiente.
+El relleno de la Bóveda no sale del chat. Una cookie que ya viva en el navegador de una máquina no demuestra que el secreto quedó aislado. El chat no envía claves.
 
-Tampoco hay token por organización. Si la máquina exige `AGENT_RUNTIME_TOKEN`, esta llamada llega sin `Authorization` y el rechazo se informa como fallo. No se reutiliza el token global.
+## Runtime local
 
-## Para un piloto real
+`agent-runtime` rechaza la petición si falta `AGENT_RUNTIME_TOKEN` o si `machineId` no es el de ese proceso. Un `goto` a loopback, red privada o un nombre `.internal` no se ejecuta. `POST /task/cancel` con el mismo token y la misma máquina aborta la tarea en curso.
 
-Hace falta, por cada empresa, una máquina y un volumen propios, la fila `Computer` en `RUNNING` con `flyApp` y `machineId`, red privada hasta el puerto 8787, y el runtime en modo live (no mock). El alta en Fly sigue detrás de `FLY_DRY_RUN=false` y `--confirmo-gasto`. Este cambio no crea esa máquina, no gasta y no lee el entorno de producción.
+Eso se prueba contra el handler real en `127.0.0.1`. No abre el escritorio de esta sesión ni una aerolínea, y no acredita una tarifa.
 
-La prueba de una cotización real es app, computador de esa empresa, aerolínea y tarifa con fuente. Los tests de este repositorio solo fijan la conexión y el rechazo honesto.
+## Para un piloto
+
+Hace falta, por empresa, una máquina identificada, un token solo de esa máquina, y una URL alcanzable desde la app que no sea la red privada de Fly. El alta sigue detrás de `FLY_DRY_RUN=false` y `--confirmo-gasto`. Este cambio no la hace y no fija un precio.
