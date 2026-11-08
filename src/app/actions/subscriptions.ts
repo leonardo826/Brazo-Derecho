@@ -5,7 +5,7 @@ import { isAgentId } from "@/lib/catalog";
 import { assertOwnOrganizationActive, guardMutation, withNotice } from "@/lib/guard";
 import { FlowApiError, flowIsConfigured } from "@/lib/flow/client";
 import { activateMockPlan } from "@/lib/flow/mock-checkout";
-import { mercadoPagoIsConfigured } from "@/lib/mercadopago/client";
+import { MercadoPagoApiError, mercadoPagoIsConfigured } from "@/lib/mercadopago/client";
 import { paymentReturnPath, safePanelPath } from "@/lib/paths";
 import { getPaymentProvider } from "@/lib/payments/registry";
 import { prisma } from "@/lib/prisma";
@@ -41,6 +41,7 @@ export async function activateTrialAction(formData: FormData) {
       redirectUrl = started.redirectUrl;
     } catch (error) {
       if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
+      if (error instanceof MercadoPagoApiError && error.status === 409) redirect(`${back}?error=mercadopago_activa`);
       console.error("Mercado Pago no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(`${back}?error=mercadopago`);
     }
@@ -60,7 +61,9 @@ export async function activateTrialAction(formData: FormData) {
       url = started.redirectUrl || null;
     } catch (error) {
       if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
-      if (error instanceof FlowApiError && error.status === 409) redirect(`${back}?error=flow_precio`);
+      if (error instanceof FlowApiError && error.status === 409) {
+        redirect(`${back}?error=${error.code === "flow_activa" ? "flow_activa" : "flow_precio"}`);
+      }
       console.error("Flow no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(`${back}?error=flow`);
     }
@@ -163,6 +166,7 @@ export async function confirmMockPaymentAction(formData: FormData) {
       redirectUrl = started.redirectUrl;
     } catch (error) {
       if (error instanceof QaSinCobroError) redirect(withNotice(back, "ok", "qa_sin_cobro"));
+      if (error instanceof MercadoPagoApiError && error.status === 409) redirect(withNotice(back, "error", "mercadopago_activa"));
       console.error("Mercado Pago no pudo iniciar la suscripción", error instanceof Error ? error.name : "error");
       redirect(withNotice(checkout, "error", "mercadopago"));
     }

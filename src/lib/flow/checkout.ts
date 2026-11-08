@@ -8,7 +8,16 @@ import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
 import { beginTrialIfIdle } from "@/lib/trial-guard";
 
 type CustomerResponse = { customerId?: string };
-type PlanResponse = { planId?: string; amount?: number | string };
+type PlanResponse = {
+  planId?: string;
+  amount?: number | string;
+  currency?: string;
+  interval?: number | string;
+  interval_count?: number | string;
+};
+
+const FLOW_MONTHLY_INTERVAL = 3;
+const FLOW_MONTHLY_COUNT = 1;
 type SubscriptionResponse = {
   subscriptionId?: string;
   status?: number | string;
@@ -46,25 +55,40 @@ async function ensureCustomer(input: { organizationId: string; name: string; ema
   return created.customerId;
 }
 
-function readFlowAmount(amount: number | string | undefined) {
-  if (typeof amount === "number" && Number.isInteger(amount) && amount > 0) return amount;
-  if (typeof amount === "string" && /^[1-9]\d*$/.test(amount)) return Number(amount);
+function readPositiveInt(value: number | string | undefined) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) return Number(value);
   return null;
 }
 
-/** El plan remoto tiene que ser el precio publicado. Si no se puede comprobar, no se cobra. */
+function planMatchesOffer(remote: PlanResponse, offer: number) {
+  const currency = typeof remote.currency === "string" ? remote.currency.trim().toUpperCase() : "";
+  return (
+    readPositiveInt(remote.amount) === offer &&
+    currency === "CLP" &&
+    readPositiveInt(remote.interval) === FLOW_MONTHLY_INTERVAL &&
+    readPositiveInt(remote.interval_count) === FLOW_MONTHLY_COUNT
+  );
+}
+
+/** Solo un 404 permite crear. Otro error de consulta no se convierte en un plan nuevo. */
+async function readPlan(planId: string) {
+  try {
+    return await flowCall<PlanResponse>("plans/get", { planId }, "GET");
+  } catch (error) {
+    if (error instanceof FlowApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** El plan remoto tiene que ser 63546 CLP al mes. Si no se puede comprobar, no hay checkout. */
 async function ensurePublishedPlan(agent: AgentId) {
   const plan = planFor(agent);
   const offer = iabotChargeClp();
   if (!Number.isInteger(offer) || offer <= 0) {
-    throw new FlowApiError("El precio publicado no es válido", 400);
+    throw new FlowApiError("El precio publicado no es válido", 400, "flow_precio");
   }
-  let remote: PlanResponse | null = null;
-  try {
-    remote = await flowCall<PlanResponse>("plans/get", { planId: plan.planId }, "GET");
-  } catch {
-    remote = null;
-  }
+  let remote = await readPlan(plan.planId);
   if (!remote) {
     await flowCall<PlanResponse>(
       "plans/create",
@@ -73,18 +97,18 @@ async function ensurePublishedPlan(agent: AgentId) {
         name: plan.name,
         currency: "CLP",
         amount: offer,
-        interval: 3,
-        interval_count: 1,
+        interval: FLOW_MONTHLY_INTERVAL,
+        interval_count: FLOW_MONTHLY_COUNT,
         trial_period_days: TRIAL_DAYS,
         days_until_due: 3,
         urlCallback: `${appUrl()}/api/flow/confirmacion`,
       },
       "POST",
     );
-    return { ...plan, amountClp: offer };
+    remote = await readPlan(plan.planId);
   }
-  if (readFlowAmount(remote.amount) !== offer) {
-    throw new FlowApiError("Flow no tiene el precio publicado de esta oferta", 409);
+  if (!remote || !planMatchesOffer(remote, offer)) {
+    throw new FlowApiError("Flow no tiene el precio publicado de esta oferta", 409, "flow_precio");
   }
   return { ...plan, amountClp: offer };
 }
@@ -102,6 +126,9 @@ export async function startFlowSubscription(input: {
   const existing = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
   });
+  if (existing?.flowSubscriptionId && existing.status !== "CANCELED" && existing.status !== "EXPIRED") {
+    throw new FlowApiError("Ya hay una suscripción Flow. No se reemplaza.", 409, "flow_activa");
+  }
   const plan = await ensurePublishedPlan(input.agent);
   const customerId = await ensureCustomer({
     organizationId: input.organizationId,

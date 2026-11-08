@@ -16,6 +16,8 @@ export const ERRORS: Record<string, string> = {
   ia: "El asistente no alcanzó a responder. No descontamos esta vez.",
   flow: "No pudimos completar la operación con Flow. Intenta de nuevo en un rato.",
   flow_precio: "No iniciamos el pago con Flow: su plan no coincide con el precio publicado. No se modificó un contrato anterior.",
+  flow_activa: "Ya hay una suscripción Flow. No la reemplazamos ni cambiamos su monto.",
+  mercadopago_activa: "Ya hay una suscripción de Mercado Pago. No la reemplazamos ni cambiamos su monto.",
   mercadopago: "No pudimos completar la operación con Mercado Pago. Intenta de nuevo en un rato.",
   numero: "Revisa el id del número. Son solo dígitos, los que muestra Meta.",
   numero_tomado: "Ese id ya está vinculado a otra empresa.",

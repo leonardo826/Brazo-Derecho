@@ -1,12 +1,15 @@
 import { signFlowParams } from "@/lib/flow/sign";
 
 export class FlowApiError extends Error {
+  readonly code: string;
   constructor(
     message: string,
     readonly status: number,
+    code = "",
   ) {
     super(message);
     this.name = "FlowApiError";
+    this.code = code;
   }
 }
 

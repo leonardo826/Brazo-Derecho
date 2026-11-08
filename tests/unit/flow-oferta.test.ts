@@ -54,8 +54,20 @@ beforeEach(() => {
 describe("oferta publicada en Flow", () => {
   test("un plan nuevo del Contador se crea en 63546 y no en el neto antiguo", async () => {
     subscriptionFind.mockResolvedValue(null);
+    const published = {
+      planId: "brazo-contador",
+      amount: IABOT_PRICE_CLP,
+      currency: "CLP",
+      interval: 3,
+      interval_count: 1,
+    };
+    let reads = 0;
     call.mockImplementation(async (path: string) => {
-      if (path === "plans/get") throw new FlowApiError("no está", 404);
+      if (path === "plans/get") {
+        reads += 1;
+        if (reads === 1) throw new FlowApiError("no está", 404);
+        return published;
+      }
       if (path === "plans/create") return { planId: "brazo-contador" };
       if (path === "customer/create") return { customerId: "cus_1" };
       if (path === "subscription/create") return { subscriptionId: "sus_1" };
@@ -72,7 +84,13 @@ describe("oferta publicada en Flow", () => {
     });
 
     const create = call.mock.calls.find((entry) => entry[0] === "plans/create");
-    expect(create?.[1]).toMatchObject({ amount: IABOT_PRICE_CLP, planId: "brazo-contador", currency: "CLP" });
+    expect(create?.[1]).toMatchObject({
+      amount: IABOT_PRICE_CLP,
+      planId: "brazo-contador",
+      currency: "CLP",
+      interval: 3,
+      interval_count: 1,
+    });
     expect(create?.[1]).not.toMatchObject({ amount: 53538 });
     expect(subscriptionUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ amountClp: 63546 }) }),
@@ -115,7 +133,74 @@ describe("oferta publicada en Flow", () => {
     expect(paths()).toEqual(["plans/get"]);
   });
 
-  test("una suscripción Flow ya activa no se reprecio localmente", async () => {
+  test("si el plan recién creado no se puede leer, no sigue el checkout", async () => {
+    subscriptionFind.mockResolvedValue(null);
+    let reads = 0;
+    call.mockImplementation(async (path: string) => {
+      if (path === "plans/get") {
+        reads += 1;
+        if (reads === 1) throw new FlowApiError("no está", 404);
+        throw new FlowApiError("Flow no responde", 500);
+      }
+      if (path === "plans/create") return { planId: "brazo-contador" };
+      throw new Error(path);
+    });
+
+    await expect(
+      startFlowSubscription({
+        organizationId: "org-1",
+        organizationName: "Taller",
+        email: "ana@test.local",
+        name: "Ana",
+        agent: "ACCOUNTING",
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+
+    expect(paths()).toEqual(["plans/get", "plans/create", "plans/get"]);
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
+  });
+
+  test("un error de consulta no crea un plan", async () => {
+    subscriptionFind.mockResolvedValue(null);
+    call.mockRejectedValue(new FlowApiError("Flow no responde", 500));
+
+    await expect(
+      startFlowSubscription({
+        organizationId: "org-1",
+        organizationName: "Taller",
+        email: "ana@test.local",
+        name: "Ana",
+        agent: "ACCOUNTING",
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+
+    expect(paths()).toEqual(["plans/get"]);
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
+  });
+
+  test("moneda o período distintos no inician el checkout", async () => {
+    subscriptionFind.mockResolvedValue(null);
+    for (const remote of [
+      { planId: "brazo-contador", amount: 63546, currency: "UF", interval: 3, interval_count: 1 },
+      { planId: "brazo-contador", amount: 63546, currency: "CLP", interval: 4, interval_count: 1 },
+      { planId: "brazo-contador", amount: 63546, currency: "CLP", interval: 3 },
+    ]) {
+      call.mockReset();
+      call.mockResolvedValue(remote);
+      await expect(
+        startFlowSubscription({
+          organizationId: "org-1",
+          organizationName: "Taller",
+          email: "ana@test.local",
+          name: "Ana",
+          agent: "ACCOUNTING",
+        }),
+      ).rejects.toMatchObject({ status: 409, code: "flow_precio" });
+      expect(paths()).toEqual(["plans/get"]);
+    }
+  });
+
+  test("una suscripción Flow ya activa no se toca ni llama a Flow", async () => {
     subscriptionFind.mockResolvedValue({
       id: "sub-1",
       status: "ACTIVE",
@@ -123,29 +208,31 @@ describe("oferta publicada en Flow", () => {
       amountClp: 47588,
       periodEnd: new Date("2026-12-01T00:00:00.000Z"),
     } as never);
-    call.mockImplementation(async (path: string) => {
-      if (path === "plans/get") return { planId: "brazo-whatsapp", amount: "63546" };
-      if (path === "customer/create") return { customerId: "cus_1" };
-      if (path === "customer/register") return { url: "https://sandbox.flow.cl/app/pay", token: "tok" };
-      throw new Error(`no debía llamarse ${path}`);
-    });
 
-    await startFlowSubscription({
-      organizationId: "org-1",
-      organizationName: "Taller",
-      email: "ana@test.local",
-      name: "Ana",
-      agent: "WHATSAPP",
-    });
+    await expect(
+      startFlowSubscription({
+        organizationId: "org-1",
+        organizationName: "Taller",
+        email: "ana@test.local",
+        name: "Ana",
+        agent: "WHATSAPP",
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "flow_activa" });
 
-    expect(paths()).not.toContain("subscription/create");
-    const data = subscriptionUpdate.mock.calls[0]?.[0]?.data as { amountClp?: number };
-    expect(data.amountClp).toBeUndefined();
+    expect(call).not.toHaveBeenCalled();
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
   });
 });
 
 describe("oferta publicada en Mercado Pago", () => {
   test("el payload usa 63546 aunque quien llama pase el neto antiguo", async () => {
+    subscriptionFind.mockResolvedValue({
+      id: "sub-1",
+      status: "TRIAL",
+      mpPreapprovalId: null,
+      amountClp: null,
+      periodEnd: new Date("2026-12-01T00:00:00.000Z"),
+    } as never);
     subscriptionUpdate.mockResolvedValue({
       id: "sub-1",
       periodEnd: new Date("2026-12-01T00:00:00.000Z"),
@@ -169,5 +256,27 @@ describe("oferta publicada en Mercado Pago", () => {
       }),
       expect.any(Function),
     );
+  });
+
+  test("repetir el checkout de una suscripción activa no escribe ni llama a Mercado Pago", async () => {
+    subscriptionFind.mockResolvedValue({
+      id: "sub-1",
+      status: "ACTIVE",
+      mpPreapprovalId: "pre-viejo",
+      amountClp: 47588,
+      periodEnd: new Date("2026-12-01T00:00:00.000Z"),
+    } as never);
+
+    await expect(
+      startMercadoPagoSubscription({
+        organizationId: "org-1",
+        agent: "ACCOUNTING",
+        payerEmail: "ana@test.local",
+        amountClp: 63546,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(vi.mocked(mercadoPagoCall)).not.toHaveBeenCalled();
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
   });
 });

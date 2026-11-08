@@ -75,6 +75,12 @@ export async function startMercadoPagoSubscription(
   }
   const now = input.now ?? new Date();
   const plan = planFor(input.agent);
+  const current = await prisma.subscription.findUnique({
+    where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
+  });
+  if (current && current.status !== "CANCELED" && current.status !== "EXPIRED" && (current.status === "ACTIVE" || current.mpPreapprovalId)) {
+    throw new MercadoPagoApiError("Ya hay una suscripción de Mercado Pago. No se reemplaza ni se cambia el monto.", 409);
+  }
   await beginTrialIfIdle({ organizationId: input.organizationId, agent: input.agent, now });
   const subscription = await prisma.subscription.update({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
