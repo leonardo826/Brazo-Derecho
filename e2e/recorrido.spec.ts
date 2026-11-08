@@ -24,7 +24,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await expect(page.getByRole("heading", { name: "Atención WhatsApp" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Cotizador" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Marketing" })).toBeVisible();
-  await expect(page.getByText("$39.990").first()).toBeVisible();
+  await expect(page.getByText("$63.546").first()).toBeVisible();
+  await expect(page.getByText("$39.990")).toHaveCount(0);
   await expect(page.getByText("Qué no hace").first()).toBeVisible();
   await expect(page.getByText("No cobra ni pide datos de tarjeta", { exact: true })).toBeVisible();
   await expect(page.getByText("No inventa precios", { exact: true })).toBeVisible();
@@ -32,11 +33,12 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Precios" }).click();
   await expect(page).toHaveURL(/\/precios$/);
   await expect(page.getByRole("heading", { name: "Precios claros, en pesos chilenos." })).toBeVisible();
-  await expect(page.getByText("$49.990").first()).toBeVisible();
-  await expect(page.getByText("$34.990").first()).toBeVisible();
-  await expect(page.getByText("$47.588").first()).toBeVisible();
+  await expect(page.getByText("$63.546").first()).toBeVisible();
+  await expect(page.getByText("$49.990")).toHaveCount(0);
+  await expect(page.getByText("$34.990")).toHaveCount(0);
+  await expect(page.getByText("$47.588")).toHaveCount(0);
   await page.locator("summary", { hasText: "¿Los precios incluyen IVA?" }).click();
-  await expect(page.getByText("El IVA es 19%")).toBeVisible();
+  await expect(page.getByText("No es un neto al que haya que sumarle el 19%.")).toBeVisible();
   await page.getByRole("link", { name: "Crear la cuenta de mi empresa" }).click();
   await expect(page).toHaveURL(/\/registro/);
 
