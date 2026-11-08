@@ -176,6 +176,7 @@ export function AgentChat({
   const stopRecord = useRef<(() => void) | null>(null);
   const listeningRef = useRef(false);
   const listenGen = useRef(0);
+  const captures = useRef(new Set<{ accept: boolean; stop: () => void }>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tempId = useRef("");
   const turns = useRef<TurnQueue<Draft>>({ active: null, waiting: [] });
@@ -197,6 +198,7 @@ export function AgentChat({
       mountedRef.current = false;
       listenGen.current += 1;
       abortRef.current?.abort();
+      for (const capture of captures.current) capture.accept = false;
       const stop = stopRecord.current;
       stopRecord.current = null;
       listeningRef.current = false;
@@ -549,7 +551,8 @@ export function AgentChat({
       if (!alive(generation)) return;
       const session = listenInBrowser(lang);
       if (!session) continue;
-      stopRecord.current = () => session.stop();
+      const stopThis = () => session.stop();
+      stopRecord.current = stopThis;
       if (!alive(generation)) {
         session.stop();
         return;
@@ -570,32 +573,34 @@ export function AgentChat({
           return;
         }
       } finally {
-        if (stopRecord.current) stopRecord.current = null;
+        if (stopRecord.current === stopThis) stopRecord.current = null;
       }
     }
     if (alive(generation)) setNotice(CHAT_ERROR.voz);
   }
 
-  function endListen(generation: number) {
+  function endListen(generation: number, stopThis: (() => void) | null) {
     if (listenGen.current !== generation) return;
     listeningRef.current = false;
-    stopRecord.current = null;
+    if (stopThis && stopRecord.current === stopThis) stopRecord.current = null;
     if (mountedRef.current) setRecording(false);
   }
 
   async function toggleMic() {
     if (listeningRef.current) {
-      listenGen.current += 1;
-      const stop = stopRecord.current;
-      stopRecord.current = null;
+      // Parar entrega el audio de esta captura. No invalida su identidad:
+      // un reinicio siguiente instala otro stop y el finally viejo no lo borra.
       listeningRef.current = false;
-      stop?.();
       if (mountedRef.current) setRecording(false);
+      stopRecord.current?.();
       return;
     }
     const generation = listenGen.current + 1;
     listenGen.current = generation;
     listeningRef.current = true;
+    const capture = { accept: true, stop: () => {} };
+    captures.current.add(capture);
+    let stopThis: (() => void) | null = null;
     setNotice("");
     setRecording(true);
     try {
@@ -604,7 +609,7 @@ export function AgentChat({
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!alive(generation)) {
+      if (!capture.accept || !mountedRef.current) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
@@ -620,10 +625,12 @@ export function AgentChat({
           resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
         };
       });
-      stopRecord.current = () => recorder.stop();
+      stopThis = () => recorder.stop();
+      capture.stop = stopThis;
+      stopRecord.current = stopThis;
       recorder.start();
       const blob = await stopped;
-      if (!alive(generation)) return;
+      if (!mountedRef.current || !capture.accept) return;
       const form = new FormData();
       form.set("audio", blob, "nota.webm");
       const response = await fetch("/api/voz/stt", {
@@ -631,14 +638,15 @@ export function AgentChat({
         headers: { [CSRF_HEADER]: csrf },
         body: form,
       });
-      if (!alive(generation)) return;
+      if (!mountedRef.current || !capture.accept) return;
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; texto?: string; fallback?: boolean; error?: string };
-      if (!alive(generation)) return;
+      if (!mountedRef.current || !capture.accept) return;
       if (body.ok && body.texto) {
         appendComposer(body.texto);
         return;
       }
       if (body.fallback || !response.ok) {
+        if (!alive(generation)) return;
         setVoiceMode("navegador");
         setNotice("No pude transcribir en el servidor. Habla de nuevo: uso el micrófono del navegador.");
         await transcribeBrowser(generation);
@@ -646,9 +654,10 @@ export function AgentChat({
       }
       setNotice(CHAT_ERROR[body.error ?? ""] ?? CHAT_ERROR.voz);
     } catch {
-      if (alive(generation)) setNotice(CHAT_ERROR.voz);
+      if (capture.accept && mountedRef.current) setNotice(CHAT_ERROR.voz);
     } finally {
-      endListen(generation);
+      captures.current.delete(capture);
+      endListen(generation, stopThis);
     }
   }
 

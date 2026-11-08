@@ -9,6 +9,7 @@
  */
 import { chromium, devices } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { classifyTurn } from "./bench-sample.mjs";
 
 const baseURL = process.env.BASE_URL ?? "http://127.0.0.1:3111";
 const mode = process.argv[2] ?? "timing";
@@ -161,11 +162,11 @@ function pct(values, p) {
   return clean[index];
 }
 
-function pack(rows, key) {
-  const ok = rows.filter((row) => row.ok);
-  const values = ok.map((row) => row[key]);
-  const warm = ok.filter((row) => !row.cold).map((row) => row[key]);
-  const cold = ok.find((row) => row.cold)?.[key] ?? null;
+function pack(rows, key, gate = "ok") {
+  const chosen = rows.filter((row) => row[gate]);
+  const values = chosen.map((row) => row[key]);
+  const warm = chosen.filter((row) => !row.cold).map((row) => row[key]);
+  const cold = chosen.find((row) => row.cold)?.[key] ?? null;
   return {
     frio: cold,
     tibioP50: pct(warm, 50),
@@ -181,38 +182,8 @@ function sampleId(prefix, index) {
 }
 
 function rowFrom(turn, cold) {
-  if (!turn?.click) return { ok: false, motivo: "sin-clic", cold };
-  const rel = (value) => (typeof value === "number" ? Math.round(value - turn.click) : null);
-  const ackHttp = rel(turn.ackHttp);
-  const sseByte = rel(turn.sseByte);
-  const domUtil = rel(turn.domUtil);
-  const servidorMensaje = rel(turn.sseMessage);
-  const servidorHecho = rel(turn.sseDone);
-  const domId = rel(turn.domId);
-  const domEstado = rel(turn.domEstado);
-  const ordered =
-    ackHttp != null &&
-    sseByte != null &&
-    domUtil != null &&
-    servidorHecho != null &&
-    ackHttp >= 0 &&
-    sseByte >= ackHttp &&
-    domUtil >= sseByte &&
-    servidorHecho >= ackHttp &&
-    (servidorMensaje == null || (servidorMensaje >= ackHttp && servidorHecho >= servidorMensaje)) &&
-    (domId == null || domId >= (servidorMensaje ?? ackHttp));
-  return {
-    ok: Boolean(ordered),
-    motivo: ordered ? "ok" : "secuencia-o-muestra-incompleta",
-    cold,
-    ackHttp,
-    sseByte,
-    domEstado,
-    domCambio: domUtil,
-    servidorMensaje,
-    servidorHecho,
-    domId,
-  };
+  const judged = classifyTurn(turn);
+  return { ...judged, cold, ok: judged.completo };
 }
 
 async function register(page, email) {
@@ -315,14 +286,15 @@ async function scenario(browser, name, phrase, kind, viewport) {
     motor: "simulador local, sin red xAI. El cambio de DOM no es un frame pintado.",
     nPlaneado: samples,
     nIntentos: rows.length,
-    nOk: rows.filter((row) => row.ok).length,
+    nDom: rows.filter((row) => row.domListo).length,
+    nPersistido: rows.filter((row) => row.ok).length,
     nFallo: failed,
     motivos: rows.filter((row) => !row.ok).map((row) => row.motivo),
-    reloj: "performance.now del clic del botón Enviar, el mismo origen para HTTP y DOM",
+    reloj: "performance.now del clic del botón Enviar. El éxito completo exige el id guardado en el DOM.",
     ackHttp: pack(rows, "ackHttp"),
     primerByte: pack(rows, "sseByte"),
-    domEstado: pack(rows, "domEstado"),
-    domCambio: pack(rows, "domCambio"),
+    domEstado: pack(rows, "domEstado", "domListo"),
+    domCambio: pack(rows, "domCambio", "domListo"),
     servidorMensaje: pack(rows, "servidorMensaje"),
     servidorHecho: pack(rows, "servidorHecho"),
     domId: pack(rows, "domId"),
@@ -357,7 +329,7 @@ async function queueScenario(browser) {
         (token) => {
           const turn = (window.__turns || []).find((item) => item.token === token);
           const stopButton = [...document.querySelectorAll("button.stop")].some((node) => node.getClientRects().length > 0);
-          return Boolean(turn?.sseDone) && turn.domUtil != null && !stopButton;
+          return Boolean(turn?.sseDone && turn.messageId && turn.domId != null && turn.domUtil != null) && !stopButton;
         },
         second,
         { timeout: 25_000 },
@@ -375,7 +347,7 @@ async function queueScenario(browser) {
         cola: rel(secondTurn, secondTurn?.domCola),
         detenido: firstTurn && typeof firstTurn.domStop === "number" && typeof firstTurn.stopClick === "number" ? Math.round(firstTurn.domStop - firstTurn.stopClick) : null,
         totalCola: rel(secondTurn, secondTurn?.sseDone),
-        secondDone: Boolean(secondTurn?.sseDone && secondTurn.domUtil != null),
+        secondDone: Boolean(secondTurn?.sseDone && secondTurn.messageId && secondTurn.domId != null && secondTurn.domUtil != null),
       };
     }, { first, second });
     const ok = measured.secondDone && measured.cola != null && measured.cola >= 0 && measured.totalCola != null && measured.totalCola >= measured.cola;
