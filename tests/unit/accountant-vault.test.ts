@@ -69,8 +69,9 @@ describe("contador y bóveda", () => {
     const plan = planPortalAccess("entra al SII a revisar ventas", []);
     expect(plan.kind).toBe("vault");
     expect(plan.message).toContain("/panel/boveda?portal=sii#agregar-acceso");
-    expect(plan.message).toContain("Usuario / RUT");
-    expect(plan.message).toMatch(/campo Clave/i);
+    expect(plan.message).toMatch(/Abrir formulario seguro/);
+    expect(plan.message).toMatch(/No las escribas en este chat/);
+    expect(plan.message).toMatch(/No entré al portal/);
     expect(plan.message.toLowerCase()).not.toContain("yo la uso");
     expect(plan.message).not.toMatch(/Entr[eé] al SII/);
     expect(plan.message.toLowerCase()).not.toContain("no uso claves");

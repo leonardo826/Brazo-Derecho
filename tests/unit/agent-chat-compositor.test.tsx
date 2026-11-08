@@ -2,7 +2,7 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AgentChat } from "@/components/agent-chat";
+import { AgentChat, EMPTY_SUGGESTIONS } from "@/components/agent-chat";
 import { LogoutButton } from "@/components/logout-button";
 import { purgeComposerDrafts } from "@/lib/chat/composer-draft";
 
@@ -85,6 +85,48 @@ describe("compositor del Contador", () => {
   test("el compositor no acepta más de 4000 caracteres", () => {
     render();
     expect(host.querySelector("textarea")?.getAttribute("maxlength")).toBe("4000");
+  });
+
+  test("el hilo vacío ofrece sugerencias que solo rellenan el compositor", () => {
+    render();
+    const buttons = [...host.querySelectorAll("button.suggestion")];
+    expect(buttons.map((button) => button.textContent)).toEqual([...EMPTY_SUGGESTIONS]);
+    for (const text of EMPTY_SUGGESTIONS) {
+      expect(text).not.toMatch(/clave|rut|tarjeta/i);
+    }
+    act(() => {
+      buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(host.querySelector("textarea")?.value).toBe(EMPTY_SUGGESTIONS[1]);
+    expect(fetches).toEqual([]);
+
+    act(() => {
+      root.render(
+        createElement(AgentChat, {
+          open: true,
+          messages: [
+            {
+              id: "m1",
+              role: "USER",
+              kind: "TEXT",
+              body: "Hola",
+              action: "",
+              actionTitle: "",
+              confirmation: null,
+              createdAt: "2026-11-08T12:00:00.000Z",
+              attachments: [],
+            },
+          ],
+          used: 0,
+          limit: 200,
+          voice: "navegador",
+          draftUserId: "usuario-a",
+          draftOrganizationId: "empresa-a",
+          draftConversationId: "contador",
+        }),
+      );
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
   });
 
   test("Enter de escritorio envía y el de un móvil no", () => {

@@ -736,7 +736,20 @@ mark.placeholder {
   padding: 0.2rem 0.15rem 0.6rem;
   -webkit-overflow-scrolling: touch;
 }
-.agent-empty { margin: 0.4rem 0; }
+.agent-empty { margin: 0.4rem 0; display: grid; gap: 0.6rem; }
+.suggestion-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.suggestion {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--contador-line, var(--line-strong));
+  border-radius: 999px;
+  background: var(--contador-surface, white);
+  color: var(--contador-ink, var(--ink));
+  text-align: left;
+  cursor: pointer;
+}
+.suggestion:disabled { opacity: 0.55; cursor: not-allowed; }
 .agent-row { display: flex; }
 .agent-row.user { justify-content: flex-end; }
 .agent-row.assistant { justify-content: flex-start; }

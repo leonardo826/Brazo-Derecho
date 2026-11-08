@@ -190,9 +190,10 @@ describe("formulario directo de la bóveda", () => {
     expect(portalPresetFromText(VAULT_ASK)).toBe("sii");
     const message = vaultFormMessage("sii");
     expect(message).toContain(vaultFormPath("sii"));
-    expect(message).toContain("Usuario / RUT");
-    expect(message).toContain("campo Clave");
-    expect(message).toContain("consentimiento");
+    expect(message).toMatch(/Abrir formulario seguro/);
+    expect(message.replace(/\[[^\]]*]\([^)]*\)/g, "enlace").split(/[.!?]+/).filter((part) => part.trim())).toHaveLength(3);
+    expect(message).toMatch(/No las escribas en este chat/);
+    expect(message).toMatch(/no inicia sesión/i);
     expect(message).toMatch(/No entré al portal/);
     expect(message).not.toMatch(/Usando la bóveda|yo la uso|Dejé en cola|Entr[eé] al SII/);
     expect(message).not.toContain(SECRET);
@@ -758,7 +759,8 @@ describe("turno de chat", () => {
     expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain(
       "/panel/boveda?portal=sii#agregar-acceso",
     );
-    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain("Usuario / RUT");
+    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toMatch(/Abrir formulario seguro/);
+    expect(assistant && assistant.type === "message" ? assistant.message.body : "").toMatch(/No entré al portal/);
     expect(JSON.stringify(events)).not.toContain(SECRET);
     expect(JSON.stringify(events)).not.toContain("Usando la bóveda");
     expect(JSON.stringify(events)).not.toMatch(/Entr[eé] al SII|yo la uso|Dejé en cola/);

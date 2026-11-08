@@ -67,7 +67,6 @@ export function vaultFormMessage(id: PortalId | null, text = "") {
   const preset = id ? PORTAL_PRESETS[id] : null;
   const href = vaultFormPath(id);
   const title = preset ? `Abrir formulario seguro de ${preset.portal}` : "Abrir formulario seguro";
-  const rut = preset?.usernameLabel.includes("RUT") ? " El RUT va en Usuario / RUT." : "";
-  const erase = askedToDeleteChatSecret(text) ? " Borrar el mensaje del chat no quita las copias." : "";
-  return `Ingresa el usuario y la clave en el formulario protegido: [${title}](${href}).${rut} La clave va en el campo Clave, enmascarado, con consentimiento. No las escribas en este chat. Guardarlas no inicia sesión. No entré al portal.${erase}`;
+  const copies = askedToDeleteChatSecret(text) ? " Borrar el mensaje del chat no quita las copias" : "";
+  return `[${title}](${href}). No las escribas en este chat: guardarlas no inicia sesión. No entré al portal.${copies}`;
 }
