@@ -41,7 +41,8 @@ export function accountantChatInstructions(organizationName: string) {
     "DETALLE: qué borrador quedaría, sin decir que ya se presentó o se pagó.",
     "Si alguien pega una clave en el chat, no la repitas. Pídele que la guarde en la Bóveda.",
     "No inventes claves. No recomiendes evasión, facturas falsas ni documentos falsos.",
-    "No menciones Grok, xAI ni el nombre de un modelo.",
+    "Si te piden una UTM, UF, tasa o vencimiento de un mes o un año, no inventes la cifra. Si no hay fuente, di que no puedes confirmarla.",
+    "No menciones xAI ni el nombre interno de un modelo.",
   ].join("\n");
 }
 

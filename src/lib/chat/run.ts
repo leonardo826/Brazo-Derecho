@@ -12,7 +12,7 @@ import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensit
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
 import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
-import { replyPace } from "@/lib/chat/pace";
+import { finishReply, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
 import { randomBytes } from "node:crypto";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, listCredentials } from "@/lib/credentials/service";
@@ -32,7 +32,6 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { Prisma, prisma } from "@/lib/prisma";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { xaiUsesNetwork, createXaiClient } from "@/lib/xai/client";
-import type { XaiResponse } from "@/lib/xai/types";
 
 const FAIL_TEXT = "No alcancé a responder. No descontamos esta vez.";
 const CANCEL_TEXT = "Cancelado. No presento la declaración ni hago el pago.";
@@ -96,11 +95,21 @@ async function* streamModel(input: {
 }): AsyncGenerator<ChatClientEvent> {
   const turn = randomBytes(4).toString("hex");
   const started = performance.now();
+  let reservationId: string | null = null;
+  let keepSlot = false;
+  try {
   if (streamWasStopped(input.signal)) return;
-  const [history, slot] = await Promise.all([
-    loadHistory(input.threadId, input.organizationId),
-    reserveDailyTask(input.organizationId),
-  ]);
+  const slotPromise = reserveDailyTask(input.organizationId);
+  let history;
+  try {
+    history = await loadHistory(input.threadId, input.organizationId);
+  } catch (error) {
+    const slot = await slotPromise;
+    if (slot.ok) reservationId = slot.reservationId;
+    throw error;
+  }
+  const slot = await slotPromise;
+  if (slot.ok) reservationId = slot.reservationId;
   mark(turn, "contexto_cupo", performance.now() - started);
   if (!slot.ok) {
     yield { type: "error", code: "limite" };
@@ -112,40 +121,62 @@ async function* streamModel(input: {
   const prepared = prepareModelTurn(history, vault);
   const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
   const pace = replyPace(latest);
-  let keepSlot = false;
   const client = createXaiClient();
   let raw = "";
-  let final: XaiResponse | null = null;
+  let incomplete = false;
   const gap = chunkGapMs(xaiUsesNetwork());
   const modelStarted = performance.now();
   let firstToken = 0;
   try {
-  try {
-    for await (const event of client.streamRespond({
-      model: modelFor("ACCOUNTING"),
-      instructions: [chatInstructions(input.organizationName), extra].filter(Boolean).join("\n\n"),
-      task: { type: "agent_chat", today: todayCl(), messages: prepared.messages },
-      usage: USAGE_PRESETS.text,
-      businessName: input.organizationName,
-      maxOutputTokens: pace.maxOutputTokens,
-      webSearch: pace.webSearch,
-      reasoningEffort: pace.reasoningEffort,
-      signal: input.signal,
-    })) {
+    for (let round = 0; round < pace.rounds; round += 1) {
       if (streamWasStopped(input.signal)) return;
-      if (event.type === "status") yield { type: "status", text: event.text };
-      if (event.type === "delta") {
-        if (firstToken === 0) {
-          firstToken = performance.now() - modelStarted;
-          mark(turn, "modelo_primer", firstToken);
-        }
-        await waitChunk(input.signal, gap);
-        // Stopping here skips reserveUsage below, so the consult is not billed.
+      const messages =
+        round === 0
+          ? prepared.messages
+          : [
+              ...prepared.messages,
+              { role: "assistant" as const, text: raw },
+              {
+                role: "user" as const,
+                text: "Sigue desde el último punto, sin repetir lo ya escrito, hasta terminar lo pedido.",
+              },
+            ];
+      let roundText = "";
+      incomplete = false;
+      for await (const event of client.streamRespond({
+        model: modelFor("ACCOUNTING"),
+        instructions: [chatInstructions(input.organizationName), extra].filter(Boolean).join("\n\n"),
+        task: { type: "agent_chat", today: todayCl(), messages },
+        usage: USAGE_PRESETS.text,
+        businessName: input.organizationName,
+        maxOutputTokens: pace.maxOutputTokens,
+        webSearch: pace.webSearch,
+        reasoningEffort: pace.reasoningEffort,
+        signal: input.signal,
+      })) {
         if (streamWasStopped(input.signal)) return;
-        raw += event.text;
-        yield { type: "delta", text: event.text };
+        if (event.type === "status") yield { type: "status", text: event.text };
+        if (event.type === "delta") {
+          if (firstToken === 0) {
+            firstToken = performance.now() - modelStarted;
+            mark(turn, "modelo_primer", firstToken);
+          }
+          await waitChunk(input.signal, gap);
+          if (streamWasStopped(input.signal)) return;
+          roundText += event.text;
+          raw += event.text;
+          yield { type: "delta", text: event.text };
+        }
+        if (event.type === "done") {
+          incomplete = event.response.incomplete === true;
+          if (!roundText.trim() && event.response.outputText.trim()) {
+            roundText = event.response.outputText;
+            raw += event.response.outputText;
+            yield { type: "delta", text: event.response.outputText };
+          }
+        }
       }
-      if (event.type === "done") final = event.response;
+      if (!incomplete) break;
     }
   } catch (error) {
     if (missingTable(error)) throw error;
@@ -157,21 +188,23 @@ async function* streamModel(input: {
     return;
   }
   if (streamWasStopped(input.signal)) return;
-  if (!final?.outputText.trim() && !raw.trim()) {
+  const finished = finishReply([{ text: raw, incomplete }]);
+  if (!finished.text.trim()) {
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };
     yield { type: "error", code: "ia" };
     return;
   }
+  if (finished.truncated) yield { type: "delta", text: `\n\n${TRUNCATION_NOTE}` };
   if (streamWasStopped(input.signal)) return;
-  const response = final ?? {
+  const response = {
     id: "resp_parcial",
     model: modelFor("ACCOUNTING"),
-    outputText: raw,
+    outputText: finished.text,
     usage: USAGE_PRESETS.text,
     mocked: !xaiUsesNetwork(),
   };
-  const split = splitAction(response.outputText || raw);
+  const split = splitAction(finished.text);
   await recordModelCall({ organizationId: input.organizationId, response });
   const saved = await prisma.$transaction(async (tx) => {
     const reserved = await reserveUsage(tx, {
@@ -187,7 +220,7 @@ async function* streamModel(input: {
       organizationId: input.organizationId,
       model: response.model,
       synthetic: response.mocked,
-      reservationId: slot.reservationId,
+      reservationId,
     });
     return tx.agentMessage.create({
       data: {
@@ -211,7 +244,7 @@ async function* streamModel(input: {
   yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
   yield { type: "done" };
   } finally {
-    if (!keepSlot) await releaseDailyTask(slot.reservationId);
+    if (!keepSlot && reservationId) await releaseDailyTask(reservationId);
   }
 }
 

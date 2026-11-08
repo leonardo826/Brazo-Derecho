@@ -31,7 +31,7 @@ function requestBody(request: XaiRequest, stream: boolean) {
     input: inputFor(request),
     max_output_tokens: request.maxOutputTokens ?? 800,
     reasoning: { effort },
-    ...(accounting && request.webSearch ? { tools: [{ type: "web_search" }] } : {}),
+    ...(accounting && request.webSearch !== false ? { tools: [{ type: "web_search" }] } : {}),
     ...(stream ? { stream: true } : {}),
   };
 }

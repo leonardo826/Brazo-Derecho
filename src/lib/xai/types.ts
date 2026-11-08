@@ -55,6 +55,8 @@ export type XaiResponse = {
   outputText: string;
   usage: TokenUsage;
   mocked: boolean;
+  /** El proveedor cortó por el tope. No es un final natural. */
+  incomplete?: boolean;
 };
 
 export type XaiStreamEvent =

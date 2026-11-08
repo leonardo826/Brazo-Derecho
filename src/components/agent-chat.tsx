@@ -217,6 +217,7 @@ export function AgentChat({
   const mountedRef = useRef(true);
   const turnGen = useRef(0);
   const stickToEnd = useRef(true);
+  const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -779,7 +780,9 @@ export function AgentChat({
         onScroll={() => {
           const node = logRef.current;
           if (!node) return;
-          stickToEnd.current = node.scrollHeight - node.scrollTop - node.clientHeight < 96;
+          const near = node.scrollHeight - node.scrollTop - node.clientHeight < 96;
+          stickToEnd.current = near;
+          setAtEnd(near);
         }}
       >
         {items.length === 0 && !shownLive ? (
@@ -805,6 +808,20 @@ export function AgentChat({
         ) : null}
         {queued.map((message) => renderMessage(message))}
       </div>
+      {atEnd ? null : (
+        <button
+          className="jump-end"
+          type="button"
+          onClick={() => {
+            const node = logRef.current;
+            stickToEnd.current = true;
+            setAtEnd(true);
+            if (node) node.scrollTop = node.scrollHeight;
+          }}
+        >
+          Volver al final
+        </button>
+      )}
       {notice ? (
         <p className="banner error" role="alert">
           {notice}
@@ -883,10 +900,18 @@ export function AgentChat({
               <span className="sr-only">Detener respuesta</span>
             </button>
           ) : null}
-          <button className="composer-icon send" type="submit" disabled={!open || (!composer.trim() && files.length === 0)}>
+          <button
+            className="composer-icon send"
+            type="submit"
+            disabled={!open || (!composer.trim() && files.length === 0)}
+            aria-describedby={pending ? "cola-envio" : undefined}
+          >
             <SendIcon />
             <span className="sr-only">Enviar</span>
           </button>
+          <span id="cola-envio" className="sr-only" aria-live="polite">
+            {pending ? "Hay una respuesta en curso. Enviar deja el mensaje en cola." : ""}
+          </span>
         </div>
         <p className="composer-note">No compartas claves del SII ni bancarias: esas van en la Bóveda.</p>
       </form>

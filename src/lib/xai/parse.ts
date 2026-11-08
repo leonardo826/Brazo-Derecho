@@ -67,6 +67,7 @@ export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
         outputText: readOutputText(body),
         usage: readTokenUsage(body.usage),
         mocked: false,
+        incomplete: type === "response.incomplete",
       },
     };
   }

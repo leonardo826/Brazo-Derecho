@@ -4,8 +4,11 @@ import { SubscribeActions } from "@/components/trial-button";
 import { agentIsOpen } from "@/lib/agent-access";
 import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { ACCOUNTING_DISCLAIMER, limitFor } from "@/lib/catalog";
+import { tasksToday } from "@/lib/meter-store";
+import { organizationIsQa } from "@/lib/qa-account";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
+import { DAILY_TASK_LIMIT } from "@/lib/usage";
 import { usageSnapshot } from "@/lib/usage-store";
 import { xaiUsesNetwork } from "@/lib/xai/client";
 
@@ -18,10 +21,12 @@ export default async function ContadorPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [{ subscription, open }, usage] = await Promise.all([
+  const [{ subscription, open }, usage, qa] = await Promise.all([
     agentIsOpen(session.organizationId, "ACCOUNTING"),
     usageSnapshot(session.organizationId),
+    organizationIsQa(session.organizationId),
   ]);
+  const tasks = qa ? null : await tasksToday(session.organizationId);
   const limit = limitFor("ACCOUNTING", "CONSULTS");
   let migration = false;
   let messages: Awaited<ReturnType<typeof loadAgentThread>> = [];
@@ -41,15 +46,18 @@ export default async function ContadorPage({
           <h1>Contador Auditor Chile</h1>
           <p className="contador-meta">
             <span
-              className="contador-quota"
+              className="sr-only"
               role="meter"
               aria-label="Consultas de este mes"
               aria-valuemin={0}
               aria-valuemax={limit}
               aria-valuenow={used}
-              aria-valuetext={`${used} de ${limit}`}
+              aria-valuetext={`${used} de ${limit} consultas del mes`}
             >
-              {used}/{limit}
+              {used} de {limit} consultas del mes
+            </span>
+            <span className="contador-quota">
+              {qa ? "Revisión interna, sin tope diario" : `${tasks} de ${DAILY_TASK_LIMIT} tareas hoy`}
             </span>
             <span className="contador-dot" aria-hidden="true">
               ·
