@@ -1,8 +1,4 @@
-import http from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
-import { handleAgent } from "../../agent-runtime/src/http";
-import type { Desktop, DesktopStatus } from "../../agent-runtime/src/desktop";
-import type { DesktopAction } from "../../agent-runtime/src/actions";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { AGENT_CATALOG } from "@/lib/catalog";
 import {
@@ -22,7 +18,9 @@ const THREAD = "contador";
 const lease = (organizationId = ORG): ComputerLease => ({
   organizationId,
   machineId: "machine-1",
-  baseUrl: "http://127.0.0.1:9",
+  baseUrl: "https://example.com",
+  pin: "93.184.216.34",
+  epoch: 1,
   token: "lease-de-esa-maquina",
 });
 
@@ -79,7 +77,6 @@ describe("contrato del computador en el chat", () => {
       userId: USER,
       conversationId: THREAD,
       text: "12 de diciembre, solo ida",
-      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl: (async () => {
         throw new Error("no debía llamar");
@@ -123,7 +120,6 @@ describe("contrato del computador en el chat", () => {
       );
     }) as typeof fetch;
     const result = await run("Cotiza vuelos CCP SCL el 12 de diciembre, solo ida", {
-      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl,
     });
@@ -136,7 +132,6 @@ describe("contrato del computador en el chat", () => {
   test("la reserva ocurre antes de la llamada y el tope no llama", async () => {
     const order: string[] = [];
     const blocked = await run("Usa el computador y abre https://example.com", {
-      allowLoopback: true,
       loadLease: async () => ready(),
       reserve: async () => {
         order.push("reserva");
@@ -153,7 +148,6 @@ describe("contrato del computador en el chat", () => {
 
   test("comprar pide confirmación", async () => {
     const result = await run("Compra el pasaje del viaje el 12 de diciembre, solo ida", {
-      allowLoopback: true,
       loadLease: async () => ready(),
       fetchImpl: (async () => {
         throw new Error("no debía llamar");
@@ -163,63 +157,23 @@ describe("contrato del computador en el chat", () => {
   });
 
   test("cancelar avisa al runtime y no deja un resultado", async () => {
-    const cancelled: string[] = [];
-    const server = http.createServer(async (req, res) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(chunk as Buffer);
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { machineId?: string };
-      if ((req.url ?? "").startsWith("/task/cancel")) cancelled.push("cancel");
-      const response = await handleAgent(
-        {
-          method: req.method ?? "GET",
-          path: req.url ?? "/",
-          body,
-          headers: { authorization: req.headers.authorization },
-        },
-        {
-          env: { AGENT_RUNTIME_TOKEN: "lease-de-esa-maquina", MACHINE_ID: "machine-1", XAI_MODE: "mock" },
-          desktop: waitingDesktop(cancelled),
-        },
-      );
-      res.writeHead(response.status);
-      res.end(response.body);
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-    const address = server.address();
-    const port = typeof address === "object" && address ? address.port : 0;
+    const calls: string[] = [];
     const controller = new AbortController();
     const pending = run("Usa el computador y abre https://example.com", {
-      allowLoopback: true,
-      loadLease: async () => ({
-        state: "listo",
-        lease: { ...lease(), baseUrl: `http://127.0.0.1:${port}` },
-      }),
+      loadLease: async () => ready(),
       signal: controller.signal,
-      timeoutMs: 2_000,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        calls.push(String(url));
+        if (String(url).endsWith("/task/cancel")) return new Response("{}", { status: 200 });
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("abort"), { name: "AbortError" })));
+        });
+      }) as typeof fetch,
     });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     controller.abort();
     const result = await pending;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.CANCELLED });
-    expect(cancelled).toContain("cancel");
+    expect(calls.some((url) => url.endsWith("/task/cancel"))).toBe(true);
   });
 });
-
-function waitingDesktop(marks: string[]): Desktop {
-  const status: DesktopStatus = { ok: true, display: ":99", chromium: "up", whatsappTab: false, profileDir: "/tmp/none" };
-  return {
-    async screenshot() {
-      marks.push("shot");
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      return Buffer.from("png");
-    },
-    async perform(action: DesktopAction) {
-      marks.push(action.type);
-    },
-    async status() {
-      return status;
-    },
-  };
-}

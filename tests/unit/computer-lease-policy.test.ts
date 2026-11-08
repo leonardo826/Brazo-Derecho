@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { endpointAllowed } from "@/lib/computer/lease";
+import { endpointAllowed, LOCAL_HARNESS } from "@/lib/computer/lease";
 import { decryptSecret, encryptSecret, readMasterKey } from "@/lib/credentials/crypto";
 
 const key = Buffer.alloc(32, 7);
@@ -8,8 +8,11 @@ const key = Buffer.alloc(32, 7);
 describe("frontera del origen del computador", () => {
   test("rechaza loopback, red privada, IPv6 local e internos sin mirar NODE_ENV", async () => {
     expect(await endpointAllowed("http://127.0.0.1:8787")).toBeNull();
-    expect(await endpointAllowed("http://localhost:8787", { allowLoopback: true })).toBeNull();
-    expect(await endpointAllowed("http://127.0.0.1:8787", { allowLoopback: true })).toBe("http://127.0.0.1:8787");
+    expect(await endpointAllowed("http://localhost:8787", { harness: LOCAL_HARNESS })).toBeNull();
+    expect(await endpointAllowed("http://127.0.0.1:8787", { harness: LOCAL_HARNESS })).toEqual({
+      origin: "http://127.0.0.1:8787",
+      pin: "127.0.0.1",
+    });
     expect(await endpointAllowed("https://10.1.2.3")).toBeNull();
     expect(await endpointAllowed("https://192.168.0.8")).toBeNull();
     expect(await endpointAllowed("https://[::1]/")).toBeNull();

@@ -29,6 +29,8 @@ export type ComputerLease = {
   organizationId: string;
   machineId: string;
   baseUrl: string;
+  pin: string;
+  epoch: number;
   token: string;
 };
 
@@ -104,9 +106,20 @@ function loopback(url: URL) {
   return url.hostname === "127.0.0.1" || url.hostname === "localhost";
 }
 
-export function usableLease(lease: ComputerLease | null, organizationId: string, allowLoopback = false) {
+export function usableLease(lease: ComputerLease | null, organizationId: string) {
   if (!lease || lease.organizationId !== organizationId) return null;
   if (!lease.token.trim() || !lease.machineId.trim() || lease.machineId.length > 80) return null;
+  const pinParts = lease.pin.split(".").map(Number);
+  const privatePin =
+    pinParts.length !== 4 ||
+    pinParts.some((part) => !Number.isInteger(part) || part < 0 || part > 255) ||
+    pinParts[0] === 10 ||
+    pinParts[0] === 127 ||
+    pinParts[0] === 0 ||
+    (pinParts[0] === 192 && pinParts[1] === 168) ||
+    (pinParts[0] === 169 && pinParts[1] === 254) ||
+    (pinParts[0] === 172 && pinParts[1] >= 16 && pinParts[1] <= 31);
+  if (privatePin) return null;
   let url: URL;
   try {
     url = new URL(lease.baseUrl);
@@ -117,10 +130,7 @@ export function usableLease(lease: ComputerLease | null, organizationId: string,
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local")) return null;
-  if (host === "127.0.0.1") {
-    if (!allowLoopback || url.protocol !== "http:") return null;
-    return { ...lease, token: lease.token.trim(), machineId: lease.machineId.trim(), baseUrl: url.origin };
-  }
+  if (host === "127.0.0.1" || host === "::1") return null;
   if (loopback(url) || url.protocol !== "https:") return null;
   return { ...lease, token: lease.token.trim(), machineId: lease.machineId.trim(), baseUrl: url.origin };
 }
@@ -157,8 +167,6 @@ export async function executeDesktopRequest(input: {
   signal?: AbortSignal;
   timeoutMs?: number;
   loadLease: (organizationId: string) => Promise<LeaseState>;
-  /** Solo el proceso de prueba. Producción no lo pasa: 127.0.0.1 no es un destino. */
-  allowLoopback?: boolean;
   reserve?: () => Promise<{ ok: boolean; reservationId?: string | null }>;
   release?: (reservationId: string) => Promise<void>;
   fetchImpl?: typeof fetch;
@@ -187,8 +195,12 @@ export async function executeDesktopRequest(input: {
 
   const looked = await input.loadLease(input.organizationId);
   if (looked.state === "ausente") return finish("ausente", false, ABSENT);
-  const lease = looked.state === "listo" ? usableLease(looked.lease, input.organizationId, input.allowLoopback === true) : null;
+  const lease = looked.state === "listo" ? usableLease(looked.lease, input.organizationId) : null;
   if (!lease) return finish("transporte", false, TRANSPORT);
+  const again = await input.loadLease(input.organizationId);
+  if (again.state !== "listo" || again.lease.epoch !== lease.epoch || again.lease.machineId !== lease.machineId) {
+    return finish("revocado", false, TRANSPORT);
+  }
 
   const slot = await input.reserve?.();
   if (!slot?.ok) return finish("limite", false, LIMITE);
