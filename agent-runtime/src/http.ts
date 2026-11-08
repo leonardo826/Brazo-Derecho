@@ -84,6 +84,7 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
       profileDir: status.profileDir,
       xaiMode: mode,
       model: computerModelName(deps.env.XAI_COMPUTER_MODEL),
+      machineId: (deps.env.MACHINE_ID ?? "").trim(),
     });
   }
 
