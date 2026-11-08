@@ -10,7 +10,7 @@ import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
-import { TRIAL_DAYS } from "@/lib/subscription";
+import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
 
 const HREF: Record<AgentId, string> = {
   WHATSAPP: "/panel/whatsapp",
@@ -93,7 +93,7 @@ export default async function OnboardingPage({
                   <strong>{item.name}</strong>
                   <span>{item.tagline}</span>
                   <span className="muted">
-                    {formatClp(item.priceClp)} neto al mes, más IVA, después de la prueba · {item.limitLabel}
+                    {formatClp(iabotChargeClp())} al mes, IVA incluido, después de la prueba · {item.limitLabel}
                   </span>
                 </Link>
               );

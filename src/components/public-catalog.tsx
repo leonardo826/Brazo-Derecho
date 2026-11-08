@@ -1,13 +1,10 @@
 import Link from "next/link";
 import { ACCOUNTING_PUBLIC_NOTE, AGENT_CATALOG, AGENT_ORDER } from "@/lib/catalog";
 import { formatClp } from "@/lib/format";
-import { priceWithIva } from "@/lib/flow/plans";
-import { TRIAL_DAYS } from "@/lib/subscription";
+import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
 
-const PLANS = AGENT_ORDER.map((id) => {
-  const agent = AGENT_CATALOG[id];
-  return { ...agent, grossClp: priceWithIva(agent.priceClp) };
-});
+const PLANS = AGENT_ORDER.map((id) => AGENT_CATALOG[id]);
+const PUBLISHED = iabotChargeClp();
 
 export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" }) {
   const pricesFirst = emphasis === "precios";
@@ -18,8 +15,9 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
           <p className="eyebrow">{pricesFirst ? "Precios" : "Catálogo"}</p>
           <h1>{pricesFirst ? "Precios claros, en pesos chilenos." : "Tres agentes, cada uno con su trabajo."}</h1>
           <p className="lead">
-            Atención WhatsApp, Cotizador y Marketing se contratan por separado. Los precios son netos, más IVA de 19%.
-            La prueba dura {TRIAL_DAYS} días. Sin cobro conectado, la prueba queda en el panel y no hay cargo.
+            Atención WhatsApp, Cotizador, Marketing y el Contador se activan por separado. El precio publicado es{" "}
+            {formatClp(PUBLISHED)} al mes, IVA incluido. La prueba dura {TRIAL_DAYS} días. Sin cobro conectado, la prueba
+            queda en el panel y no hay cargo.
           </p>
           <div className="actions">
             <Link className="button-link" href="/registro">
@@ -35,7 +33,7 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
       <section className="section" id={pricesFirst ? "precios" : "agentes"}>
         <div className="wrap">
           <p className="eyebrow">{pricesFirst ? "Planes mensuales" : "Qué hace y qué no hace"}</p>
-          <h2>{pricesFirst ? "Un precio por agente, después de la prueba." : "Cada agente tiene un límite y un no."}</h2>
+          <h2>{pricesFirst ? "Un precio publicado, después de la prueba." : "Cada agente tiene un límite y un no."}</h2>
           <div className="grid-3">
             {PLANS.map((agent) => (
               <article className="card" key={agent.id}>
@@ -43,11 +41,9 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
                 <h3>{agent.name}</h3>
                 <p>{agent.tagline}</p>
                 <p className="price">
-                  {formatClp(agent.priceClp)} <small>neto al mes, más IVA</small>
+                  {formatClp(PUBLISHED)} <small>al mes, IVA incluido</small>
                 </p>
-                <p className="muted">
-                  {formatClp(agent.grossClp)} con IVA · prueba de {TRIAL_DAYS} días
-                </p>
+                <p className="muted">Prueba de {TRIAL_DAYS} días. El pago del panel muestra este mismo monto.</p>
                 <h4>Qué hace</h4>
                 <ul className="plain">
                   {agent.does.map((item) => (
@@ -80,9 +76,8 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
           <details>
             <summary>¿Los precios incluyen IVA?</summary>
             <p>
-              No. Los precios publicados son netos. El IVA es 19%, así que Atención WhatsApp queda en{" "}
-              {formatClp(PLANS[0].grossClp)}, el Cotizador en {formatClp(PLANS[1].grossClp)} y Marketing en{" "}
-              {formatClp(PLANS[2].grossClp)}. Ese es el monto mensual que se cobraría con Flow, después de la prueba.
+              Sí. El precio publicado es {formatClp(PUBLISHED)} al mes, IVA incluido: el mismo de la portada, de esta
+              vitrina y del pago en el panel. No es un neto al que haya que sumarle el 19%.
             </p>
           </details>
           <details>

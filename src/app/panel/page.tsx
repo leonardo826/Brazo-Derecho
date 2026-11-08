@@ -8,7 +8,7 @@ import { formatClp } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
-import { isSubscriptionOpen, TRIAL_DAYS } from "@/lib/subscription";
+import { iabotChargeClp, isSubscriptionOpen, TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
 
 const HREF: Record<AgentId, string> = {
@@ -63,7 +63,7 @@ export default async function PanelHome({
               <h2>{agent.name}</h2>
               <p>{agent.tagline}</p>
               <p className="muted">
-                {formatClp(agent.priceClp)} neto al mes, más IVA · {agent.limitLabel}
+                {formatClp(iabotChargeClp())} al mes, IVA incluido · {agent.limitLabel}
               </p>
               <SubscribeActions agent={agentId} back="/panel" subscription={subscription} />
               {metrics.map(([metric, limit]) => (
