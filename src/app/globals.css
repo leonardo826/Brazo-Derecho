@@ -980,7 +980,7 @@ mark.placeholder {
   .panel-shell:has(.contador-screen) .panel-side {
     grid-row: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
     grid-template-areas:
       "top foot"
       "nav nav";
@@ -988,7 +988,9 @@ mark.placeholder {
     gap: 0.15rem 0.45rem;
     height: auto;
     max-height: none;
-    overflow: visible;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
     padding: 0.4rem 0.65rem 0.3rem;
   }
   .panel-shell:has(.contador-screen) .side-top {
@@ -1013,7 +1015,11 @@ mark.placeholder {
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
-    padding: 0;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding: 0 0 0.15rem;
   }
   .panel-shell:has(.contador-screen) .panel-nav a {
     flex: 0 0 auto;
@@ -1022,7 +1028,11 @@ mark.placeholder {
   .panel-shell:has(.contador-screen) .side-foot {
     grid-area: foot;
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
   }
   .panel-shell:has(.contador-screen) .whoami,

@@ -63,6 +63,24 @@ export function wantsPortalAccess(text: string) {
   return vault && (enter || lookup);
 }
 
+const SAVE_VERB =
+  /\b(guard(?:a|ar|en|alo|ad|emos)|dej(?:a|ar|en|alo)|almacen(?:a|ar)|registr(?:a|ar|en)|anot(?:a|ar|en))\b/i;
+
+/** Guardar un acceso. No es entrar al portal ni declarar. */
+export function wantsVaultSave(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean || isFilingCommand(clean) || isPayCommand(clean)) return false;
+  if (!SAVE_VERB.test(clean)) return false;
+  return /\b(b[oó]veda|clave|contrase(?:ñ|n)a|credencial)\b/i.test(clean);
+}
+
+/** El pedido vigente es el formulario seguro, no una respuesta del modelo ni un ingreso simulado. */
+export function wantsSecureCredentialForm(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean || sensitiveRequest(clean)) return false;
+  return wantsVaultSave(clean) || wantsPortalAccess(clean);
+}
+
 export function vaultActionFor(action: string): "DECLARAR" | "PAGAR" | null {
   if (action === "presentar_declaracion") return "DECLARAR";
   if (action === "pagar") return "PAGAR";

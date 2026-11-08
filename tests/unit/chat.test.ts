@@ -119,6 +119,9 @@ describe("chat continuo", () => {
     expect(safeHref("javascript:alert(1)")).toBe("");
     expect(safeHref("/panel/boveda")).toBe("/panel/boveda");
     expect(safeHref("//panel/boveda")).toBe("");
+    expect(safeHref("/panel/boveda?portal=sii#agregar-acceso")).toBe("/panel/boveda?portal=sii#agregar-acceso");
+    expect(safeHref("/panel/boveda?portal=sii&clave=secreto")).toBe("");
+    expect(safeHref("/panel/boveda?next=https://evil.example")).toBe("");
     expect(ACTION_HELP.toLowerCase()).not.toContain("no uso claves");
     const vaultLink = renderToStaticMarkup(createElement(ChatMarkdown, { text: "Guárdala en la [Bóveda](/panel/boveda)." }));
     expect(vaultLink).toContain('href="/panel/boveda"');

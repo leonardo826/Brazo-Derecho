@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { missingVaultTable } from "@/lib/credentials/http";
+import { parseVaultPortalParam } from "@/lib/credentials/portal-form";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, createCredential, deleteCredential } from "@/lib/credentials/service";
 import { assertOwnOrganizationActive, guardMutation, guardRate, withError, withNotice } from "@/lib/guard";
@@ -9,11 +10,17 @@ import { requireSession } from "@/lib/session";
 
 const BACK = "/panel/boveda";
 
+function vaultBack(formData: FormData) {
+  const preset = parseVaultPortalParam(formData.get("portalPreset"));
+  return preset ? `/panel/boveda?portal=${preset}` : BACK;
+}
+
 export async function createCredentialAction(formData: FormData) {
-  await guardMutation(formData, BACK);
+  const back = vaultBack(formData);
+  await guardMutation(formData, back);
   const session = await requireSession();
-  await assertOwnOrganizationActive(session.organizationId, BACK);
-  guardRate(`boveda:${session.organizationId}`, 10, 60_000, BACK);
+  await assertOwnOrganizationActive(session.organizationId, back);
+  guardRate(`boveda:${session.organizationId}`, 10, 60_000, back);
   try {
     const result = await createCredential(
       prismaCredentialRepo(),
@@ -28,9 +35,9 @@ export async function createCredentialAction(formData: FormData) {
       },
       process.env,
     );
-    if (!result.ok) redirect(withError(BACK, result.error));
+    if (!result.ok) redirect(withError(back, result.error));
   } catch (error) {
-    if (missingVaultTable(error)) redirect(withError(BACK, "boveda_migracion"));
+    if (missingVaultTable(error)) redirect(withError(back, "boveda_migracion"));
     throw error;
   }
   redirect(withNotice(BACK, "ok", "boveda_guardada"));

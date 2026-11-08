@@ -22,9 +22,10 @@ export function normalizeCitations(source: string) {
 }
 
 const APP_PATH = /^\/panel\/[a-z0-9]+(?:\/[a-z0-9-]+)*$/;
+const VAULT_FORM = /^\/panel\/boveda(?:\?portal=(?:sii|previred|tesoreria))?(?:#agregar-acceso)?$/;
 
 export function safeHref(raw: string) {
-  if (APP_PATH.test(raw)) return raw;
+  if (APP_PATH.test(raw) || VAULT_FORM.test(raw)) return raw;
   try {
     const url = new URL(raw);
     if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
