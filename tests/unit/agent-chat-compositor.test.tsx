@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentChat, EMPTY_SUGGESTIONS } from "@/components/agent-chat";
 import { LogoutButton } from "@/components/logout-button";
-import { purgeComposerDrafts } from "@/lib/chat/composer-draft";
+import { purgeComposerDrafts, writeComposerDraft } from "@/lib/chat/composer-draft";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
@@ -98,6 +98,7 @@ describe("compositor del Contador", () => {
       buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(host.querySelector("textarea")?.value).toBe(EMPTY_SUGGESTIONS[1]);
+    expect(document.activeElement).toBe(host.querySelector("textarea"));
     expect(fetches).toEqual([]);
 
     act(() => {
@@ -127,6 +128,53 @@ describe("compositor del Contador", () => {
       );
     });
     expect(host.querySelector("button.suggestion")).toBeNull();
+  });
+
+  test("una sugerencia no pisa un borrador escrito, restaurado o con espacio", () => {
+    render();
+    const box = host.querySelector("textarea");
+    if (!box) throw new Error("sin compositor");
+    box.value = "Necesito revisar mis ventas de octubre";
+    const stale = host.querySelector("button.suggestion");
+    act(() => {
+      stale?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(box.value).toBe("Necesito revisar mis ventas de octubre");
+    expect(fetches).toEqual([]);
+
+    act(() => {
+      setComposer(host, "   ");
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(host.querySelector("textarea")?.value).toBe("   ");
+
+    const fileInput = host.querySelector('input[type="file"]');
+    if (!(fileInput instanceof HTMLInputElement)) throw new Error("sin adjunto");
+    const file = new File(["nota"], "nota.txt", { type: "text/plain" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    fileInput.files = transfer.files;
+    act(() => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("nota.txt");
+    act(() => {
+      setComposer(host, "");
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(host.textContent).toContain("nota.txt");
+    expect(fetches).toEqual([]);
+  });
+
+  test("el borrador restaurado de la Bóveda no muestra sugerencias ni se envía", () => {
+    writeComposerDraft(
+      { userId: "usuario-a", organizationId: "empresa-a", conversationId: "contador" },
+      "Necesito revisar mis ventas de octubre",
+    );
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("Necesito revisar mis ventas de octubre");
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(fetches).toEqual([]);
   });
 
   test("Enter de escritorio envía y el de un móvil no", () => {

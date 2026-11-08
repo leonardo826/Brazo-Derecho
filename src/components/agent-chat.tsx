@@ -237,6 +237,7 @@ export function AgentChat({
   if (storedDraft !== draftSource) {
     setDraftSource(storedDraft);
     setComposer(storedDraft);
+    draftText.current = storedDraft;
   }
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
@@ -315,6 +316,13 @@ export function AgentChat({
     draftText.current = value;
     setComposer(value);
     writeComposerDraft(draftIdentity, value);
+  }
+
+  function applySuggestion(text: string) {
+    const current = composerRef.current?.value ?? draftText.current;
+    if (current.length > 0 || filesRef.current.length > 0) return;
+    updateComposer(text);
+    composerRef.current?.focus();
   }
 
   function endComposition() {
@@ -937,13 +945,15 @@ export function AgentChat({
         {items.length === 0 && !shownLive ? (
           <div className="agent-empty">
             <p>Puedo ayudarte con el IVA, el F29 o un acceso. El hilo queda en tu empresa.</p>
-            <div className="suggestion-row">
-              {EMPTY_SUGGESTIONS.map((text) => (
-                <button key={text} className="suggestion" type="button" disabled={!open} onClick={() => updateComposer(text)}>
-                  {text}
-                </button>
-              ))}
-            </div>
+            {composer.length === 0 && files.length === 0 ? (
+              <div className="suggestion-row">
+                {EMPTY_SUGGESTIONS.map((text) => (
+                  <button key={text} className="suggestion" type="button" disabled={!open} onClick={() => applySuggestion(text)}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {settled.map((message) => renderMessage(message))}
