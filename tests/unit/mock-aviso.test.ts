@@ -18,6 +18,7 @@ describe("el aviso legal no se repite y el simulador no finge una fuente", () =>
     });
     for (const body of [chat, question]) {
       expect(body).toContain("Ejemplo simulado");
+      expect(body).toContain("No verifica una norma ni una fecha");
       expect(body).toContain("Respuesta de prueba");
       expect(body).not.toMatch(/normativa verificada/i);
       expect(body).not.toContain(ACCOUNTING_DISCLAIMER);

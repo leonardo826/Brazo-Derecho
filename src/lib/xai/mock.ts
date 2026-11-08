@@ -31,13 +31,13 @@ export function renderMockTask(task: XaiTask) {
     case "marketing_image":
       return `Imagen cuadrada, luz natural, negocio local en Chile, sin logos de terceros ni texto pequeño. Tema: ${task.summary}. Canal: ${task.channel}.`;
     case "accounting_question":
-      return `Ejemplo simulado. Respuesta de prueba para: ${task.question}`;
+      return `Ejemplo simulado. No verifica una norma ni una fecha. Respuesta de prueba para: ${task.question}`;
     case "agent_chat": {
       const last = [...task.messages].reverse().find((message) => message.role === "user");
       const question = last?.text.trim() || "tu mensaje";
       const names = (last?.files ?? []).map((file) => file.name).filter(Boolean);
       const files = names.length ? ` Revisé el nombre del archivo: ${names.join(", ")}.` : "";
-      return `Ejemplo simulado. Respuesta de prueba para: ${question}${files}`;
+      return `Ejemplo simulado. No verifica una norma ni una fecha. Respuesta de prueba para: ${question}${files}`;
     }
     default: {
       const never: never = task;
