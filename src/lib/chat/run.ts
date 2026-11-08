@@ -1,4 +1,5 @@
 import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/chat/abort";
+import { executeDesktopRequest, type TenantComputer } from "@/lib/chat/desktop-task";
 import {
   accountantChatInstructions,
   APPROVED_PORTAL_NOTE,
@@ -292,6 +293,18 @@ async function* streamVaultForm(input: {
   yield { type: "done" };
 }
 
+async function loadTenantComputer(organizationId: string): Promise<TenantComputer | null> {
+  try {
+    const row = await prisma.computer.findUnique({
+      where: { clientId: organizationId },
+      select: { clientId: true, status: true, flyApp: true, machineId: true },
+    });
+    return row;
+  } catch {
+    return null;
+  }
+}
+
 export async function* streamChatTurn(input: {
   organizationId: string;
   organizationName: string;
@@ -328,6 +341,35 @@ export async function* streamChatTurn(input: {
   if (action) {
     const card = await saveConfirmation(saved.threadId, action);
     yield { type: "message", message: card };
+    yield { type: "done" };
+    return;
+  }
+  const desktop = await executeDesktopRequest({
+    organizationId: input.organizationId,
+    text,
+    signal: input.signal,
+    loadComputer: (organizationId) => loadTenantComputer(organizationId),
+    log: (fields) => logEvent("chat.computador", fields),
+  });
+  if (desktop.kind === "confirm") {
+    const card = await saveConfirmation(saved.threadId, {
+      id: "herramienta",
+      title: "Confirmar antes de seguir",
+      detail: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    });
+    yield { type: "message", message: card };
+    yield { type: "done" };
+    return;
+  }
+  if (desktop.kind === "reply") {
+    if (streamWasStopped(input.signal)) return;
+    const message = await saveCountedAssistantMessage(input.organizationId, saved.threadId, desktop.text);
+    if (!message) {
+      yield { type: "error", code: "limite" };
+      return;
+    }
+    yield { type: "message", message };
+    yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
     yield { type: "done" };
     return;
   }
