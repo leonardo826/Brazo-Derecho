@@ -43,6 +43,9 @@ export type XaiRequest = {
   usage: TokenUsage;
   businessName?: string;
   maxOutputTokens?: number;
+  /** Solo si el pedido pide buscar una norma. El chat corto no adjunta búsqueda. */
+  webSearch?: boolean;
+  reasoningEffort?: "low" | "medium";
   signal?: AbortSignal;
 };
 
@@ -52,6 +55,8 @@ export type XaiResponse = {
   outputText: string;
   usage: TokenUsage;
   mocked: boolean;
+  /** El proveedor cortó por el tope. No es un final natural. */
+  incomplete?: boolean;
 };
 
 export type XaiStreamEvent =

@@ -59,12 +59,15 @@ export function portalPresetFromText(text: string): PortalId | null {
   return null;
 }
 
-export function vaultFormMessage(id: PortalId | null) {
+export function askedToDeleteChatSecret(text: string) {
+  return /\b(borr\w*|elimin\w*)\b/i.test(text) && /\b(clave|contrase(?:ñ|n)a|chat|mensaje)\b/i.test(text);
+}
+
+export function vaultFormMessage(id: PortalId | null, text = "") {
   const preset = id ? PORTAL_PRESETS[id] : null;
   const href = vaultFormPath(id);
-  const portal = preset?.portal ?? "el portal";
-  const title = preset ? `Agregar acceso de ${preset.portal}` : "Agregar acceso en la Bóveda";
-  const usuario = preset?.usernameLabel ?? "Usuario";
-  const rut = preset?.usernameLabel.includes("RUT") ? " El RUT va en Usuario / RUT, no en el chat." : "";
-  return `Abre el formulario y guarda el acceso ahí: [${title}](${href}). Portal o sitio: ${portal}. ${usuario} es el usuario.${rut} La clave va en el campo Clave, enmascarado, y hay que aceptar el consentimiento. No pegues el RUT ni la clave en este chat. No entré al portal y no usé ninguna clave.`;
+  const title = preset ? `Abrir formulario seguro de ${preset.portal}` : "Abrir formulario seguro";
+  const rut = preset?.usernameLabel.includes("RUT") ? " El RUT va en Usuario / RUT." : "";
+  const erase = askedToDeleteChatSecret(text) ? " Borrar el mensaje del chat no quita las copias." : "";
+  return `Ingresa el usuario y la clave en el formulario protegido: [${title}](${href}).${rut} La clave va en el campo Clave, enmascarado, con consentimiento. No las escribas en este chat. Guardarlas no inicia sesión. No entré al portal.${erase}`;
 }

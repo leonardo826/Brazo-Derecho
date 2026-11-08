@@ -197,7 +197,7 @@ export async function loadHistory(threadId: string, organizationId: string) {
       continue;
     }
     const files =
-      row.id === lastUserId
+      row.id === lastUserId && row.attachments.length > 0
         ? await filesForModel(row.id, organizationId)
         : row.attachments.map((file) => ({
             name: file.fileName,

@@ -216,6 +216,8 @@ export function AgentChat({
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
   const turnGen = useRef(0);
+  const stickToEnd = useRef(true);
+  const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -227,7 +229,7 @@ export function AgentChat({
 
   useEffect(() => {
     const node = logRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (node && stickToEnd.current) node.scrollTop = node.scrollHeight;
   }, [items, live, status, pending]);
 
   useEffect(() => {
@@ -402,7 +404,8 @@ export function AgentChat({
     tempId.current = draft.id;
     setPending(true);
     setNotice("");
-    setStatus(followup ? "Sigo con el siguiente…" : "Revisando…");
+    stickToEnd.current = true;
+    setStatus(followup ? "Sigo con el siguiente…" : "Preparando respuesta…");
     clearLive();
     const form = new FormData();
     form.set("agente", "ACCOUNTING");
@@ -504,7 +507,7 @@ export function AgentChat({
     abortRef.current = controller;
     setNotice("");
     setPending(true);
-    setStatus(decision === "APPROVED" ? "Revisando…" : "");
+    setStatus(decision === "APPROVED" ? "Preparando respuesta…" : "");
     clearLive();
     let end: TurnEnd = "error";
     try {
@@ -768,7 +771,20 @@ export function AgentChat({
         </label>
         <p className="muted agent-chat-hint">En datos móviles queda apagado hasta que lo actives.</p>
       </div>
-      <div className="agent-log" ref={logRef} role="log" aria-live="polite" aria-relevant="additions" aria-busy={pending} aria-label="Mensajes">
+      <div
+        className="agent-log"
+        ref={logRef}
+        role="log"
+        aria-busy={pending}
+        aria-label="Mensajes"
+        onScroll={() => {
+          const node = logRef.current;
+          if (!node) return;
+          const near = node.scrollHeight - node.scrollTop - node.clientHeight < 96;
+          stickToEnd.current = near;
+          setAtEnd(near);
+        }}
+      >
         {items.length === 0 && !shownLive ? (
           <p className="muted agent-empty">Escríbeme una duda de IVA, F29 o remuneraciones. El hilo queda guardado en tu empresa.</p>
         ) : null}
@@ -792,6 +808,20 @@ export function AgentChat({
         ) : null}
         {queued.map((message) => renderMessage(message))}
       </div>
+      {atEnd ? null : (
+        <button
+          className="jump-end"
+          type="button"
+          onClick={() => {
+            const node = logRef.current;
+            stickToEnd.current = true;
+            setAtEnd(true);
+            if (node) node.scrollTop = node.scrollHeight;
+          }}
+        >
+          Volver al final
+        </button>
+      )}
       {notice ? (
         <p className="banner error" role="alert">
           {notice}
@@ -830,7 +860,7 @@ export function AgentChat({
         <div className="composer-bar">
           <label className="composer-icon file-button">
             <AttachIcon />
-            <span className="sr-only">Adjuntar</span>
+            <span className="sr-only">Adjuntar archivo</span>
             <input
               className="sr-only"
               type="file"
@@ -850,19 +880,19 @@ export function AgentChat({
             value={composer}
             maxLength={4000}
             rows={1}
-            placeholder="Escribe tu duda…"
+            placeholder="Escribe al Contador…"
             disabled={!open}
             onChange={(event) => updateComposer(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              if (window.matchMedia("(pointer: coarse)").matches) return;
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
             }}
           />
           <button className={`composer-icon${recording ? " recording" : ""}`} type="button" disabled={!open} aria-pressed={recording} onClick={toggleMic}>
             {recording ? <StopIcon /> : <MicIcon />}
-            <span className="sr-only">{recording ? "Detener" : "Micrófono"}</span>
+            <span className="sr-only">{recording ? "Detener grabación" : "Micrófono, grabar audio"}</span>
           </button>
           {pending ? (
             <button className="composer-icon stop" type="button" onClick={stopResponse}>
@@ -870,10 +900,18 @@ export function AgentChat({
               <span className="sr-only">Detener respuesta</span>
             </button>
           ) : null}
-          <button className="composer-icon send" type="submit" disabled={!open || (!composer.trim() && files.length === 0)}>
+          <button
+            className="composer-icon send"
+            type="submit"
+            disabled={!open || (!composer.trim() && files.length === 0)}
+            aria-describedby={pending ? "cola-envio" : undefined}
+          >
             <SendIcon />
             <span className="sr-only">Enviar</span>
           </button>
+          <span id="cola-envio" className="sr-only" aria-live="polite">
+            {pending ? "Hay una respuesta en curso. Enviar deja el mensaje en cola." : ""}
+          </span>
         </div>
         <p className="composer-note">No compartas claves del SII ni bancarias: esas van en la Bóveda.</p>
       </form>

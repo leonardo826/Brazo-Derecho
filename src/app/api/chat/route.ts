@@ -71,17 +71,20 @@ export async function POST(request: Request) {
   }
   const parsed = await readTurn(request);
   if (parsed instanceof Response) return parsed;
-  const access = await agentIsOpen(session.organizationId, "ACCOUNTING");
+  const sensitive = sensitiveRequest(parsed.text);
+  const [access, room] = await Promise.all([
+    agentIsOpen(session.organizationId, "ACCOUNTING"),
+    sensitive
+      ? Promise.resolve({ ok: true as const })
+      : planRoom({
+          organizationId: session.organizationId,
+          checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
+        }),
+  ]);
   if (!access.open) {
     return Response.json({ error: access.suspended ? "suspendida" : "suscripcion" }, { status: 403 });
   }
-  if (!sensitiveRequest(parsed.text)) {
-    const room = await planRoom({
-      organizationId: session.organizationId,
-      checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
-    });
-    if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
-  }
+  if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
   return sseResponse(
     (signal) =>
       streamChatTurn({

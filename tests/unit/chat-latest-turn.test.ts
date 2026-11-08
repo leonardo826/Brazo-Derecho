@@ -89,7 +89,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { loadHistory, saveCountedAssistantMessage, saveUserMessage } from "@/lib/chat/store";
 import { streamChatTurn } from "@/lib/chat/run";
-import { recordCompletedTask, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
 import { createXaiClient } from "@/lib/xai/client";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 
@@ -374,6 +374,7 @@ describe("turno de chat", () => {
     vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: null });
     vi.mocked(releaseDailyTask).mockReset();
     vi.mocked(recordCompletedTask).mockReset();
+    vi.mocked(recordModelCall).mockReset();
     vi.mocked(saveUserMessage).mockImplementation(async ({ body }: { body: string }) => ({
       threadId: "thread-a",
       message: bubble("user-1", "USER", body),
@@ -381,6 +382,44 @@ describe("turno de chat", () => {
     vi.mocked(saveCountedAssistantMessage).mockImplementation(async (_org: string, _thread: string, body: string) =>
       bubble("asst-1", "ASSISTANT", body),
     );
+  });
+
+  test("un F29 con PDF no se sella ni pierde el adjunto", async () => {
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: "Guarda el formulario 29 del SII" }]);
+    vi.mocked(createXaiClient).mockReturnValue({
+      async respond() {
+        throw new Error("no");
+      },
+      async *streamRespond() {
+        yield {
+          type: "done" as const,
+          response: {
+            id: "f29",
+            model: "grok-4.7",
+            outputText: "El F29 es la declaración mensual.",
+            usage: USAGE_PRESETS.text,
+            mocked: true,
+          },
+        };
+      },
+    });
+    const file = { fileName: "f29.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1, 2]) };
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: "Guarda el formulario 29 del SII",
+      files: [file],
+    })) {
+      events.push(event);
+    }
+    expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({
+      body: "Guarda el formulario 29 del SII",
+      files: [file],
+    });
+    expect(createXaiClient).toHaveBeenCalled();
+    expect(JSON.stringify(events)).not.toContain("/panel/boveda");
   });
 
   test("el pedido de RUT y clave no llama al modelo ni a la bóveda y no guarda el secreto", async () => {
@@ -530,6 +569,55 @@ describe("turno de chat", () => {
     expect(releaseDailyTask).toHaveBeenCalledWith("reserva-chat");
     expect(recordCompletedTask).not.toHaveBeenCalled();
     expect(events.some((event) => event.type === "done")).toBe(false);
+  });
+
+  test("una respuesta incompleta no se cobra como tarea hecha", async () => {
+    vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: "reserva-corta" });
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: "Haz el cálculo del IVA" }]);
+    vi.mocked(createXaiClient).mockReturnValue({
+      async respond() {
+        throw new Error("no");
+      },
+      async *streamRespond() {
+        yield { type: "delta" as const, text: "El 19% es una parte." };
+        yield {
+          type: "done" as const,
+          response: {
+            id: "corta",
+            model: "grok-4.7",
+            outputText: "El 19% es una parte.",
+            usage: { inputTokens: 19, cachedTokens: 4, outputTokens: 6 },
+            mocked: false,
+            incomplete: true,
+          },
+        };
+      },
+    });
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: "Haz el cálculo del IVA",
+      files: [],
+    })) {
+      events.push(event);
+    }
+    const saved = events.find((event) => event.type === "message");
+    const body = saved && saved.type === "message" ? saved.message.body : "";
+    expect(body).toContain("El 19% es una parte.");
+    expect(body).toContain("(Respuesta incompleta por el límite de salida.)");
+    expect(body).not.toMatch(/pide detalle|cancel|reembol/i);
+    expect(recordModelCall).toHaveBeenCalledWith({
+      organizationId: "org-a",
+      response: {
+        model: "grok-4.7",
+        usage: { inputTokens: 19, cachedTokens: 4, outputTokens: 6 },
+        mocked: false,
+      },
+    });
+    expect(recordCompletedTask).not.toHaveBeenCalled();
+    expect(releaseDailyTask).toHaveBeenCalledWith("reserva-corta");
   });
 
   test("sin cupo diario no llama al modelo", async () => {
