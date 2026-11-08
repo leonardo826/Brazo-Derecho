@@ -28,7 +28,7 @@ class FakeRecorder {
   mimeType = "audio/webm";
   ondataavailable: ((event: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
-  constructor(_stream: unknown, _options?: { mimeType?: string }) {
+  constructor() {
     recorders.push(this);
   }
   start() {

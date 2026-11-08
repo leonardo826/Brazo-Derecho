@@ -193,12 +193,13 @@ export function AgentChat({
   const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
+    const capturesNow = captures.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       listenGen.current += 1;
       abortRef.current?.abort();
-      for (const capture of captures.current) capture.accept = false;
+      for (const capture of capturesNow) capture.accept = false;
       const stop = stopRecord.current;
       stopRecord.current = null;
       listeningRef.current = false;
