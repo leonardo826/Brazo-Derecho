@@ -10,7 +10,19 @@ import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
  * SII, empresa u otro acceso) y lo que sigue no es una frase explicativa.
  * Ese valor puede ser corto, alfabético o unicode, y puede ir en la línea
  * siguiente: no se descarta por entropía ni por apariencia.
- * «La clave del F29 es el plazo» sigue siendo una explicación.
+ * Contraseña, password, passwd y passcode son etiqueta inequívoca: el mensaje
+ * se cierra aunque el valor sea o empiece por una palabra funcional, vaya
+ * entre comillas o en la línea siguiente: «es tu», el valor citado «la», «es la de siempre».
+ * Un solo token funcional, citado o no, tampoco es una explicación. Con
+ * «mi clave», el SII o la empresa, cierra («Mi clave del SII es tu»).
+ * Límite: si la etiqueta es solo «clave», una frase de más de un token que
+ * empieza por palabra funcional sigue siendo explicación, aunque haya posesivo
+ * o ancla. «Mi clave del SII es la de siempre» y «Mi clave del SII es el plazo
+ * de declaración» no se sellan. Tampoco un arranque de oración de un solo
+ * token («esto», «cuando», «cómo») después de «clave». «La clave del F29 es
+ * el plazo», una consulta de IVA y «la clave del éxito es constancia» siguen
+ * abiertas. Sin posesivo, sin ancla y sin etiqueta de contraseña, «La clave
+ * del éxito es tu» tampoco cierra.
  * Sin asignación, un token con aspecto de clave también cierra, con el mismo
  * margen. No reconoce un secreto suelto sin esa etiqueta, ni mira archivos.
  */
@@ -134,11 +146,7 @@ function valueTokens(line: string) {
     .filter(Boolean);
 }
 
-/** «es el plazo» explica un concepto. «es hola» asigna un valor, aunque sea corto. */
-function isExplanatoryPhrase(line: string) {
-  const word = valueTokens(line)[0]?.toLowerCase() ?? "";
-  if (!word) return true;
-  if (FUNCTION_WORD.has(word)) return true;
+function opensClause(word: string) {
   return (
     word === "unos" ||
     word === "unas" ||
@@ -158,9 +166,26 @@ function isExplanatoryPhrase(line: string) {
   );
 }
 
+/**
+ * «es el plazo» explica un concepto. «es hola» asigna un valor, aunque sea corto.
+ * Un único token funcional («tu», «la», «mi», citado o no) es el valor entero,
+ * no una frase. Una frase que empieza por esa palabra («la de siempre»,
+ * «el plazo») sí explica, salvo que la etiqueta sea contraseña.
+ * «esto» o «cuando» solos siguen abriendo una explicación.
+ */
+function isExplanatoryPhrase(line: string) {
+  const tokens = valueTokens(line);
+  const word = tokens[0]?.toLowerCase() ?? "";
+  if (!word) return true;
+  if (tokens.length === 1 && FUNCTION_WORD.has(word)) return false;
+  if (FUNCTION_WORD.has(word)) return true;
+  return opensClause(word);
+}
+
 function copulaAssignsCredential(label: string, before: string, gap: readonly string[], line: string) {
-  if (isExplanatoryPhrase(line)) return false;
+  // La etiqueta inequívoca no acepta en silencio un valor funcional ni una frase que empiece por uno.
   if (labelIsPassword(label)) return true;
+  if (isExplanatoryPhrase(line)) return false;
   if (hasPossessive(before)) return true;
   return gap.some((token) => CREDENTIAL_ANCHOR.has(token.toLowerCase()));
 }
@@ -178,7 +203,8 @@ function secretValueFollows(rest: string, label: string, before: string) {
       if (!line) return false;
       // Pegada a la etiqueta, o con «:»/«=», cualquier valor cierra el mensaje.
       // Con palabras de por medio, «es»/«is» cierra la credencial entera sin
-      // mirar si el valor parece una clave. Una frase («el plazo») no lo es.
+      // mirar si el valor parece una clave. Contraseña cierra aunque el valor
+      // sea o empiece por una palabra funcional. «El plazo» después de «clave» no.
       if (skipped === 0 || isAssignment(bridge[0])) return true;
       return copulaAssignsCredential(label, before, gap, line);
     }

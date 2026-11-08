@@ -101,6 +101,19 @@ describe("casos deterministas del Contador", () => {
     expect(wantsChatSecretHandoff("Aquí va la contraseña")).toBe(true);
     expect(carriesSuspectedSecret("Mi clave de la empresa nueva chilena es el plazo.")).toBe(false);
     expect(carriesSuspectedSecret("La clave del éxito es constancia.")).toBe(false);
+    // «clave» + frase que empieza por palabra funcional sigue abierta. Contraseña no.
+    for (const phrase of [
+      "Mi clave del SII es la de siempre",
+      "Mi clave del SII es el plazo de declaración",
+      "Mi clave del SII es esto",
+      "La clave del éxito es tu",
+    ]) {
+      expect(carriesSuspectedSecret(phrase)).toBe(false);
+      expect(sealChatText(phrase)).toBe(phrase);
+    }
+    expect(carriesSuspectedSecret("Mi contraseña del SII es la de invierno")).toBe(true);
+    expect(sealChatText("Mi contraseña del SII es la de invierno")).toBe(SAFE_CREDENTIAL_ENTRY);
+    expect(sealChatText("Mi contraseña del SII es esto")).toBe(SAFE_CREDENTIAL_ENTRY);
     expect(wantsChatSecretHandoff("Te pego la clave")).toBe(true);
     expect(wantsChatSecretHandoff("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toBe(false);
     const pdf = ["f29.pdf"];
@@ -124,6 +137,11 @@ describe("casos deterministas del Contador", () => {
       { text: "Mi contraseña del SII es パスワード", secret: "パスワード" },
       { text: "Mi clave del SII es\nhola", secret: "hola" },
       { text: "Mi contraseña de la empresa es\nabc", secret: "abc" },
+      { text: "Mi contraseña del SII es tu", secret: "tu" },
+      { text: "Mi contraseña de la empresa es «la»", secret: "«la»" },
+      { text: "Mi contraseña del SII es\nmi", secret: "mi" },
+      { text: "Mi clave del SII es tu", secret: "tu" },
+      { text: "Mi contraseña del SII es la de invierno", secret: "invierno" },
     ];
     for (const item of shortSecrets) {
       expect(carriesSuspectedSecret(item.text)).toBe(true);

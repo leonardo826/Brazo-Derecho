@@ -337,6 +337,11 @@ describe("corpus de claves sintéticas", () => {
     { name: "contraseña unicode", text: "Mi contraseña del SII es パスワード", fragments: ["パスワード"] },
     { name: "clave con salto de línea", text: "Mi clave del SII es\nhola", fragments: ["hola"] },
     { name: "contraseña con salto de línea", text: "Mi contraseña de la empresa es\nabc", fragments: ["abc"] },
+    { name: "contraseña es tu", text: "Mi contraseña del SII es tu", fragments: ["tu"] },
+    { name: "contraseña citada la", text: "Mi contraseña de la empresa es «la»", fragments: ["«la»"] },
+    { name: "contraseña con salto mi", text: "Mi contraseña del SII es\nmi", fragments: ["mi"] },
+    { name: "clave es tu", text: "Mi clave del SII es tu", fragments: ["tu"] },
+    { name: "contraseña frase funcional", text: "Mi contraseña del SII es la de invierno", fragments: ["invierno", "la de invierno"] },
   ];
 
   test.each(samples)("$name no conserva fragmentos", ({ text, fragments }) => {
@@ -366,6 +371,12 @@ describe("corpus de claves sintéticas", () => {
       expect(sealed).not.toContain("IVA");
     }
     expect(sealChatText("La clave del F29 es el plazo.")).toBe("La clave del F29 es el plazo.");
+    expect(sealChatText("Mi clave del SII es la de siempre")).toBe("Mi clave del SII es la de siempre");
+    expect(sealChatText("Mi clave del SII es el plazo de declaración")).toBe(
+      "Mi clave del SII es el plazo de declaración",
+    );
+    expect(sealChatText("Mi clave del SII es esto")).toBe("Mi clave del SII es esto");
+    expect(sealChatText("La clave del éxito es tu")).toBe("La clave del éxito es tu");
   });
 });
 
@@ -424,6 +435,10 @@ describe("turno de chat", () => {
       { text: "Mi contraseña del SII es パスワード", secret: "パスワード" },
       { text: "Mi clave del SII es\nhola", secret: "hola" },
       { text: "Mi contraseña de la empresa es\nabc", secret: "abc" },
+      { text: "Mi contraseña del SII es tu", secret: "tu" },
+      { text: "Mi contraseña de la empresa es «la»", secret: "«la»" },
+      { text: "Mi contraseña del SII es\nmi", secret: "mi" },
+      { text: "Mi contraseña del SII es la de invierno", secret: "invierno" },
     ];
     for (const item of cases) {
       const composer = prepareComposerTurn(item.text, [pdf]);
@@ -469,7 +484,12 @@ describe("turno de chat", () => {
       const sent = JSON.stringify({ texto: composer.text, archivos: composer.files });
       const packed = `${sent}\n${JSON.stringify(events)}\n${logged}\n${JSON.stringify(vi.mocked(saveUserMessage).mock.calls)}\n${JSON.stringify(alone)}\n${JSON.stringify(prepared)}`;
       expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
-      expect(packed).not.toContain(item.secret);
+      expect(packed).not.toContain(item.text);
+      expect(packed).not.toContain(JSON.stringify(item.text).slice(1, -1));
+      // «la» y «mi» también aparecen en el texto fijo («de la Bóveda», «consentimiento»).
+      // Se exige el valor citado o la palabra suelta, no esa coincidencia del aviso.
+      if (item.secret === "mi") expect(packed).not.toMatch(/\bmi\b/i);
+      else expect(packed).not.toContain(item.secret);
       expect(createXaiClient).not.toHaveBeenCalled();
       expect(loadHistory).not.toHaveBeenCalled();
     }
@@ -478,6 +498,13 @@ describe("turno de chat", () => {
     );
     expect(sealChatText("La clave del éxito es constancia.")).toBe("La clave del éxito es constancia.");
     expect(sealChatText("¿Cuándo se paga el IVA de noviembre?")).toBe("¿Cuándo se paga el IVA de noviembre?");
+    expect(sealChatText("Mi clave del SII es la de siempre")).toBe("Mi clave del SII es la de siempre");
+    expect(sealChatText("Mi clave del SII es el plazo de declaración")).toBe(
+      "Mi clave del SII es el plazo de declaración",
+    );
+    expect(sealChatText("Mi clave del SII es esto")).toBe("Mi clave del SII es esto");
+    expect(sealChatText("La clave del éxito es tu")).toBe("La clave del éxito es tu");
+    expect(sealChatText("Mi contraseña del SII es esto")).toBe(SAFE_CREDENTIAL_ENTRY);
   });
 
   test("un formulario o una factura llegan al modelo con su texto y su PDF", async () => {

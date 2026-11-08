@@ -188,4 +188,46 @@ describe("revisión documental con PostgreSQL y modelo simulado", () => {
       expect(model).not.toHaveBeenCalled();
     }
   });
+
+  test("una contraseña con valor funcional no se guarda, no va al modelo y suelta el adjunto", async () => {
+    const model = vi.spyOn(xai, "createXaiClient");
+    const cases = [
+      { text: "Mi contraseña del SII es tu", absent: ["tu", "Mi contraseña del SII es tu"] },
+      { text: "Mi contraseña de la empresa es «la»", absent: ["«la»", "Mi contraseña de la empresa es «la»"] },
+      { text: "Mi contraseña del SII es\nmi", absent: ["Mi contraseña del SII es\nmi"] },
+    ];
+    for (const item of cases) {
+      const organizationId = await makeOrg();
+      model.mockClear();
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const events = [];
+      let logged = "";
+      try {
+        for await (const event of streamChatTurn({
+          organizationId,
+          organizationName: "Revision",
+          actorUserId: "user",
+          text: item.text,
+          files: [PDF],
+        })) {
+          events.push(event);
+        }
+        logged = spy.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      } finally {
+        spy.mockRestore();
+      }
+      const stored = await lastTurn(organizationId);
+      const packed = `${JSON.stringify(events)}\n${logged}\n${stored.user?.body ?? ""}\n${stored.assistant?.body ?? ""}`;
+      expect(stored.user?.body).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(stored.user?.attachments).toHaveLength(0);
+      expect(stored.assistant?.body).toContain("/panel/boveda?portal=sii#agregar-acceso");
+      expect(stored.assistant?.body).toMatch(/No las escribas en este chat/);
+      expect(stored.assistant?.body).toMatch(/No entré al portal/);
+      expect(packed).not.toContain(item.text);
+      expect(packed).not.toContain(JSON.stringify(item.text).slice(1, -1));
+      for (const marker of item.absent) expect(packed).not.toContain(marker);
+      if (item.text.endsWith("\nmi")) expect(packed).not.toMatch(/\bmi\b/i);
+      expect(model).not.toHaveBeenCalled();
+    }
+  });
 });
