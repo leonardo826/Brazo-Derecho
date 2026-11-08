@@ -1,3 +1,5 @@
+export const CONTADOR_CONVERSATION_ID = "contador";
+
 export type DraftIdentity = {
   userId: string;
   organizationId: string;

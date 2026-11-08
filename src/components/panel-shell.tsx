@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
+import { ComposerDraftBoundary } from "@/components/composer-draft-boundary";
 import { CsrfField } from "@/components/csrf-field";
 import { DemoTour, DemoTourProvider, DemoTourRestart } from "@/components/demo-tour";
 import { Logo } from "@/components/logo";
 import { LogoutButton } from "@/components/logout-button";
 import { PanelNav } from "@/components/panel-nav";
+import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
 import type { Session } from "@/lib/session";
 
 export function PanelShell({
@@ -45,7 +47,13 @@ export function PanelShell({
         </aside>
         <main className="panel-main" id="contenido">
           <DemoTour />
-          {children}
+          <ComposerDraftBoundary
+            userId={session.userId}
+            organizationId={session.organizationId}
+            conversationId={CONTADOR_CONVERSATION_ID}
+          >
+            {children}
+          </ComposerDraftBoundary>
         </main>
       </div>
     </DemoTourProvider>
