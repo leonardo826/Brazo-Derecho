@@ -12,7 +12,7 @@ import { getPaymentProvider } from "@/lib/payments/registry";
 import { prisma } from "@/lib/prisma";
 import { organizationIsQa, QaSinCobroError } from "@/lib/qa-account";
 import { requireSession } from "@/lib/session";
-import { iabotChargeClp, trialEnd } from "@/lib/subscription";
+import { iabotChargeClp, trialEnd, trialRestart } from "@/lib/subscription";
 import { paymentProviderSchema } from "@/lib/validation";
 
 export async function activateTrialAction(formData: FormData) {
@@ -68,6 +68,12 @@ export async function activateTrialAction(formData: FormData) {
   }
 
   const now = new Date();
+  const existing = await prisma.subscription.findUnique({
+    where: { organizationId_agent: { organizationId: session.organizationId, agent: agentRaw } },
+  });
+  if (trialRestart(existing, now) === "keep") {
+    redirect(withNotice(back, "ok", existing?.status === "ACTIVE" ? "ya_activa" : "prueba_vigente"));
+  }
   const mercadoPagoChoice =
     provider === "mercadopago" ? { provider: "MERCADOPAGO" as const, mpPayerEmail: session.email } : {};
   await prisma.subscription.upsert({

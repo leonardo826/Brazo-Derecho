@@ -7,7 +7,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { dayStart } from "@/lib/usage";
-import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -48,6 +48,7 @@ export async function runWhatsappTurn(input: {
       organizationId: input.organizationId,
       checks: [{ agent: "WHATSAPP", metric: "RESPONSES", quantity: 1 }],
       now: input.now,
+      loadTasks: tasksToday,
       call: () =>
         createXaiClient().respond({
           model: modelFor("WHATSAPP"),

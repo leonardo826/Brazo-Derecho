@@ -44,18 +44,7 @@ async function locateSubscription(target: ReturnType<typeof flowTargetFromPaymen
       });
     }
   }
-  if (target.payer && target.agent) {
-    const user = await prisma.user.findUnique({
-      where: { email: target.payer },
-      include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
-    });
-    const organizationId = user?.memberships[0]?.organizationId;
-    if (organizationId) {
-      return prisma.subscription.findUnique({
-        where: { organizationId_agent: { organizationId, agent: target.agent } },
-      });
-    }
-  }
+  // El correo del pagador no elige empresa: una persona puede tener más de una.
   return null;
 }
 

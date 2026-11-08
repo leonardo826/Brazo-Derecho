@@ -10,7 +10,7 @@ import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { priceSchema, quoteRequestSchema, quoteStatusSchema, recordIdSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -145,6 +145,7 @@ export async function createQuoteAction(formData: FormData) {
     gated = await callWithinPlan({
       organizationId: session.organizationId,
       checks: [{ agent: "QUOTES", metric: "QUOTES", quantity: 1 }],
+      loadTasks: tasksToday,
       call: () =>
         createXaiClient().respond({
           model: modelFor("QUOTES"),

@@ -4,19 +4,24 @@ import {
   billingNoticeKeys,
   mercadoPagoReferences,
   mercadoPagoToFlowSignal,
+  subscriptionForMercadoPago,
 } from "@/lib/mercadopago/state";
 import { prisma } from "@/lib/prisma";
 
 async function locateSubscription(refs: ReturnType<typeof mercadoPagoReferences>) {
-  if (refs.externalReference) {
-    const byId = await prisma.subscription.findUnique({ where: { id: refs.externalReference } });
-    if (byId) return byId;
-  }
-  if (refs.preapprovalId) {
-    const byPreapproval = await prisma.subscription.findUnique({ where: { mpPreapprovalId: refs.preapprovalId } });
-    if (byPreapproval) return byPreapproval;
-  }
-  return null;
+  const byReference = refs.externalReference
+    ? await prisma.subscription.findUnique({ where: { id: refs.externalReference } })
+    : null;
+  const byPreapproval = refs.preapprovalId
+    ? await prisma.subscription.findUnique({ where: { mpPreapprovalId: refs.preapprovalId } })
+    : null;
+  const chosen = subscriptionForMercadoPago({
+    byReference,
+    byPreapproval,
+    preapprovalId: refs.preapprovalId,
+  });
+  if (!chosen) return null;
+  return byReference?.id === chosen.id ? byReference : byPreapproval;
 }
 
 async function rememberNotices(keys: string[], subscriptionId: string) {

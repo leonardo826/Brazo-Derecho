@@ -9,7 +9,7 @@ import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { brandSchema, postBatchSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -67,13 +67,14 @@ export async function generatePostsAction(formData: FormData) {
     for (let index = 0; index < count; index += 1) {
       const checks: PlanCheck[] = [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }];
       if (withImage) checks.push({ agent: "MARKETING", metric: "IMAGES", quantity: 1 });
-      const room = await planRoom({ organizationId: session.organizationId, checks });
+      const room = await planRoom({ organizationId: session.organizationId, checks, loadTasks: tasksToday });
       if (!room.ok) break;
 
       const channel = channelFor(index);
       const text = await callWithinPlan({
         organizationId: session.organizationId,
         checks: [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }],
+        loadTasks: tasksToday,
         call: () =>
           client.respond({
             model: textModel,
@@ -102,6 +103,7 @@ export async function generatePostsAction(formData: FormData) {
         const image = await callWithinPlan({
           organizationId: session.organizationId,
           checks: [{ agent: "MARKETING", metric: "IMAGES", quantity: 1 }],
+          loadTasks: tasksToday,
           call: () =>
             client.respond({
               model: imageModel,

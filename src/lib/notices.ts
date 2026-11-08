@@ -45,6 +45,8 @@ export const OKS: Record<string, string> = {
   consulta: "Respuesta lista. No reemplaza a un contador certificado.",
   cuenta: "Listo. Tu empresa quedó creada y ya puedes activar un agente.",
   prueba: `Prueba activada por ${TRIAL_DAYS} días.`,
+  prueba_vigente: `La prueba de ${TRIAL_DAYS} días ya está activa. No se alargó ni se cobró.`,
+  ya_activa: "Esta suscripción ya está activa. No se reinició la prueba ni se hizo un cobro.",
   plan: "Plan activo. El pago fue de prueba: no hubo cobro ni se pidió una tarjeta.",
   qa_sin_cobro: "Esta cuenta es de prueba interna. No se genera cobro.",
   pago_cancelado: `Cancelaste el pago de prueba. La prueba de ${TRIAL_DAYS} días sigue activa.`,

@@ -6,6 +6,7 @@ import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { sensitiveRequest } from "@/lib/chat/sensitive";
 import { parseVaultPortalParam, type PortalId } from "@/lib/credentials/portal-form";
 import { agentIsOpen } from "@/lib/agent-access";
+import { tasksToday } from "@/lib/meter-store";
 import { planRoom } from "@/lib/plan-limit";
 import { consumeRateLimit } from "@/lib/rate-limit";
 
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     const room = await planRoom({
       organizationId: session.organizationId,
       checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
+      loadTasks: tasksToday,
     });
     if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
   }

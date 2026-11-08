@@ -11,7 +11,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import type { TokenUsage } from "@/lib/pricing";
 import { organizationIsQa, qaOrganizationIdSet, recordsBillingUsage } from "@/lib/qa-account";
-import { monthBounds, monthKey } from "@/lib/usage";
+import { dayBounds, monthBounds, monthKey } from "@/lib/usage";
 
 export type MeterWrite = {
   organizationId: string;
@@ -65,6 +65,15 @@ export async function applyMeter(tx: Prisma.TransactionClient, input: MeterWrite
     },
   });
   return { yearMonth, ...delta };
+}
+
+/** Tareas del día en Chile. La cuenta QA devuelve 0 y no se le corta el piloto. */
+export async function tasksToday(organizationId: string, now = new Date()) {
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) return 0;
+  const { start, end } = dayBounds(now);
+  return prisma.usageMeter.count({
+    where: { organizationId, kind: "TASK", createdAt: { gte: start, lt: end } },
+  });
 }
 
 export async function recordMeter(input: MeterWrite) {

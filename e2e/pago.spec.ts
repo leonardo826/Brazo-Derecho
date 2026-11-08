@@ -34,6 +34,7 @@ test("registro, agente, pago de prueba, chat y panel", async ({ page }) => {
   await whatsappCard(page).getByRole("link", { name: "Activar plan" }).click();
   await expect(page.getByRole("heading", { name: "Pago de prueba" })).toBeVisible();
   await expect(page.getByText("No se cobra, no pedimos tarjeta")).toBeVisible();
+  await expect(page.getByText("$63.546")).toBeVisible();
   await expect(page.getByLabel(/tarjeta/i)).toHaveCount(0);
   await page.getByRole("link", { name: "Cancelar" }).click();
   await expect(page.getByText("Cancelaste el pago de prueba. La prueba de 7 días sigue activa.")).toBeVisible();

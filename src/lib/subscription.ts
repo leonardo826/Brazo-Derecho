@@ -39,6 +39,15 @@ export function trialEnd(from = new Date()) {
   return new Date(from.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
 }
 
+/** Una prueba o un plan vigente no se vuelve a abrir: eso acortaría un mes ya pagado. */
+export function trialRestart(
+  existing: { status: "TRIAL" | "ACTIVE" | "EXPIRED" | "CANCELED"; periodEnd: Date } | null | undefined,
+  now = new Date(),
+) {
+  if (existing && isSubscriptionOpen(existing, now)) return "keep" as const;
+  return "open" as const;
+}
+
 export function isSubscriptionOpen(
   subscription: { status: "TRIAL" | "ACTIVE" | "EXPIRED" | "CANCELED"; periodEnd: Date } | null | undefined,
   now = new Date(),

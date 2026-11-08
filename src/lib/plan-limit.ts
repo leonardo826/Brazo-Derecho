@@ -1,6 +1,6 @@
 import { limitFor, type AgentId, type MetricId } from "@/lib/catalog";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
-import { evaluateLimit } from "@/lib/usage";
+import { DAILY_TASK_LIMIT, evaluateLimit } from "@/lib/usage";
 import { usedThisMonth } from "@/lib/usage-store";
 
 export type PlanCheck = {
@@ -10,6 +10,7 @@ export type PlanCheck = {
 };
 
 type UsedLoader = (organizationId: string, metric: MetricId, now?: Date) => Promise<number>;
+type TaskLoader = (organizationId: string, now?: Date) => Promise<number>;
 
 export async function planRoom(
   input: {
@@ -17,10 +18,17 @@ export async function planRoom(
     checks: PlanCheck[];
     now?: Date;
     loadUsed?: UsedLoader;
+    loadTasks?: TaskLoader;
   },
 ) {
   if (input.checks.length === 0) {
     throw new Error("Hay que indicar el cupo del plan antes de llamar a xAI");
+  }
+  if (input.loadTasks) {
+    const tasks = await input.loadTasks(input.organizationId, input.now);
+    if (tasks >= DAILY_TASK_LIMIT) {
+      return { ok: false as const, reason: "limite" as const, message: PLAN_LIMIT_MESSAGE, metric: "TASK" as const };
+    }
   }
   const loadUsed = input.loadUsed ?? usedThisMonth;
   for (const check of input.checks) {
@@ -38,6 +46,7 @@ export async function callWithinPlan<T>(input: {
   checks: PlanCheck[];
   now?: Date;
   loadUsed?: UsedLoader;
+  loadTasks?: TaskLoader;
   call: () => Promise<T>;
 }): Promise<{ ok: true; value: T } | { ok: false; reason: "limite"; message: string }> {
   const room = await planRoom(input);

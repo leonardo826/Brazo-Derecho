@@ -61,12 +61,28 @@ function zonedMidnight(year: number, month: number, timeZone: string) {
   return new Date(guess.getTime() - offsetMs(first, timeZone));
 }
 
-export function dayStart(now = new Date(), timeZone = "America/Santiago") {
-  const map = zoneParts(now, timeZone);
-  const guess = new Date(Date.UTC(map.year, map.month - 1, map.day, 0, 0, 0));
+function zonedStart(year: number, month: number, day: number, timeZone: string) {
+  const guess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
   const first = new Date(guess.getTime() - offsetMs(guess, timeZone));
   return new Date(guess.getTime() - offsetMs(first, timeZone));
 }
+
+export function dayStart(now = new Date(), timeZone = "America/Santiago") {
+  const map = zoneParts(now, timeZone);
+  return zonedStart(map.year, map.month, map.day, timeZone);
+}
+
+export function dayBounds(now = new Date(), timeZone = "America/Santiago") {
+  const map = zoneParts(now, timeZone);
+  const start = zonedStart(map.year, map.month, map.day, timeZone);
+  const next = new Date(Date.UTC(map.year, map.month - 1, map.day + 1, 12, 0, 0));
+  const nextMap = zoneParts(next, timeZone);
+  const end = zonedStart(nextMap.year, nextMap.month, nextMap.day, timeZone);
+  return { start, end };
+}
+
+/** Tope diario de tareas completadas por empresa. La cuenta QA no entra en la cuenta. */
+export const DAILY_TASK_LIMIT = 30;
 
 export function monthBounds(now = new Date(), timeZone = "America/Santiago") {
   const map = zoneParts(now, timeZone);
