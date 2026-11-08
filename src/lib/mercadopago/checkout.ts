@@ -10,7 +10,8 @@ import {
 } from "@/lib/mercadopago/client";
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
-import { iabotChargeClp, trialEnd } from "@/lib/subscription";
+import { iabotChargeClp } from "@/lib/subscription";
+import { beginTrialIfIdle } from "@/lib/trial-guard";
 
 type PreapprovalResponse = { id?: string | number; init_point?: string };
 
@@ -74,34 +75,16 @@ export async function startMercadoPagoSubscription(
   }
   const now = input.now ?? new Date();
   const plan = planFor(input.agent);
-  const existing = await prisma.subscription.findUnique({
+  await beginTrialIfIdle({ organizationId: input.organizationId, agent: input.agent, now });
+  const subscription = await prisma.subscription.update({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
-  });
-  const open = Boolean(
-    existing &&
-      (existing.status === "TRIAL" || existing.status === "ACTIVE") &&
-      existing.periodEnd.getTime() > now.getTime(),
-  );
-  const subscription = await prisma.subscription.upsert({
-    where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
-    create: {
-      organizationId: input.organizationId,
-      agent: input.agent,
-      status: "TRIAL",
-      periodStart: now,
-      periodEnd: trialEnd(now),
+    data: {
       provider: "MERCADOPAGO",
       amountClp,
       mpPayerEmail: input.payerEmail,
     },
-    update: {
-      provider: "MERCADOPAGO",
-      amountClp,
-      mpPayerEmail: input.payerEmail,
-      ...(open ? {} : { status: "TRIAL" as const, periodStart: now, periodEnd: trialEnd(now) }),
-    },
   });
-  const previousId = existing?.mpPreapprovalId ?? null;
+  const previousId = subscription.mpPreapprovalId;
   const created = await mercadoPagoCall<PreapprovalResponse>(
     "/preapproval",
     {

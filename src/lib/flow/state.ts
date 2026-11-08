@@ -79,6 +79,25 @@ export function nextSubscriptionState(
   return null;
 }
 
+/**
+ * Un plan ACTIVE vigente no vuelve a TRIAL ni se le acorta el período.
+ * Cancelar o vencer sí se aplica: es un aviso del medio de pago, no la prueba.
+ */
+export function keepPaidPlan(
+  current: { status: SubStatus; periodStart: Date; periodEnd: Date },
+  next: { status: SubStatus; periodStart: Date; periodEnd: Date } | null,
+  now: Date,
+) {
+  if (!next) return null;
+  const paidOpen = current.status === "ACTIVE" && current.periodEnd.getTime() > now.getTime();
+  if (!paidOpen) return next;
+  if (next.status !== "ACTIVE" && next.status !== "CANCELED" && next.status !== "EXPIRED") return null;
+  if (next.status === "ACTIVE" && next.periodEnd.getTime() < current.periodEnd.getTime()) {
+    return { status: "ACTIVE" as const, periodStart: current.periodStart, periodEnd: current.periodEnd };
+  }
+  return next;
+}
+
 export type FlowPaymentView = {
   status?: unknown;
   amount?: unknown;

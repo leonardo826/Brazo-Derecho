@@ -62,6 +62,8 @@ vi.mock("@/lib/usage-store", () => ({
 vi.mock("@/lib/meter-store", () => ({
   recordModelCall: vi.fn(),
   recordCompletedTask: vi.fn(),
+  reserveDailyTask: vi.fn(async () => ({ ok: true, reservationId: null })),
+  releaseDailyTask: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -87,6 +89,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { loadHistory, saveCountedAssistantMessage, saveUserMessage } from "@/lib/chat/store";
 import { streamChatTurn } from "@/lib/chat/run";
+import { recordCompletedTask, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
 import { createXaiClient } from "@/lib/xai/client";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 
@@ -367,6 +370,10 @@ describe("turno de chat", () => {
     vi.mocked(loadHistory).mockReset();
     vi.mocked(createXaiClient).mockReset();
     vi.mocked(prismaCredentialRepo).mockClear();
+    vi.mocked(reserveDailyTask).mockReset();
+    vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: null });
+    vi.mocked(releaseDailyTask).mockReset();
+    vi.mocked(recordCompletedTask).mockReset();
     vi.mocked(saveUserMessage).mockImplementation(async ({ body }: { body: string }) => ({
       threadId: "thread-a",
       message: bubble("user-1", "USER", body),
@@ -493,6 +500,54 @@ describe("turno de chat", () => {
     expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain(IVA);
     expect(assistant && assistant.type === "message" ? assistant.message.body : "").not.toContain("Torre San Isidro, punto");
     expect(prismaCredentialRepo).not.toHaveBeenCalled();
+    expect(releaseDailyTask).not.toHaveBeenCalled();
+  });
+
+  test("si se corta la respuesta, se suelta la reserva y no queda la tarea", async () => {
+    vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: "reserva-chat" });
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: IVA }]);
+    const controller = new AbortController();
+    vi.mocked(createXaiClient).mockReturnValue({
+      async respond() {
+        throw new Error("no debía usar respond");
+      },
+      async *streamRespond() {
+        controller.abort();
+        yield { type: "delta" as const, text: "alcancé a empezar" };
+      },
+    });
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: IVA,
+      files: [],
+      signal: controller.signal,
+    })) {
+      events.push(event);
+    }
+    expect(releaseDailyTask).toHaveBeenCalledWith("reserva-chat");
+    expect(recordCompletedTask).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === "done")).toBe(false);
+  });
+
+  test("sin cupo diario no llama al modelo", async () => {
+    vi.mocked(reserveDailyTask).mockResolvedValue({ ok: false, reason: "limite" });
+    vi.mocked(loadHistory).mockResolvedValue([{ role: "user", text: IVA }]);
+    const events = [];
+    for await (const event of streamChatTurn({
+      organizationId: "org-a",
+      organizationName: "QA Interno",
+      actorUserId: "user-a",
+      text: IVA,
+      files: [],
+    })) {
+      events.push(event);
+    }
+    expect(events).toContainEqual({ type: "error", code: "limite" });
+    expect(createXaiClient).not.toHaveBeenCalled();
+    expect(releaseDailyTask).not.toHaveBeenCalled();
   });
 });
 

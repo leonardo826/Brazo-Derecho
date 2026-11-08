@@ -25,7 +25,7 @@ import {
 } from "@/lib/chat/store";
 import { modelFor } from "@/lib/catalog";
 import { logEvent } from "@/lib/log";
-import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { Prisma, prisma } from "@/lib/prisma";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
@@ -93,10 +93,17 @@ async function* streamModel(input: {
   const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
   const prepared = prepareModelTurn(history, vault);
   const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
+  const slot = await reserveDailyTask(input.organizationId);
+  if (!slot.ok) {
+    yield { type: "error", code: "limite" };
+    return;
+  }
+  let keepSlot = false;
   const client = createXaiClient();
   let raw = "";
   let final: XaiResponse | null = null;
   const gap = chunkGapMs(xaiUsesNetwork());
+  try {
   try {
     for await (const event of client.streamRespond({
       model: modelFor("ACCOUNTING"),
@@ -158,6 +165,7 @@ async function* streamModel(input: {
       organizationId: input.organizationId,
       model: response.model,
       synthetic: response.mocked,
+      reservationId: slot.reservationId,
     });
     return tx.agentMessage.create({
       data: {
@@ -172,6 +180,7 @@ async function* streamModel(input: {
     yield { type: "error", code: "limite" };
     return;
   }
+  keepSlot = true;
   yield { type: "message", message: toPublic(saved) };
   if (split.action) {
     const card = await saveConfirmation(input.threadId, split.action);
@@ -179,6 +188,9 @@ async function* streamModel(input: {
   }
   yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
   yield { type: "done" };
+  } finally {
+    if (!keepSlot) await releaseDailyTask(slot.reservationId);
+  }
 }
 
 async function* streamVaultForm(input: {

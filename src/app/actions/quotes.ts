@@ -10,7 +10,7 @@ import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { priceSchema, quoteRequestSchema, quoteStatusSchema, recordIdSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -140,12 +140,11 @@ export async function createQuoteAction(formData: FormData) {
         ? "1 línea no estaba en la lista activa y no se incluyó. No inventamos el precio."
         : `${built.rejected} líneas no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
       : "";
-  let gated: { ok: true; value: XaiResponse } | { ok: false; reason: "limite"; message: string };
+  let gated: { ok: true; value: XaiResponse; reservationId: string | null } | { ok: false; reason: "limite"; message: string };
   try {
     gated = await callWithinPlan({
       organizationId: session.organizationId,
       checks: [{ agent: "QUOTES", metric: "QUOTES", quantity: 1 }],
-      loadTasks: tasksToday,
       call: () =>
         createXaiClient().respond({
           model: modelFor("QUOTES"),
@@ -185,6 +184,7 @@ export async function createQuoteAction(formData: FormData) {
       organizationId: session.organizationId,
       model: response.model,
       synthetic: response.mocked,
+      reservationId: gated.reservationId,
     });
     const aggregate = await tx.quote.aggregate({
       where: { organizationId: session.organizationId },
@@ -214,13 +214,17 @@ export async function createQuoteAction(formData: FormData) {
     return quote.id;
   });
   } catch (error) {
+    await releaseDailyTask(gated.reservationId);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       redirect("/panel/cotizador?error=datos");
     }
     throw error;
   }
 
-  if (!quoteId) redirect("/panel/cotizador?error=limite");
+  if (!quoteId) {
+    await releaseDailyTask(gated.reservationId);
+    redirect("/panel/cotizador?error=limite");
+  }
   redirect(`/panel/cotizador/${quoteId}?ok=cotizacion`);
 }
 

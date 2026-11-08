@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { subscriptionForMercadoPago } from "@/lib/mercadopago/state";
-import { DAILY_TASK_LIMIT } from "@/lib/usage";
+import { DAILY_TASK_LIMIT, dayBounds } from "@/lib/usage";
 import { trialRestart } from "@/lib/subscription";
 
 const now = new Date("2026-11-08T15:00:00.000Z");
@@ -55,28 +55,51 @@ describe("el aviso de pago no cruza empresas", () => {
 });
 
 describe("tope de 30 tareas al día", () => {
-  test("al llegar a 30 no llama al modelo", async () => {
+  test("la reserva llena no llama al modelo", async () => {
     const call = vi.fn(async () => "no");
     const result = await callWithinPlan({
       organizationId: "org",
       checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
       loadUsed: async () => 1,
-      loadTasks: async () => DAILY_TASK_LIMIT,
+      reserveTask: async () => ({ ok: false, reason: "limite" }),
       call,
     });
     expect(result).toEqual({ ok: false, reason: "limite", message: PLAN_LIMIT_MESSAGE });
     expect(call).not.toHaveBeenCalled();
+    expect(DAILY_TASK_LIMIT).toBe(30);
   });
 
-  test("con 29 tareas del día la llamada sigue", async () => {
-    const call = vi.fn(async () => "listo");
-    const result = await callWithinPlan({
-      organizationId: "org",
-      checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
-      loadUsed: async () => 1,
-      loadTasks: async () => DAILY_TASK_LIMIT - 1,
-      call,
-    });
-    expect(result).toEqual({ ok: true, value: "listo" });
+  test("si el modelo falla, se suelta la reserva", async () => {
+    const releaseTask = vi.fn(async () => {});
+    await expect(
+      callWithinPlan({
+        organizationId: "org",
+        checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
+        loadUsed: async () => 1,
+        reserveTask: async () => ({ ok: true, reservationId: "reserva-1" }),
+        releaseTask,
+        call: async () => {
+          throw new Error("corte");
+        },
+      }),
+    ).rejects.toThrow("corte");
+    expect(releaseTask).toHaveBeenCalledWith("reserva-1");
+  });
+
+  test("el día de Chile parte a medianoche y el siguiente empieza donde termina", () => {
+    const samples = [
+      new Date("2026-01-15T15:00:00.000Z"),
+      new Date("2026-04-05T02:30:00.000Z"),
+      new Date("2026-09-06T03:30:00.000Z"),
+      new Date("2026-11-08T02:59:00.000Z"),
+    ];
+    for (const now of samples) {
+      const bounds = dayBounds(now);
+      expect(bounds.start.getTime()).toBeLessThanOrEqual(now.getTime());
+      expect(bounds.end.getTime()).toBeGreaterThan(now.getTime());
+      const hours = (bounds.end.getTime() - bounds.start.getTime()) / 3_600_000;
+      expect([23, 24, 25]).toContain(hours);
+      expect(dayBounds(bounds.end).start.getTime()).toBe(bounds.end.getTime());
+    }
   });
 });

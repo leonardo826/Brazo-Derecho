@@ -7,7 +7,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { dayStart } from "@/lib/usage";
-import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -43,12 +43,12 @@ export async function runWhatsappTurn(input: {
   });
 
   let response;
+  let reservationId: string | null = null;
   try {
     const gated = await callWithinPlan({
       organizationId: input.organizationId,
       checks: [{ agent: "WHATSAPP", metric: "RESPONSES", quantity: 1 }],
       now: input.now,
-      loadTasks: tasksToday,
       call: () =>
         createXaiClient().respond({
           model: modelFor("WHATSAPP"),
@@ -61,6 +61,7 @@ export async function runWhatsappTurn(input: {
     });
     if (!gated.ok) return { ok: false as const, reason: "limite" as const };
     response = gated.value;
+    reservationId = gated.reservationId;
   } catch {
     return { ok: false as const, reason: "ia" as const };
   }
@@ -89,6 +90,7 @@ export async function runWhatsappTurn(input: {
         model: response.model,
         synthetic: response.mocked,
         now: input.now,
+        reservationId,
       });
       await tx.message.create({
         data: {
@@ -109,8 +111,12 @@ export async function runWhatsappTurn(input: {
       });
       return { ok: true as const };
     });
-    if (!saved.ok) return { ok: false as const, reason: "limite" as const };
+    if (!saved.ok) {
+      await releaseDailyTask(reservationId);
+      return { ok: false as const, reason: "limite" as const };
+    }
   } catch (error) {
+    await releaseDailyTask(reservationId);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { ok: true as const, duplicate: true as const, text: "" };
     }

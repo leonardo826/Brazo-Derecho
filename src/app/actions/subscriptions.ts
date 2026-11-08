@@ -12,7 +12,8 @@ import { getPaymentProvider } from "@/lib/payments/registry";
 import { prisma } from "@/lib/prisma";
 import { organizationIsQa, QaSinCobroError } from "@/lib/qa-account";
 import { requireSession } from "@/lib/session";
-import { iabotChargeClp, trialEnd, trialRestart } from "@/lib/subscription";
+import { beginTrialIfIdle } from "@/lib/trial-guard";
+import { iabotChargeClp } from "@/lib/subscription";
 import { paymentProviderSchema } from "@/lib/validation";
 
 export async function activateTrialAction(formData: FormData) {
@@ -67,37 +68,18 @@ export async function activateTrialAction(formData: FormData) {
     redirect(`${back}?ok=flow`);
   }
 
-  const now = new Date();
-  const existing = await prisma.subscription.findUnique({
-    where: { organizationId_agent: { organizationId: session.organizationId, agent: agentRaw } },
+  const gate = await beginTrialIfIdle({
+    organizationId: session.organizationId,
+    agent: agentRaw,
   });
-  if (trialRestart(existing, now) === "keep") {
-    redirect(withNotice(back, "ok", existing?.status === "ACTIVE" ? "ya_activa" : "prueba_vigente"));
+  if (provider === "mercadopago" && gate === "opened") {
+    await prisma.subscription.updateMany({
+      where: { organizationId: session.organizationId, agent: agentRaw, status: "TRIAL" },
+      data: { provider: "MERCADOPAGO", mpPayerEmail: session.email },
+    });
   }
-  const mercadoPagoChoice =
-    provider === "mercadopago" ? { provider: "MERCADOPAGO" as const, mpPayerEmail: session.email } : {};
-  await prisma.subscription.upsert({
-    where: {
-      organizationId_agent: {
-        organizationId: session.organizationId,
-        agent: agentRaw,
-      },
-    },
-    create: {
-      organizationId: session.organizationId,
-      agent: agentRaw,
-      status: "TRIAL",
-      periodStart: now,
-      periodEnd: trialEnd(now),
-      ...mercadoPagoChoice,
-    },
-    update: {
-      status: "TRIAL",
-      periodStart: now,
-      periodEnd: trialEnd(now),
-      ...mercadoPagoChoice,
-    },
-  });
+  if (gate === "kept-active") redirect(withNotice(back, "ok", "ya_activa"));
+  if (gate === "kept-trial") redirect(withNotice(back, "ok", "prueba_vigente"));
   redirect(`${back}?ok=prueba${guia}`);
 }
 

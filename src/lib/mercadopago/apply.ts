@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
-import { FLOW_PAYMENT, nextSubscriptionState, type SubStatus } from "@/lib/flow/state";
+import { lockTransaction, trialLockName } from "@/lib/db-lock";
+import { FLOW_PAYMENT, keepPaidPlan, nextSubscriptionState, type SubStatus } from "@/lib/flow/state";
 import {
   billingNoticeKeys,
   mercadoPagoReferences,
@@ -24,11 +25,6 @@ async function locateSubscription(refs: ReturnType<typeof mercadoPagoReferences>
   return byReference?.id === chosen.id ? byReference : byPreapproval;
 }
 
-async function rememberNotices(keys: string[], subscriptionId: string) {
-  if (keys.length === 0) return;
-  await prisma.mercadoPagoNotice.createMany({ data: keys.map((noticeKey) => ({ noticeKey, subscriptionId })) });
-}
-
 export async function applyMercadoPagoResource(input: {
   topic: string;
   dataId: string;
@@ -37,60 +33,65 @@ export async function applyMercadoPagoResource(input: {
 }) {
   const signal = mercadoPagoToFlowSignal(input.topic, input.resource);
   const refs = mercadoPagoReferences(input.topic, input.resource);
-  const subscription = await locateSubscription(refs);
-  if (!subscription || !signal) return { repeated: false, status: null as SubStatus | null, updated: false };
+  const located = await locateSubscription(refs);
+  if (!located || !signal) return { repeated: false, status: null as SubStatus | null, updated: false };
 
   const now = input.now ?? new Date();
   const keys = billingNoticeKeys(input.topic, input.dataId, input.resource);
-  if (keys.length > 0) {
-    const seen = await prisma.mercadoPagoNotice.findFirst({ where: { noticeKey: { in: keys } } });
-    if (seen) return { repeated: true, status: subscription.status as SubStatus, updated: false };
-  }
-
-  // Con prueba gratis MP autoriza la suscripción sin cobrar: la prueba sigue hasta su fin.
-  const trialNow = subscription.status === "TRIAL" && subscription.periodEnd.getTime() > now.getTime();
-  if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && trialNow) {
-    await prisma.subscription.update({
-      where: { id: subscription.id },
-      data: {
-        provider: "MERCADOPAGO",
-        mpPreapprovalId: refs.preapprovalId || subscription.mpPreapprovalId,
-        mpPayerEmail: refs.payerEmail || subscription.mpPayerEmail,
-      },
-    });
-    return { repeated: false, status: subscription.status as SubStatus, updated: false };
-  }
-
-  const activeNow = subscription.status === "ACTIVE" && subscription.periodEnd.getTime() > now.getTime();
-  if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && activeNow) {
-    return { repeated: true, status: subscription.status as SubStatus, updated: false };
-  }
-
-  if (signal.paymentStatus === FLOW_PAYMENT.PAID && keys.length > 0 && activeNow) {
-    const prior = await prisma.mercadoPagoNotice.count({
-      where: { subscriptionId: subscription.id, noticeKey: { startsWith: "pago:" } },
-    });
-    if (prior === 0) {
-      try {
-        await rememberNotices(keys, subscription.id);
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-          return { repeated: true, status: subscription.status as SubStatus, updated: false };
-        }
-        throw error;
-      }
-      return { repeated: false, status: subscription.status as SubStatus, updated: false };
-    }
-  }
-
-  const next = nextSubscriptionState(
-    { status: subscription.status as SubStatus, periodEnd: subscription.periodEnd },
-    signal,
-    now,
-  );
-
   try {
-    await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx) => {
+      await lockTransaction(tx, trialLockName(located.organizationId, located.agent));
+      const subscription = await tx.subscription.findUnique({ where: { id: located.id } });
+      if (!subscription) return { repeated: false, status: null as SubStatus | null, updated: false };
+      if (keys.length > 0) {
+        const seen = await tx.mercadoPagoNotice.findFirst({ where: { noticeKey: { in: keys } } });
+        if (seen) return { repeated: true, status: subscription.status as SubStatus, updated: false };
+      }
+
+      const trialNow = subscription.status === "TRIAL" && subscription.periodEnd.getTime() > now.getTime();
+      if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && trialNow) {
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            provider: "MERCADOPAGO",
+            mpPreapprovalId: refs.preapprovalId || subscription.mpPreapprovalId,
+            mpPayerEmail: refs.payerEmail || subscription.mpPayerEmail,
+          },
+        });
+        return { repeated: false, status: subscription.status as SubStatus, updated: false };
+      }
+
+      const activeNow = subscription.status === "ACTIVE" && subscription.periodEnd.getTime() > now.getTime();
+      if (signal.paymentStatus === FLOW_PAYMENT.PAID && input.topic === "subscription_preapproval" && activeNow) {
+        return { repeated: true, status: subscription.status as SubStatus, updated: false };
+      }
+
+      if (signal.paymentStatus === FLOW_PAYMENT.PAID && keys.length > 0 && activeNow) {
+        const prior = await tx.mercadoPagoNotice.count({
+          where: { subscriptionId: subscription.id, noticeKey: { startsWith: "pago:" } },
+        });
+        if (prior === 0) {
+          await tx.mercadoPagoNotice.createMany({
+            data: keys.map((noticeKey) => ({ noticeKey, subscriptionId: subscription.id })),
+          });
+          return { repeated: false, status: subscription.status as SubStatus, updated: false };
+        }
+      }
+
+      const next = keepPaidPlan(
+        subscription,
+        nextSubscriptionState(
+          { status: subscription.status as SubStatus, periodEnd: subscription.periodEnd },
+          signal,
+          now,
+        ),
+        now,
+      );
+      if (keys.length > 0) {
+        await tx.mercadoPagoNotice.createMany({
+          data: keys.map((noticeKey) => ({ noticeKey, subscriptionId: subscription.id })),
+        });
+      }
       if (next) {
         await tx.subscription.update({
           where: { id: subscription.id },
@@ -104,18 +105,13 @@ export async function applyMercadoPagoResource(input: {
           },
         });
       }
-      if (keys.length > 0) {
-        await tx.mercadoPagoNotice.createMany({
-          data: keys.map((noticeKey) => ({ noticeKey, subscriptionId: subscription.id })),
-        });
-      }
+      return { repeated: false, status: (next?.status ?? subscription.status) as SubStatus, updated: Boolean(next) };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { repeated: true, status: subscription.status as SubStatus, updated: false };
+      const fresh = await prisma.subscription.findUnique({ where: { id: located.id } });
+      return { repeated: true, status: (fresh?.status as SubStatus | undefined) ?? null, updated: false };
     }
     throw error;
   }
-
-  return { repeated: false, status: next?.status ?? null, updated: Boolean(next) };
 }

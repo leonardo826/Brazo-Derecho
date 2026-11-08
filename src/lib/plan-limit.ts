@@ -1,6 +1,7 @@
 import { limitFor, type AgentId, type MetricId } from "@/lib/catalog";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/plan-copy";
-import { DAILY_TASK_LIMIT, evaluateLimit } from "@/lib/usage";
+import { releaseDailyTask, reserveDailyTask, type TaskSlot } from "@/lib/meter-store";
+import { evaluateLimit } from "@/lib/usage";
 import { usedThisMonth } from "@/lib/usage-store";
 
 export type PlanCheck = {
@@ -10,25 +11,17 @@ export type PlanCheck = {
 };
 
 type UsedLoader = (organizationId: string, metric: MetricId, now?: Date) => Promise<number>;
-type TaskLoader = (organizationId: string, now?: Date) => Promise<number>;
+type ReserveTask = (organizationId: string, now?: Date) => Promise<TaskSlot>;
+type ReleaseTask = (reservationId: string | null | undefined) => Promise<void>;
 
-export async function planRoom(
-  input: {
-    organizationId: string;
-    checks: PlanCheck[];
-    now?: Date;
-    loadUsed?: UsedLoader;
-    loadTasks?: TaskLoader;
-  },
-) {
+export async function planRoom(input: {
+  organizationId: string;
+  checks: PlanCheck[];
+  now?: Date;
+  loadUsed?: UsedLoader;
+}) {
   if (input.checks.length === 0) {
     throw new Error("Hay que indicar el cupo del plan antes de llamar a xAI");
-  }
-  if (input.loadTasks) {
-    const tasks = await input.loadTasks(input.organizationId, input.now);
-    if (tasks >= DAILY_TASK_LIMIT) {
-      return { ok: false as const, reason: "limite" as const, message: PLAN_LIMIT_MESSAGE, metric: "TASK" as const };
-    }
   }
   const loadUsed = input.loadUsed ?? usedThisMonth;
   for (const check of input.checks) {
@@ -46,10 +39,23 @@ export async function callWithinPlan<T>(input: {
   checks: PlanCheck[];
   now?: Date;
   loadUsed?: UsedLoader;
-  loadTasks?: TaskLoader;
+  reserveTask?: ReserveTask;
+  releaseTask?: ReleaseTask;
   call: () => Promise<T>;
-}): Promise<{ ok: true; value: T } | { ok: false; reason: "limite"; message: string }> {
+}): Promise<
+  { ok: true; value: T; reservationId: string | null } | { ok: false; reason: "limite"; message: string }
+> {
   const room = await planRoom(input);
   if (!room.ok) return { ok: false, reason: "limite", message: room.message };
-  return { ok: true, value: await input.call() };
+  const reserve = input.reserveTask ?? reserveDailyTask;
+  const release = input.releaseTask ?? releaseDailyTask;
+  const slot = await reserve(input.organizationId, input.now);
+  if (!slot.ok) return { ok: false, reason: "limite", message: PLAN_LIMIT_MESSAGE };
+  try {
+    const value = await input.call();
+    return { ok: true, value, reservationId: slot.reservationId };
+  } catch (error) {
+    await release(slot.reservationId);
+    throw error;
+  }
 }

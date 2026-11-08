@@ -9,7 +9,7 @@ import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
 import { requireSession } from "@/lib/session";
-import { recordCompletedTask, recordModelCall, tasksToday } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { brandSchema, postBatchSchema } from "@/lib/validation";
 import { createXaiClient } from "@/lib/xai/client";
@@ -58,6 +58,7 @@ export async function generatePostsAction(formData: FormData) {
 
   const client = createXaiClient();
   const drafts: ReturnType<typeof toMarketingRecord>[] = [];
+  const held: (string | null)[] = [];
   let textTokens = { ...EMPTY_USAGE };
   let imageTokens = { ...EMPTY_USAGE };
   let textModel: string = modelFor("MARKETING");
@@ -67,14 +68,13 @@ export async function generatePostsAction(formData: FormData) {
     for (let index = 0; index < count; index += 1) {
       const checks: PlanCheck[] = [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }];
       if (withImage) checks.push({ agent: "MARKETING", metric: "IMAGES", quantity: 1 });
-      const room = await planRoom({ organizationId: session.organizationId, checks, loadTasks: tasksToday });
+      const room = await planRoom({ organizationId: session.organizationId, checks });
       if (!room.ok) break;
 
       const channel = channelFor(index);
       const text = await callWithinPlan({
         organizationId: session.organizationId,
         checks: [{ agent: "MARKETING", metric: "TEXTS", quantity: 1 }],
-        loadTasks: tasksToday,
         call: () =>
           client.respond({
             model: textModel,
@@ -93,6 +93,7 @@ export async function generatePostsAction(formData: FormData) {
           }),
       });
       if (!text.ok) break;
+      held.push(text.reservationId);
       textModel = text.value.model;
       synthetic = text.value.mocked;
       textTokens = addUsage(textTokens, text.value.usage);
@@ -103,7 +104,6 @@ export async function generatePostsAction(formData: FormData) {
         const image = await callWithinPlan({
           organizationId: session.organizationId,
           checks: [{ agent: "MARKETING", metric: "IMAGES", quantity: 1 }],
-          loadTasks: tasksToday,
           call: () =>
             client.respond({
               model: imageModel,
@@ -114,12 +114,16 @@ export async function generatePostsAction(formData: FormData) {
               maxOutputTokens: 200,
             }),
         });
-        if (!image.ok) break;
+        if (!image.ok) {
+          await releaseDailyTask(held.pop());
+          break;
+        }
         imageModel = image.value.model;
         imageTokens = addUsage(imageTokens, image.value.usage);
         await recordModelCall({ organizationId: session.organizationId, response: image.value });
         imagePrompt = image.value.outputText;
         imageSvg = draftImageSvg(channel, imagePrompt);
+        held.push(image.reservationId);
       }
       drafts.push(
         toMarketingRecord({
@@ -132,10 +136,14 @@ export async function generatePostsAction(formData: FormData) {
       );
     }
   } catch {
+    for (const id of held) await releaseDailyTask(id);
     redirect("/panel/marketing?error=ia");
   }
 
-  if (drafts.length < 1) redirect("/panel/marketing?error=limite");
+  if (drafts.length < 1) {
+    for (const id of held) await releaseDailyTask(id);
+    redirect("/panel/marketing?error=limite");
+  }
 
   const saved = await prisma.$transaction(async (tx) => {
     const texts = await reserveUsage(tx, {
@@ -147,11 +155,14 @@ export async function generatePostsAction(formData: FormData) {
       model: textModel,
     });
     if (!texts.ok) return false;
-    await recordCompletedTask(tx, {
-      organizationId: session.organizationId,
-      model: textModel,
-      synthetic,
-    });
+    for (const reservationId of held) {
+      await recordCompletedTask(tx, {
+        organizationId: session.organizationId,
+        model: textModel,
+        synthetic,
+        reservationId,
+      });
+    }
     if (withImage) {
       const images = await reserveUsage(tx, {
         organizationId: session.organizationId,
@@ -172,6 +183,9 @@ export async function generatePostsAction(formData: FormData) {
     return true;
   });
 
-  if (!saved) redirect("/panel/marketing?error=limite");
+  if (!saved) {
+    for (const id of held) await releaseDailyTask(id);
+    redirect("/panel/marketing?error=limite");
+  }
   redirect("/panel/marketing?ok=borradores");
 }
