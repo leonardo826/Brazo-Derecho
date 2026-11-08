@@ -885,7 +885,7 @@ export function AgentChat({
           ) : null}
           <button className="composer-icon send" type="submit" disabled={!open || (!composer.trim() && files.length === 0)}>
             <SendIcon />
-            <span className="sr-only">{pending ? "Enviar a la cola" : "Enviar"}</span>
+            <span className="sr-only">Enviar</span>
           </button>
         </div>
         <p className="composer-note">No compartas claves del SII ni bancarias: esas van en la Bóveda.</p>
