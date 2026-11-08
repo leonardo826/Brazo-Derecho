@@ -7,7 +7,7 @@ import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { dayStart } from "@/lib/usage";
-import { recordCompletedTask, recordModelCall } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { reserveUsage } from "@/lib/usage-store";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -43,6 +43,14 @@ export async function runWhatsappTurn(input: {
   });
 
   let response;
+  let text = "";
+  let reservationId: string | null = null;
+  let slotOpen = false;
+  async function releaseSlot() {
+    if (!slotOpen) return;
+    slotOpen = false;
+    await releaseDailyTask(reservationId);
+  }
   try {
     const gated = await callWithinPlan({
       organizationId: input.organizationId,
@@ -60,18 +68,19 @@ export async function runWhatsappTurn(input: {
     });
     if (!gated.ok) return { ok: false as const, reason: "limite" as const };
     response = gated.value;
+    reservationId = gated.reservationId;
+    slotOpen = true;
   } catch {
     return { ok: false as const, reason: "ia" as const };
   }
 
-  await recordModelCall({
-    organizationId: input.organizationId,
-    response,
-    now: input.now,
-  });
-
-  const text = withAssistantDisclosure(response.outputText, input.organizationName, priorToday === 0);
   try {
+    text = withAssistantDisclosure(response.outputText, input.organizationName, priorToday === 0);
+    await recordModelCall({
+      organizationId: input.organizationId,
+      response,
+      now: input.now,
+    });
     const saved = await prisma.$transaction(async (tx) => {
       const usage = await reserveUsage(tx, {
         organizationId: input.organizationId,
@@ -88,6 +97,7 @@ export async function runWhatsappTurn(input: {
         model: response.model,
         synthetic: response.mocked,
         now: input.now,
+        reservationId,
       });
       await tx.message.create({
         data: {
@@ -108,8 +118,13 @@ export async function runWhatsappTurn(input: {
       });
       return { ok: true as const };
     });
-    if (!saved.ok) return { ok: false as const, reason: "limite" as const };
+    if (!saved.ok) {
+      await releaseSlot();
+      return { ok: false as const, reason: "limite" as const };
+    }
+    slotOpen = false;
   } catch (error) {
+    await releaseSlot();
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { ok: true as const, duplicate: true as const, text: "" };
     }

@@ -1,7 +1,8 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { AgentId } from "@/lib/catalog";
+import { lockTransaction, trialLockName } from "@/lib/db-lock";
 import { flowCall } from "@/lib/flow/client";
-import { flowTargetFromPayment, nextSubscriptionState, type FlowPaymentView, type SubStatus } from "@/lib/flow/state";
+import { flowTargetFromPayment, keepPaidPlan, nextSubscriptionState, type FlowPaymentView, type SubStatus } from "@/lib/flow/state";
 import { prisma } from "@/lib/prisma";
 
 type SubscriptionRow = {
@@ -44,18 +45,7 @@ async function locateSubscription(target: ReturnType<typeof flowTargetFromPaymen
       });
     }
   }
-  if (target.payer && target.agent) {
-    const user = await prisma.user.findUnique({
-      where: { email: target.payer },
-      include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
-    });
-    const organizationId = user?.memberships[0]?.organizationId;
-    if (organizationId) {
-      return prisma.subscription.findUnique({
-        where: { organizationId_agent: { organizationId, agent: target.agent } },
-      });
-    }
-  }
+  // El correo del pagador no elige empresa: una persona puede tener más de una.
   return null;
 }
 
@@ -100,41 +90,56 @@ export async function applyFlowToken(token: string, now = new Date()) {
     agent: target.agent,
   });
 
-  const next = subscription
-    ? nextSubscriptionState(
-        { status: subscription.status as SubStatus, periodEnd: subscription.periodEnd },
-        {
-          paymentStatus: target.paymentStatus,
-          subscriptionStatus: remote ? Number(remote.status) : null,
-          morose: remote ? Number(remote.morose) : null,
-          periodEnd: parseFlowDate(remote?.period_end) ?? parseFlowDate(remote?.trial_end),
-        },
-        now,
-      )
-    : null;
+  const signal = {
+    paymentStatus: target.paymentStatus,
+    subscriptionStatus: remote ? Number(remote.status) : null,
+    morose: remote ? Number(remote.morose) : null,
+    periodEnd: parseFlowDate(remote?.period_end) ?? parseFlowDate(remote?.trial_end),
+  };
 
+  let repeated = false;
+  let updated = false;
   try {
     await prisma.$transaction(async (tx) => {
-      if (subscription && next) {
+      if (subscription) await lockTransaction(tx, trialLockName(subscription.organizationId, subscription.agent));
+      const seen = await tx.flowNotice.findUnique({ where: { token } });
+      if (seen) {
+        repeated = true;
+        return;
+      }
+      const fresh = subscription ? await tx.subscription.findUnique({ where: { id: subscription.id } }) : null;
+      const next = fresh
+        ? keepPaidPlan(
+            fresh,
+            nextSubscriptionState(
+              { status: fresh.status as SubStatus, periodEnd: fresh.periodEnd },
+              signal,
+              now,
+            ),
+            now,
+          )
+        : null;
+      if (fresh && next) {
         await tx.subscription.update({
-          where: { id: subscription.id },
+          where: { id: fresh.id },
           data: {
             status: next.status,
             periodStart: next.periodStart,
             periodEnd: next.periodEnd,
-            flowSubscriptionId: target.subscriptionId || subscription.flowSubscriptionId,
-            flowPlanId: target.planId || subscription.flowPlanId,
-            amountClp: target.amount ?? subscription.amountClp,
+            flowSubscriptionId: target.subscriptionId || fresh.flowSubscriptionId,
+            flowPlanId: target.planId || fresh.flowPlanId,
+            amountClp: target.amount ?? fresh.amountClp,
           },
         });
+        updated = true;
       }
       await tx.flowNotice.create({
         data: {
           token,
           flowOrder: target.flowOrder,
           paymentStatus: target.paymentStatus,
-          organizationId: subscription?.organizationId,
-          agent: (subscription?.agent ?? target.agent) as AgentId | null,
+          organizationId: fresh?.organizationId ?? subscription?.organizationId,
+          agent: (fresh?.agent ?? subscription?.agent ?? target.agent) as AgentId | null,
         },
       });
     });
@@ -145,11 +150,13 @@ export async function applyFlowToken(token: string, now = new Date()) {
     throw error;
   }
 
+  if (repeated) return { ok: true as const, repeated: true };
+
   return {
     ok: true as const,
     repeated: false,
     kind: "pago" as const,
-    updated: Boolean(next),
+    updated,
     organizationId: subscription?.organizationId ?? null,
     agent: subscription?.agent ?? target.agent,
   };

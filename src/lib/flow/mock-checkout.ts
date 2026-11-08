@@ -4,6 +4,7 @@ import { planFor } from "@/lib/flow/plans";
 import { addOneMonth } from "@/lib/flow/state";
 import { prisma } from "@/lib/prisma";
 import { organizationIsQa } from "@/lib/qa-account";
+import { iabotChargeClp } from "@/lib/subscription";
 
 export { canActivateMockPlan } from "@/lib/flow/mock-plan";
 
@@ -23,7 +24,7 @@ export async function activateMockPlan(organizationId: string, agent: AgentId, n
       periodStart: now,
       periodEnd: addOneMonth(now),
       flowPlanId: plan.planId,
-      amountClp: plan.amountClp,
+      amountClp: iabotChargeClp(),
       flowSubscriptionId: null,
     },
   });

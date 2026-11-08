@@ -5,6 +5,7 @@ import { flowRedirectUrl, planFor, trialDaysToAsk } from "@/lib/flow/plans";
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
 import { TRIAL_DAYS } from "@/lib/subscription";
+import { beginTrialIfIdle } from "@/lib/trial-guard";
 
 type CustomerResponse = { customerId?: string };
 type PlanResponse = { planId?: string };
@@ -112,27 +113,17 @@ export async function startFlowSubscription(input: {
         : existing && existing.periodEnd.getTime() > now.getTime()
           ? existing.periodEnd
           : now;
-    const status = trialDays > 0 ? "TRIAL" : existing && existing.periodEnd.getTime() > now.getTime() ? existing.status : "EXPIRED";
-    await prisma.subscription.upsert({
-      where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
-      create: {
+    if (trialDays > 0) {
+      await beginTrialIfIdle({
         organizationId: input.organizationId,
         agent: input.agent,
-        status,
-        periodStart: now,
+        now,
         periodEnd,
-        flowSubscriptionId,
-        flowPlanId: plan.planId,
-        amountClp: plan.amountClp,
-      },
-      update: {
-        status,
-        periodStart: trialDays > 0 ? now : existing?.periodStart ?? now,
-        periodEnd,
-        flowSubscriptionId,
-        flowPlanId: plan.planId,
-        amountClp: plan.amountClp,
-      },
+      });
+    }
+    await prisma.subscription.update({
+      where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
+      data: { flowSubscriptionId, flowPlanId: plan.planId, amountClp: plan.amountClp },
     });
   } else {
     await prisma.subscription.update({

@@ -74,7 +74,7 @@ describe("salud y pago de prueba", () => {
       where: { organizationId_agent: { organizationId: org, agent: "WHATSAPP" } },
     });
     expect(own.status).toBe("ACTIVE");
-    expect(own.amountClp).toBe(47588);
+    expect(own.amountClp).toBe(63546);
     expect(own.flowPlanId).toBe("brazo-whatsapp");
     expect(own.flowSubscriptionId).toBeNull();
     expect(own.periodEnd.getTime()).toBeGreaterThan(trialEnd(now).getTime());

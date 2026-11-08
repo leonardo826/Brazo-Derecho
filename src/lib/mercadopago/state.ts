@@ -75,6 +75,22 @@ export function mercadoPagoToFlowSignal(topic: string, resource: unknown): FlowS
   return null;
 }
 
+type SubscriptionRef = { id: string; mpPreapprovalId: string | null };
+
+/** Si la referencia y el preapproval apuntan a suscripciones distintas, no se toca ninguna. */
+export function subscriptionForMercadoPago(input: {
+  byReference: SubscriptionRef | null;
+  byPreapproval: SubscriptionRef | null;
+  preapprovalId: string;
+}) {
+  const { byReference, byPreapproval, preapprovalId } = input;
+  if (byReference && byPreapproval && byReference.id !== byPreapproval.id) return null;
+  const chosen = byReference ?? byPreapproval;
+  if (!chosen) return null;
+  if (chosen.mpPreapprovalId && preapprovalId && chosen.mpPreapprovalId !== preapprovalId) return null;
+  return chosen;
+}
+
 export function mercadoPagoReferences(topic: string, resource: unknown) {
   const record = asRecord(resource);
   const payment = asRecord(record.payment);

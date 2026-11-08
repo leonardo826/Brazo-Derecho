@@ -61,12 +61,46 @@ function zonedMidnight(year: number, month: number, timeZone: string) {
   return new Date(guess.getTime() - offsetMs(first, timeZone));
 }
 
+function dateKey(year: number, month: number, day: number) {
+  return year * 10_000 + month * 100 + day;
+}
+
+function localKey(date: Date, timeZone: string) {
+  const map = zoneParts(date, timeZone);
+  return dateKey(map.year, map.month, map.day);
+}
+
+/** Primer instante del día civil. Si medianoche no existe (cambio de hora), usa la hora que sí existe. */
+function zonedStart(year: number, month: number, day: number, timeZone: string) {
+  const target = dateKey(year, month, day);
+  let t = Date.UTC(year, month - 1, day - 1, 12, 0, 0);
+  for (let step = 0; step < 24 * 8 && localKey(new Date(t), timeZone) < target; step += 1) {
+    t += 15 * 60 * 1000;
+  }
+  while (localKey(new Date(t - 60_000), timeZone) >= target) t -= 60_000;
+  return new Date(t);
+}
+
+function nextDate(year: number, month: number, day: number) {
+  const utc = new Date(Date.UTC(year, month - 1, day + 1));
+  return { year: utc.getUTCFullYear(), month: utc.getUTCMonth() + 1, day: utc.getUTCDate() };
+}
+
 export function dayStart(now = new Date(), timeZone = "America/Santiago") {
   const map = zoneParts(now, timeZone);
-  const guess = new Date(Date.UTC(map.year, map.month - 1, map.day, 0, 0, 0));
-  const first = new Date(guess.getTime() - offsetMs(guess, timeZone));
-  return new Date(guess.getTime() - offsetMs(first, timeZone));
+  return zonedStart(map.year, map.month, map.day, timeZone);
 }
+
+export function dayBounds(now = new Date(), timeZone = "America/Santiago") {
+  const map = zoneParts(now, timeZone);
+  const start = zonedStart(map.year, map.month, map.day, timeZone);
+  const next = nextDate(map.year, map.month, map.day);
+  const end = zonedStart(next.year, next.month, next.day, timeZone);
+  return { start, end };
+}
+
+/** Tope diario de tareas completadas por empresa. La cuenta QA no entra en la cuenta. */
+export const DAILY_TASK_LIMIT = 30;
 
 export function monthBounds(now = new Date(), timeZone = "America/Santiago") {
   const map = zoneParts(now, timeZone);

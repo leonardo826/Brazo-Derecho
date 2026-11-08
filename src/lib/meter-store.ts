@@ -11,7 +11,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import type { TokenUsage } from "@/lib/pricing";
 import { organizationIsQa, qaOrganizationIdSet, recordsBillingUsage } from "@/lib/qa-account";
-import { monthBounds, monthKey } from "@/lib/usage";
+import { lockTransaction } from "@/lib/db-lock";
+import { DAILY_TASK_LIMIT, dayBounds, monthBounds, monthKey } from "@/lib/usage";
 
 export type MeterWrite = {
   organizationId: string;
@@ -67,6 +68,66 @@ export async function applyMeter(tx: Prisma.TransactionClient, input: MeterWrite
   return { yearMonth, ...delta };
 }
 
+/** Tareas del día en Chile. La cuenta QA devuelve 0 y no se le corta el piloto. */
+export async function tasksToday(organizationId: string, now = new Date()) {
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) return 0;
+  const { start, end } = dayBounds(now);
+  return prisma.usageMeter.count({
+    where: { organizationId, kind: "TASK", createdAt: { gte: start, lt: end } },
+  });
+}
+
+export type TaskSlot =
+  | { ok: true; reservationId: string | null }
+  | { ok: false; reason: "limite" };
+
+/**
+ * Reserva una tarea antes de llamar al modelo. El conteo y el insert van en la
+ * misma transacción, con candado por empresa y día de Chile. La cuenta QA no reserva.
+ */
+export async function reserveDailyTask(organizationId: string, now = new Date()): Promise<TaskSlot> {
+  if (!recordsBillingUsage(await organizationIsQa(organizationId))) {
+    return { ok: true, reservationId: null };
+  }
+  const { start, end } = dayBounds(now);
+  return prisma.$transaction(async (tx) => {
+    await lockTransaction(tx, `tasks:${organizationId}:${start.toISOString()}`);
+    const count = await tx.usageMeter.count({
+      where: { organizationId, kind: "TASK", createdAt: { gte: start, lt: end } },
+    });
+    if (count >= DAILY_TASK_LIMIT) return { ok: false, reason: "limite" };
+    const row = await tx.usageMeter.create({
+      data: { organizationId, kind: "TASK", createdAt: now },
+    });
+    const yearMonth = monthKey(now);
+    await tx.usageMonth.upsert({
+      where: { organizationId_yearMonth: { organizationId, yearMonth } },
+      create: { organizationId, yearMonth, tasksCount: 1 },
+      update: { tasksCount: { increment: 1 } },
+    });
+    return { ok: true, reservationId: row.id };
+  });
+}
+
+/** Suelta una reserva. Dos sueltas a la vez no borran de más ni dejan el mes en negativo. */
+export async function releaseDailyTask(reservationId: string | null | undefined) {
+  if (!reservationId) return;
+  await prisma.$transaction(async (tx) => {
+    const row = await tx.usageMeter.findUnique({ where: { id: reservationId } });
+    if (!row || row.kind !== "TASK") return;
+    const removed = await tx.usageMeter.deleteMany({ where: { id: reservationId, kind: "TASK" } });
+    if (removed.count !== 1) return;
+    await tx.usageMonth.updateMany({
+      where: {
+        organizationId: row.organizationId,
+        yearMonth: monthKey(row.createdAt),
+        tasksCount: { gt: 0 },
+      },
+      data: { tasksCount: { decrement: 1 } },
+    });
+  });
+}
+
 export async function recordMeter(input: MeterWrite) {
   return prisma.$transaction((tx) => applyMeter(tx, input));
 }
@@ -89,8 +150,20 @@ export async function recordModelCall(input: {
 
 export async function recordCompletedTask(
   tx: Prisma.TransactionClient,
-  input: { organizationId: string; model?: string; synthetic?: boolean; now?: Date },
+  input: { organizationId: string; model?: string; synthetic?: boolean; now?: Date; reservationId?: string | null },
 ) {
+  if ("reservationId" in input) {
+    if (input.reservationId) {
+      await tx.usageMeter.update({
+        where: { id: input.reservationId },
+        data: {
+          model: (input.model ?? "").slice(0, 120),
+          synthetic: input.synthetic ?? false,
+        },
+      });
+    }
+    return { reserved: Boolean(input.reservationId) };
+  }
   return applyMeter(tx, {
     organizationId: input.organizationId,
     kind: "TASK",

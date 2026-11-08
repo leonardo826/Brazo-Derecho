@@ -56,10 +56,10 @@ export default async function MockCheckoutPage({
             <h2>{catalog.name}</h2>
             <p>{catalog.tagline}</p>
             <p className="price">
-              {formatClp(plan.amountClp)} <small>con IVA / mes</small>
+              {formatClp(iabotChargeClp())} <small>con IVA / mes</small>
             </p>
             <p className="muted">
-              {formatClp(plan.netClp)} neto + IVA. En el simulador ese monto queda anotado y no se envía a Flow.
+              Es el precio de IA Bot. En esta pantalla queda anotado y no se cobra: no se envía a Flow ni a Mercado Pago.
             </p>
           </>
         ) : (

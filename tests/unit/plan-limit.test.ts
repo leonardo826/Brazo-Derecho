@@ -9,6 +9,7 @@ describe("cupo antes de xAI", () => {
       organizationId: "org",
       checks: [{ agent: "WHATSAPP", metric: "RESPONSES", quantity: 1 }],
       loadUsed: async () => 1000,
+      reserveTask: async () => ({ ok: true, reservationId: null }),
       call,
     });
     expect(result).toEqual({ ok: false, reason: "limite", message: PLAN_LIMIT_MESSAGE });
@@ -24,6 +25,7 @@ describe("cupo antes de xAI", () => {
         { agent: "MARKETING", metric: "IMAGES", quantity: 1 },
       ],
       loadUsed: async (_organizationId, metric) => (metric === "IMAGES" ? 30 : 1),
+      reserveTask: async () => ({ ok: true, reservationId: null }),
       call,
     });
     expect(result.ok).toBe(false);
@@ -36,9 +38,10 @@ describe("cupo antes de xAI", () => {
       organizationId: "org",
       checks: [{ agent: "QUOTES", metric: "QUOTES", quantity: 1 }],
       loadUsed: async () => 10,
+      reserveTask: async () => ({ ok: true, reservationId: null }),
       call,
     });
-    expect(result).toEqual({ ok: true, value: "listo" });
+    expect(result).toEqual({ ok: true, value: "listo", reservationId: null });
     expect(call).toHaveBeenCalledOnce();
   });
 });
