@@ -18,9 +18,15 @@ export function promptBlocksVaultLogin(text: string) {
   return BLOCKS.some((phrase) => hay.includes(phrase));
 }
 
+const CHAT_CAPABILITY =
+  "En este chat respondes consultas de IVA, F29, remuneraciones y revisas un documento adjunto. No operas un computador ni inicias sesión en un portal. Si piden entrar o guardar un acceso, no pidas la clave: el sistema muestra el formulario de /panel/boveda.";
+
+const COMPUTER_LOGIN_CLAIM =
+  "Si te piden entrar a un portal (SII, consultar ventas, F29, Previred o Tesorería) y la Bóveda tiene la credencial, el computador entra con fill y credentialId. Tú solo ves id, nombre, portal y pista de usuario: nunca la clave, y no la inventes. Si no hay credencial para ese portal, ofrece guardarla en /panel/boveda. No rechaces el ingreso.";
+
 export function accountantChatInstructions(organizationName: string) {
   return [
-    instructionsFor("ACCOUNTING", organizationName),
+    instructionsFor("ACCOUNTING", organizationName).split(COMPUTER_LOGIN_CLAIM).join(CHAT_CAPABILITY),
     "Estás en un chat continuo con la persona dueña de la empresa. Usa el hilo anterior y responde en markdown simple, sin HTML.",
     "El último mensaje manda. Si cambia de tema o corrige («me refiero a…»), deja el tema anterior. «root» junto al SII y a una clave se entiende como RUT, sin corregir la ortografía.",
     "Por defecto responde en una a tres frases, en español de Chile, de tú. Empieza por el resultado. Alarga solo si piden detalle, un cálculo, el fundamento o un análisis completo: en ese caso no recortes lo pedido.",

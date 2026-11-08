@@ -42,6 +42,12 @@ function isFilingCommand(text: string) {
   return (verb && object) || send;
 }
 
+function asksWithoutOrdering(text: string) {
+  return /\b(s[oó]lo (?:quiero )?pregunt\w*|no inicies|no voy a iniciar|no empieces|sin iniciar|no hagas nada|expl[ií]c\w*|c[oó]mo se|se puede|es posible)\b/i.test(
+    text,
+  );
+}
+
 function isRiskyTool(text: string) {
   return /\b(borra|borrar|elimina|eliminar)\b[\s\S]{0,40}\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(text);
 }
@@ -128,7 +134,7 @@ export function vaultActionFor(action: string): "DECLARAR" | "PAGAR" | null {
 
 export function sensitiveRequest(text: string): SensitiveAction | null {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return null;
+  if (!clean || asksWithoutOrdering(clean)) return null;
   if (isFilingCommand(clean)) {
     return { id: "presentar_declaracion", title: TITLES.presentar_declaracion, detail: clip(clean) };
   }

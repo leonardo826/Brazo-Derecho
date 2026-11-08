@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { accountantChatInstructions } from "@/lib/chat/accountant";
+import { accountantChatInstructions, promptBlocksVaultLogin } from "@/lib/chat/accountant";
 import { latestWindow } from "@/lib/chat/history";
 import { FAILURE_NOTE, finishReply, LIMIT_NOTE, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
 import { prepareModelTurn } from "@/lib/chat/model-turn";
@@ -308,6 +308,9 @@ describe("casos que el modelo en vivo no se ejecutó", () => {
     const instructions = accountantChatInstructions("Panadería");
     expect(instructions).toMatch(/último mensaje manda/i);
     expect(instructions).toMatch(/solo pregunto/i);
+    expect(instructions).toMatch(/revisas un documento adjunto/);
+    expect(instructions).not.toMatch(/computador entra con fill/);
+    expect(promptBlocksVaultLogin(instructions)).toBe(false);
     expect(instructions).toMatch(/deja esto y agrega/i);
     expect(instructions).toMatch(/no inventes publicación/i);
     expect(instructions).toMatch(/no le pidas que coordine/i);

@@ -57,6 +57,9 @@ describe("chat continuo", () => {
     expect(sensitiveRequest("¿Cuándo se paga el IVA?")).toBeNull();
     expect(sensitiveRequest("¿Qué pasa si presento el F29 atrasado?")).toBeNull();
     expect(sensitiveRequest("Explícame el plazo para pagar el PPM")).toBeNull();
+    expect(sensitiveRequest("Explícame cómo presentar el F29")).toBeNull();
+    expect(sensitiveRequest("Solo quiero preguntar si se puede presentar el F29, no inicies")).toBeNull();
+    expect(sensitiveRequest("Presenta el F29 de octubre")?.id).toBe("presentar_declaracion");
   });
 
   test("aprobar en el hilo deja la misma confirmación que la bóveda", () => {
