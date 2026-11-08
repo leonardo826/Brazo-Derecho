@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
+import { listenInBrowser } from "@/lib/chat/browser-speech";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
 import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
@@ -52,36 +53,6 @@ function localAssistant(body: string): PublicMessage {
     createdAt: new Date().toISOString(),
     attachments: [],
   };
-}
-
-type BrowserSpeech = {
-  lang: string;
-  interimResults: boolean;
-  start: () => void;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
-};
-
-function speechCtor() {
-  if (typeof window === "undefined") return null;
-  const host = window as Window & {
-    SpeechRecognition?: new () => BrowserSpeech;
-    webkitSpeechRecognition?: new () => BrowserSpeech;
-  };
-  return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
-}
-
-function listenInBrowser(lang: "es-CL" | "es-ES") {
-  const Ctor = speechCtor();
-  if (!Ctor) return Promise.reject(new Error("voz"));
-  return new Promise<string>((resolve, reject) => {
-    const recognition = new Ctor();
-    recognition.lang = lang;
-    recognition.interimResults = false;
-    recognition.onresult = (event) => resolve(event.results[0]?.[0]?.transcript?.trim() ?? "");
-    recognition.onerror = () => reject(new Error("voz"));
-    recognition.start();
-  });
 }
 
 function ComposerIcon({ children }: { children: React.ReactNode }) {
@@ -564,18 +535,28 @@ export function AgentChat({
   }
 
   async function transcribeBrowser() {
-    try {
-      const text = await listenInBrowser("es-CL");
-      if (text) appendComposer(text);
-      return;
-    } catch {
+    for (const lang of ["es-CL", "es-ES"] as const) {
+      const session = listenInBrowser(lang);
+      if (!session) continue;
+      let cancelled = false;
+      stopRecord.current = () => {
+        cancelled = true;
+        session.stop();
+      };
       try {
-        const text = await listenInBrowser("es-ES");
-        if (text) appendComposer(text);
-      } catch {
-        setNotice(CHAT_ERROR.voz);
+        const text = await session.result;
+        if (cancelled) return;
+        if (text) {
+          appendComposer(text);
+          return;
+        }
+      } catch (error) {
+        if (cancelled || (error instanceof Error && error.message === "abort")) return;
+      } finally {
+        stopRecord.current = null;
       }
     }
+    setNotice(CHAT_ERROR.voz);
   }
 
   async function toggleMic() {
@@ -586,8 +567,11 @@ export function AgentChat({
     setNotice("");
     if (voiceMode === "navegador") {
       setRecording(true);
-      await transcribeBrowser();
-      setRecording(false);
+      try {
+        await transcribeBrowser();
+      } finally {
+        setRecording(false);
+      }
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
