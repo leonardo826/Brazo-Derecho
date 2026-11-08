@@ -43,6 +43,9 @@ export type XaiRequest = {
   usage: TokenUsage;
   businessName?: string;
   maxOutputTokens?: number;
+  /** Solo si el pedido pide buscar una norma. El chat corto no adjunta búsqueda. */
+  webSearch?: boolean;
+  reasoningEffort?: "low" | "medium";
   signal?: AbortSignal;
 };
 

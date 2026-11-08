@@ -120,6 +120,7 @@ describe("voz por el servidor", () => {
       model: "grok-4.7",
       instructions: "Eres el asistente.",
       usage: USAGE_PRESETS.text,
+      webSearch: true,
       task: {
         type: "agent_chat",
         today: "hoy",

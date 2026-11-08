@@ -1046,3 +1046,74 @@ mark.placeholder {
   }
   .contador-bar h1 { font-size: 1.2rem; }
 }
+
+/* Adaptación propia del Contador. No es una medición del aspecto de otro producto. */
+.contador-screen {
+  --contador-blue: #1d4ed8;
+  --contador-blue-press: #1e40af;
+  --contador-blue-soft: #eff6ff;
+  --contador-bg: #f8fafc;
+  --contador-surface: #ffffff;
+  --contador-ink: #0f172a;
+  --contador-muted: #475569;
+  --contador-line: #cbd5e1;
+  --contador-control: #64748b;
+}
+.panel-shell:has(.contador-screen),
+.panel-shell:has(.contador-screen) .panel-main {
+  background: var(--contador-bg);
+}
+.contador-screen .agent-chat {
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+.contador-screen .contador-bar h1 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--contador-ink);
+}
+.contador-screen .contador-meta,
+.contador-screen .agent-bubble .who,
+.contador-screen .agent-bubble .when,
+.contador-screen .composer-note {
+  color: var(--contador-muted);
+  opacity: 1;
+}
+.contador-screen .agent-bubble.user {
+  background: var(--contador-blue-soft);
+  color: var(--contador-ink);
+  border: 1px solid var(--contador-line);
+}
+.contador-screen .agent-bubble.assistant {
+  background: var(--contador-surface);
+  color: var(--contador-ink);
+  border: 1px solid var(--contador-line);
+}
+.contador-screen .agent-bubble.assistant .muted { color: var(--contador-muted); }
+.contador-screen .agent-bubble.assistant .button.secondary {
+  color: var(--contador-ink);
+  border-color: var(--contador-control);
+}
+.contador-screen .agent-bubble .md a { color: var(--contador-blue); font-weight: 700; }
+.contador-screen .agent-log { gap: 0.75rem; }
+.contador-screen .composer-bar {
+  background: var(--contador-surface);
+  border: 1px solid var(--contador-control);
+  border-radius: 16px;
+}
+.contador-screen .composer-bar textarea {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--contador-ink);
+}
+.contador-screen .agent-composer { background: var(--contador-bg); }
+.contador-screen .composer-icon.send { background: var(--contador-blue); color: white; }
+.contador-screen .composer-icon.send:hover { background: var(--contador-blue-press); }
+.contador-screen .composer-icon.stop { background: var(--contador-ink); }
+.contador-screen :focus-visible {
+  outline: 2px solid var(--contador-blue);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .contador-screen, .contador-screen * { scroll-behavior: auto; }
+}

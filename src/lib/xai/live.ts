@@ -23,7 +23,7 @@ function inputFor(request: XaiRequest) {
 }
 
 function requestBody(request: XaiRequest, stream: boolean) {
-  const effort = request.model === "grok-4.3" ? "low" : "medium";
+  const effort = request.reasoningEffort ?? (request.model === "grok-4.3" ? "low" : "medium");
   const accounting = request.task.type === "accounting_question" || request.task.type === "agent_chat";
   return {
     model: request.model,
@@ -31,7 +31,7 @@ function requestBody(request: XaiRequest, stream: boolean) {
     input: inputFor(request),
     max_output_tokens: request.maxOutputTokens ?? 800,
     reasoning: { effort },
-    ...(accounting ? { tools: [{ type: "web_search" }] } : {}),
+    ...(accounting && request.webSearch ? { tools: [{ type: "web_search" }] } : {}),
     ...(stream ? { stream: true } : {}),
   };
 }

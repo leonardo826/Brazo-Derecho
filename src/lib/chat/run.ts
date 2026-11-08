@@ -12,6 +12,8 @@ import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensit
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
 import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
+import { replyPace } from "@/lib/chat/pace";
+import { randomBytes } from "node:crypto";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, listCredentials } from "@/lib/credentials/service";
 import {
@@ -81,6 +83,10 @@ async function recordVaultConfirmation(organizationId: string, actorUserId: stri
   }
 }
 
+function mark(turn: string, stage: string, ms: number) {
+  logEvent("chat.tiempo", { turn, stage, ms: Math.round(ms) });
+}
+
 async function* streamModel(input: {
   threadId: string;
   organizationId: string;
@@ -88,21 +94,31 @@ async function* streamModel(input: {
   extra: string;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  const history = await loadHistory(input.threadId, input.organizationId);
-  const latest = lastUserText(history);
-  const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
-  const prepared = prepareModelTurn(history, vault);
-  const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
-  const slot = await reserveDailyTask(input.organizationId);
+  const turn = randomBytes(4).toString("hex");
+  const started = performance.now();
+  if (streamWasStopped(input.signal)) return;
+  const [history, slot] = await Promise.all([
+    loadHistory(input.threadId, input.organizationId),
+    reserveDailyTask(input.organizationId),
+  ]);
+  mark(turn, "contexto_cupo", performance.now() - started);
   if (!slot.ok) {
     yield { type: "error", code: "limite" };
     return;
   }
+  if (streamWasStopped(input.signal)) return;
+  const latest = lastUserText(history);
+  const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
+  const prepared = prepareModelTurn(history, vault);
+  const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
+  const pace = replyPace(latest);
   let keepSlot = false;
   const client = createXaiClient();
   let raw = "";
   let final: XaiResponse | null = null;
   const gap = chunkGapMs(xaiUsesNetwork());
+  const modelStarted = performance.now();
+  let firstToken = 0;
   try {
   try {
     for await (const event of client.streamRespond({
@@ -111,12 +127,18 @@ async function* streamModel(input: {
       task: { type: "agent_chat", today: todayCl(), messages: prepared.messages },
       usage: USAGE_PRESETS.text,
       businessName: input.organizationName,
-      maxOutputTokens: 4000,
+      maxOutputTokens: pace.maxOutputTokens,
+      webSearch: pace.webSearch,
+      reasoningEffort: pace.reasoningEffort,
       signal: input.signal,
     })) {
       if (streamWasStopped(input.signal)) return;
       if (event.type === "status") yield { type: "status", text: event.text };
       if (event.type === "delta") {
+        if (firstToken === 0) {
+          firstToken = performance.now() - modelStarted;
+          mark(turn, "modelo_primer", firstToken);
+        }
         await waitChunk(input.signal, gap);
         // Stopping here skips reserveUsage below, so the consult is not billed.
         if (streamWasStopped(input.signal)) return;
@@ -197,11 +219,11 @@ async function* streamVaultForm(input: {
   threadId: string;
   organizationId: string;
   portal: PortalId | null;
+  source: string;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
-  yield { type: "status", text: "Te dejo el formulario…" };
   if (streamWasStopped(input.signal)) return;
-  const body = vaultFormMessage(input.portal);
+  const body = vaultFormMessage(input.portal, input.source);
   const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body);
   if (!saved) {
     yield { type: "error", code: "limite" };
@@ -238,6 +260,7 @@ export async function* streamChatTurn(input: {
       threadId: saved.threadId,
       organizationId: input.organizationId,
       portal,
+      source: original,
       signal: input.signal,
     });
     return;
@@ -250,8 +273,7 @@ export async function* streamChatTurn(input: {
     return;
   }
   if (streamWasStopped(input.signal)) return;
-  yield { type: "status", text: "Revisando…" };
-  if (input.files.length > 0) yield { type: "status", text: "Revisando el archivo…" };
+  if (input.files.length > 0) yield { type: "status", text: "Leyendo el archivo…" };
   yield* streamModel({
     threadId: saved.threadId,
     organizationId: input.organizationId,
@@ -299,12 +321,11 @@ export async function* streamDecision(input: {
     yield { type: "done" };
     return;
   }
-  yield { type: "status", text: "Revisando…" };
   await recordVaultConfirmation(input.organizationId, input.actorUserId, current.action);
   const files = await prisma.agentAttachment.count({
     where: { organizationId: input.organizationId, message: { threadId: current.threadId, role: "USER" } },
   });
-  if (files > 0) yield { type: "status", text: "Revisando el archivo…" };
+  if (files > 0) yield { type: "status", text: "Leyendo el archivo…" };
   if (streamWasStopped(input.signal)) return;
   yield* streamModel({
     threadId: current.threadId,
