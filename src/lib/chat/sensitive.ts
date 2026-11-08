@@ -49,12 +49,25 @@ function isRiskyTool(text: string) {
 const PORTAL = /\b(sii|previred|tesorer[ií]a|servicio de impuestos internos)\b/i;
 const ENTER =
   /\b(entra|entrar|ingresa|ingresar|ingrese|abre|abrir|inicia(?:r)? sesi[oó]n|revisa|revisar|consulta|consultar|mira|mirar|(?<!\bse\s)ver|chequea|chequear|m[eé]tete)\b/i;
+const SESSION =
+  /\b(entra|entrar|ingresa|ingresar|ingrese|abre|abrir|inicia(?:r)? sesi[oó]n|m[eé]tete)\b/i;
+const REVIEW =
+  /\b(revisa|revisar|consulta|consultar|mira|mirar|(?<!\bse\s)ver|chequea|chequear)\b/i;
+const DOCUMENT =
+  /\b(?:formulario\s*\d+|formularios?|f29|f22|facturas?|boletas?|pdfs?|archivos?|documentos?|adjuntos?)\b/i;
 const VAULT_ASK = /\b(b[oó]veda|con mi clave|usa(?:r|ndo)? (?:la |mi )?clave|clave de la b[oó]veda)\b/i;
 const LOOKUP = /\b(ventas|boletas|facturas|f29|f22|formulario\s*29|formulario\s*22|registro de compras|registro de ventas)\b/i;
+
+/** Revisar un formulario o una factura no es entrar al portal. */
+function reviewsSuppliedDocument(text: string) {
+  if (SESSION.test(text)) return false;
+  return REVIEW.test(text) && DOCUMENT.test(text);
+}
 
 export function wantsPortalAccess(text: string) {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean || isFilingCommand(clean) || isPayCommand(clean)) return false;
+  if (reviewsSuppliedDocument(clean)) return false;
   const portal = PORTAL.test(clean);
   const enter = ENTER.test(clean);
   const vault = VAULT_ASK.test(clean);
@@ -80,11 +93,24 @@ export function wantsVaultSave(text: string) {
 const HAND_OFF =
   /\b(?:te (?:mando|env[ií]o|paso|dejo)|toma|ah[ií] va|aqu[ií] va|pego|pegar|por (?:el |este )?chat)\b/iu;
 
+const HANDED_DOCUMENT =
+  /\b(?:te (?:mando|env[ií]o|paso|dejo)|toma|ah[ií] va|aqu[ií] va|pego|pegar)\b(?:\s+\S+){0,5}\s+(?:la |el |un |una |los |las )?(?:facturas?|boletas?|formularios?(?:\s*\d+)?|f29|f22|pdfs?|archivos?|documentos?|adjuntos?)\b/iu;
+
+const CONCEPTUAL_KEY =
+  /\b(?:clave|contrase(?:ñ|n)a|password|passwd)\b(?:\s+\S+){0,6}\s+(?:del|de\s+la|de\s+el|para(?:\s+(?:el|la|los|las))?)\s+(?:cr[eé]dito\s+fiscal|d[eé]bito\s+fiscal|iva|f29|f22|formulario(?:\s*\d+)?|plazo|declaraci[oó]n)\b/iu;
+
+/** Entrega una factura o un formulario y pregunta un concepto, no una credencial. */
+function asksAboutDocumentConcept(text: string) {
+  return HANDED_DOCUMENT.test(text) && CONCEPTUAL_KEY.test(text);
+}
+
 /** Quiere pasar la clave por el chat. El formulario es el camino; borrar el mensaje no basta. */
 export function wantsChatSecretHandoff(text: string) {
   const clean = text.replace(/\s+/g, " ").trim();
   const secret = /\b(clave|contrase(?:ñ|n)a|password|passwd)\b/i.test(clean);
-  return secret && HAND_OFF.test(clean);
+  if (!secret || !HAND_OFF.test(clean)) return false;
+  if (asksAboutDocumentConcept(clean)) return false;
+  return true;
 }
 
 /** El pedido vigente es el formulario seguro, no una respuesta del modelo ni un ingreso simulado. */

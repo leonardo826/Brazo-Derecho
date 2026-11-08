@@ -7,7 +7,7 @@ import { VaultAccessForm } from "@/components/vault-access-form";
 import { completeTurn, pushTurn } from "@/lib/chat/followups";
 import { historyWhere, latestWindow, MODEL_HISTORY_LIMIT } from "@/lib/chat/history";
 import { prepareModelTurn } from "@/lib/chat/model-turn";
-import { SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
+import { prepareComposerTurn, SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
 import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
 import { createCredential } from "@/lib/credentials/service";
 import { portalPresetFromText, vaultFormMessage, vaultFormPath } from "@/lib/credentials/portal-form";
@@ -332,6 +332,11 @@ describe("corpus de claves sintéticas", () => {
     { name: "unicode", text: "clave: niño", fragments: ["niño"] },
     { name: "unicode largo", text: "password: パスワード", fragments: ["パスワード"] },
     { name: "varias líneas corta", text: "sigue el texto\nclave:\nhola", fragments: ["hola", "sigue el texto"] },
+    { name: "clave del SII es hola", text: "Mi clave del SII es hola", fragments: ["hola"] },
+    { name: "contraseña de la empresa es abc", text: "Mi contraseña de la empresa es abc", fragments: ["abc"] },
+    { name: "contraseña unicode", text: "Mi contraseña del SII es パスワード", fragments: ["パスワード"] },
+    { name: "clave con salto de línea", text: "Mi clave del SII es\nhola", fragments: ["hola"] },
+    { name: "contraseña con salto de línea", text: "Mi contraseña de la empresa es\nabc", fragments: ["abc"] },
   ];
 
   test.each(samples)("$name no conserva fragmentos", ({ text, fragments }) => {
@@ -411,14 +416,108 @@ describe("turno de chat", () => {
     );
   });
 
-  test("el formulario conserva el PDF si no hay un secreto detectado", async () => {
+  test("una asignación corta, unicode o con salto de línea no sale del compositor ni del turno", async () => {
+    const pdf = { fileName: "nota.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    const cases = [
+      { text: "Mi clave del SII es hola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es abc", secret: "abc" },
+      { text: "Mi contraseña del SII es パスワード", secret: "パスワード" },
+      { text: "Mi clave del SII es\nhola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es\nabc", secret: "abc" },
+    ];
+    for (const item of cases) {
+      const composer = prepareComposerTurn(item.text, [pdf]);
+      expect(composer.text).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(composer.files).toEqual([]);
+      expect(composer.seal).toBe(true);
+      expect(composer.text).not.toContain(item.secret);
+      const alone = prepareModelTurn([{ role: "user", text: item.text }], "Bóveda (nunca la clave):");
+      expect(alone.messages[0]?.text).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(JSON.stringify(alone)).not.toContain(item.secret);
+      const prepared = prepareModelTurn(
+        [
+          { role: "user", text: item.text },
+          { role: "user", text: "¿Cuándo se paga el IVA de noviembre?" },
+        ],
+        "Bóveda (nunca la clave):",
+      );
+      expect(prepared.messages[0]?.text).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(prepared.messages.at(-1)?.text).toBe("¿Cuándo se paga el IVA de noviembre?");
+      expect(prepared.vaultNote).toBe("");
+      expect(JSON.stringify(prepared)).not.toContain(item.secret);
+
+      vi.mocked(saveUserMessage).mockClear();
+      vi.mocked(createXaiClient).mockClear();
+      vi.mocked(loadHistory).mockClear();
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const events = [];
+      let logged = "";
+      try {
+        for await (const event of streamChatTurn({
+          organizationId: "org-a",
+          organizationName: "QA Interno",
+          actorUserId: "user-a",
+          text: item.text,
+          files: [pdf],
+        })) {
+          events.push(event);
+        }
+        logged = spy.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      } finally {
+        spy.mockRestore();
+      }
+      const sent = JSON.stringify({ texto: composer.text, archivos: composer.files });
+      const packed = `${sent}\n${JSON.stringify(events)}\n${logged}\n${JSON.stringify(vi.mocked(saveUserMessage).mock.calls)}\n${JSON.stringify(alone)}\n${JSON.stringify(prepared)}`;
+      expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
+      expect(packed).not.toContain(item.secret);
+      expect(createXaiClient).not.toHaveBeenCalled();
+      expect(loadHistory).not.toHaveBeenCalled();
+    }
+    expect(sealChatText("La clave del F29 es el plazo de declaración")).toBe(
+      "La clave del F29 es el plazo de declaración",
+    );
+    expect(sealChatText("La clave del éxito es constancia.")).toBe("La clave del éxito es constancia.");
+    expect(sealChatText("¿Cuándo se paga el IVA de noviembre?")).toBe("¿Cuándo se paga el IVA de noviembre?");
+  });
+
+  test("un formulario o una factura llegan al modelo con su texto y su PDF", async () => {
     const pdf = { fileName: "f29.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    const review = "Respuesta de revisión de prueba.";
     for (const text of [
       "Revisa el formulario 29 del SII que te adjunto",
       "Te pego la factura; ¿cuál es la clave del crédito fiscal?",
     ]) {
       vi.mocked(saveUserMessage).mockClear();
       vi.mocked(createXaiClient).mockClear();
+      vi.mocked(loadHistory).mockResolvedValue([
+        {
+          role: "user",
+          text,
+          files: [{ name: pdf.fileName, mime: pdf.mimeType, note: `Archivo adjunto: ${pdf.fileName} (${pdf.mimeType}).` }],
+        },
+      ]);
+      const seen: { text: string; note: string; instructions: string } = { text: "", note: "", instructions: "" };
+      vi.mocked(createXaiClient).mockReturnValue({
+        async respond() {
+          throw new Error("no");
+        },
+        async *streamRespond(request: XaiRequest) {
+          seen.instructions = request.instructions;
+          const last = request.task.type === "agent_chat" ? request.task.messages.at(-1) : undefined;
+          seen.text = last?.text ?? "";
+          seen.note = last?.files?.map((file) => file.note ?? file.name).join("\n") ?? "";
+          yield {
+            type: "done" as const,
+            response: {
+              id: "rev",
+              model: request.model,
+              outputText: review,
+              usage: USAGE_PRESETS.text,
+              mocked: true,
+            },
+          };
+        },
+      });
       const events = [];
       for await (const event of streamChatTurn({
         organizationId: "org-a",
@@ -429,16 +528,83 @@ describe("turno de chat", () => {
       })) {
         events.push(event);
       }
+      expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: text, files: [pdf] });
+      expect(seen.text).toBe(text);
+      expect(seen.note).toContain(pdf.fileName);
+      expect(seen.instructions).not.toContain("Bóveda (solo id");
+      expect(createXaiClient).toHaveBeenCalled();
+      const packed = `${JSON.stringify(events)}\n${JSON.stringify(vi.mocked(saveUserMessage).mock.calls)}`;
+      expect(packed).toContain(text);
+      expect(packed).toContain(review);
+      expect(packed).not.toContain("/panel/boveda");
+      if (text.includes("crédito fiscal")) expect(packed).toContain("crédito fiscal");
+    }
+  });
+
+  test("entrar, guardar un acceso o entregar una clave abre el formulario y no simula el ingreso", async () => {
+    const pdf = { fileName: "nota.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    const cases = [
+      { text: "Quiero entrar al SII", secret: false },
+      { text: "Guarda mi acceso del SII", secret: false },
+      { text: "Mi clave del SII es hola", secret: true },
+    ];
+    for (const item of cases) {
+      vi.mocked(saveUserMessage).mockClear();
+      vi.mocked(createXaiClient).mockClear();
+      vi.mocked(loadHistory).mockClear();
+      const events = [];
+      for await (const event of streamChatTurn({
+        organizationId: "org-a",
+        organizationName: "QA Interno",
+        actorUserId: "user-a",
+        text: item.text,
+        files: [pdf],
+      })) {
+        events.push(event);
+      }
+      const assistant = events.find((event) => event.type === "message");
+      const body = assistant && assistant.type === "message" ? assistant.message.body : "";
       expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({
         body: SAFE_CREDENTIAL_ENTRY,
-        files: [pdf],
+        files: item.secret ? [] : [pdf],
       });
+      expect(body).toContain("/panel/boveda?portal=sii#agregar-acceso");
+      expect(body).toMatch(/No las escribas en este chat/);
+      expect(body).toMatch(/No entré al portal/);
+      expect(body).not.toMatch(/pásame|escríbeme|Entr[eé] al SII|revis[eé] el|le[ií] el pdf/i);
+      expect(JSON.stringify(events)).not.toContain("hola");
       expect(createXaiClient).not.toHaveBeenCalled();
       expect(loadHistory).not.toHaveBeenCalled();
+    }
+  });
+
+  test("documento y credencial explícita no envían el valor ni el adjunto", async () => {
+    const pdf = { fileName: "f29.pdf", mimeType: "application/pdf", bytes: new Uint8Array([37, 80, 68, 70]) };
+    for (const item of [
+      { text: "Revisa el formulario 29 del SII que te adjunto. Mi clave del SII es hola", secret: "hola" },
+      { text: "Te pego la factura; mi contraseña de la empresa es abc", secret: "abc" },
+    ]) {
+      vi.mocked(saveUserMessage).mockClear();
+      vi.mocked(createXaiClient).mockClear();
+      const events = [];
+      for await (const event of streamChatTurn({
+        organizationId: "org-a",
+        organizationName: "QA Interno",
+        actorUserId: "user-a",
+        text: item.text,
+        files: [pdf],
+      })) {
+        events.push(event);
+      }
       const assistant = events.find((event) => event.type === "message");
-      expect(assistant && assistant.type === "message" ? assistant.message.body : "").toContain("/panel/boveda");
-      expect(JSON.stringify(events)).not.toContain("crédito fiscal");
-      expect(JSON.stringify(vi.mocked(saveUserMessage).mock.calls)).not.toContain("crédito fiscal");
+      const body = assistant && assistant.type === "message" ? assistant.message.body : "";
+      const packed = `${JSON.stringify(events)}\n${JSON.stringify(vi.mocked(saveUserMessage).mock.calls)}`;
+      expect(vi.mocked(saveUserMessage).mock.calls[0]?.[0]).toMatchObject({ body: SAFE_CREDENTIAL_ENTRY, files: [] });
+      expect(packed).not.toContain(item.secret);
+      expect(body).toContain("/panel/boveda");
+      expect(body).toMatch(/No entré al portal/);
+      expect(body).not.toMatch(/revis[eé] el|le[ií] el (pdf|archivo|formulario|documento)/i);
+      expect(createXaiClient).not.toHaveBeenCalled();
     }
   });
 

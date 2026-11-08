@@ -100,20 +100,41 @@ describe("casos deterministas del Contador", () => {
     expect(wantsChatSecretHandoff("Aqui va la contraseña")).toBe(true);
     expect(wantsChatSecretHandoff("Aquí va la contraseña")).toBe(true);
     expect(carriesSuspectedSecret("Mi clave de la empresa nueva chilena es el plazo.")).toBe(false);
-    expect(carriesSuspectedSecret("Revisa el formulario 29 del SII que te adjunto")).toBe(false);
-    expect(carriesSuspectedSecret("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toBe(false);
-    expect(shouldDropUserText("Revisa el formulario 29 del SII que te adjunto")).toBe(true);
-    expect(shouldDropUserText("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toBe(true);
+    expect(carriesSuspectedSecret("La clave del éxito es constancia.")).toBe(false);
+    expect(wantsChatSecretHandoff("Te pego la clave")).toBe(true);
+    expect(wantsChatSecretHandoff("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toBe(false);
     const pdf = ["f29.pdf"];
     for (const phrase of [
       "Revisa el formulario 29 del SII que te adjunto",
       "Te pego la factura; ¿cuál es la clave del crédito fiscal?",
     ]) {
+      expect(carriesSuspectedSecret(phrase)).toBe(false);
+      expect(wantsSecureCredentialForm(phrase)).toBe(false);
+      expect(shouldDropUserText(phrase)).toBe(false);
       const turn = prepareComposerTurn(phrase, pdf);
       expect(turn.files).toEqual(pdf);
-      expect(turn.seal).toBe(true);
+      expect(turn.seal).toBe(false);
       expect(turn.text).toBe(phrase);
-      expect(turn.text).not.toContain(EXAMPLE);
+      expect(sealChatText(phrase)).toBe(phrase);
+    }
+    expect(sealChatText("Te pego la factura; ¿cuál es la clave del crédito fiscal?")).toContain("crédito fiscal");
+    const shortSecrets = [
+      { text: "Mi clave del SII es hola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es abc", secret: "abc" },
+      { text: "Mi contraseña del SII es パスワード", secret: "パスワード" },
+      { text: "Mi clave del SII es\nhola", secret: "hola" },
+      { text: "Mi contraseña de la empresa es\nabc", secret: "abc" },
+    ];
+    for (const item of shortSecrets) {
+      expect(carriesSuspectedSecret(item.text)).toBe(true);
+      const sealed = sealChatText(item.text);
+      expect(sealed).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(sealed).not.toContain(item.secret);
+      const turn = prepareComposerTurn(item.text, pdf);
+      expect(turn.text).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(turn.text).not.toContain(item.secret);
+      expect(turn.files).toEqual([]);
+      expect(turn.seal).toBe(true);
     }
     const secretTurn = prepareComposerTurn(`Te dejo la clave aquí: ${EXAMPLE}`, pdf);
     expect(secretTurn.text).toBe(SAFE_CREDENTIAL_ENTRY);

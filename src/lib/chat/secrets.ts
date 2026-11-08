@@ -4,13 +4,15 @@ import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
  * Texto fijo cuando el mensaje pide un acceso o asigna una clave.
  * No incluye ningún carácter del texto original.
  *
- * Una asignación (`clave`/`contraseña`/`password`/`passwd` con `:`, `=`,
- * `es` o `is`) cierra el mensaje entero, aunque el valor sea corto, alfabético
- * o unicode. Pueden ir hasta cuatro palabras entre la etiqueta y esa
- * asignación (`del SII`, `de la empresa`, `aquí`). Sin asignación, un token
- * con aspecto de clave también cierra, con el mismo margen. No reconoce un
- * secreto suelto sin esa etiqueta, ni mira archivos adjuntos.
- * «La clave del F29 es el plazo» no es una asignación: el valor no parece secreto.
+ * Una asignación pegada a la etiqueta, o con «:» o «=», cierra el mensaje
+ * entero. Con hasta cuatro palabras entre la etiqueta y «es», «sea» o «is»,
+ * también lo cierra si el contexto es de credencial (contraseña, «mi clave»,
+ * SII, empresa u otro acceso) y lo que sigue no es una frase explicativa.
+ * Ese valor puede ser corto, alfabético o unicode, y puede ir en la línea
+ * siguiente: no se descarta por entropía ni por apariencia.
+ * «La clave del F29 es el plazo» sigue siendo una explicación.
+ * Sin asignación, un token con aspecto de clave también cierra, con el mismo
+ * margen. No reconoce un secreto suelto sin esa etiqueta, ni mira archivos.
  */
 export const SAFE_CREDENTIAL_ENTRY =
   "Quiero usar el formulario seguro de la Bóveda. No dejo la clave en el chat.";
@@ -78,8 +80,9 @@ const BRIDGE = /^(?:[:=]|\uFF1A|\uFF1D|(?:es|sea|is)\b)/iu;
  */
 export function carriesSuspectedSecret(text: string) {
   for (const match of text.matchAll(MARKER)) {
-    const rest = text.slice((match.index ?? 0) + match[0].length);
-    if (secretValueFollows(rest)) return true;
+    const index = match.index ?? 0;
+    const rest = text.slice(index + match[0].length);
+    if (secretValueFollows(rest, match[0], text.slice(0, index))) return true;
   }
   return false;
 }
@@ -101,9 +104,71 @@ function bareToken(token: string) {
   return token.replace(/^[¿¡"'(«»]+|[.,;:!?)"'»«]+$/gu, "");
 }
 
-function secretValueFollows(rest: string) {
+const CREDENTIAL_ANCHOR = new Set([
+  "sii",
+  "previred",
+  "tesoreria",
+  "tesorería",
+  "empresa",
+  "banco",
+  "portal",
+  "boveda",
+  "bóveda",
+  "acceso",
+  "usuario",
+  "rut",
+]);
+
+function labelIsPassword(label: string) {
+  return /^(?:contrase(?:ñ|n)as?|passwords?|passwds?|passcodes?)$/i.test(label);
+}
+
+function hasPossessive(before: string) {
+  return /(?:^|\s)(?:mi|mis|tu|tus|su|sus|my|your)\s+$/iu.test(before);
+}
+
+function valueTokens(line: string) {
+  return line
+    .split(/\s+/)
+    .map((token) => bareToken(token))
+    .filter(Boolean);
+}
+
+/** «es el plazo» explica un concepto. «es hola» asigna un valor, aunque sea corto. */
+function isExplanatoryPhrase(line: string) {
+  const word = valueTokens(line)[0]?.toLowerCase() ?? "";
+  if (!word) return true;
+  if (FUNCTION_WORD.has(word)) return true;
+  return (
+    word === "unos" ||
+    word === "unas" ||
+    word === "esto" ||
+    word === "eso" ||
+    word === "este" ||
+    word === "lo" ||
+    word === "a" ||
+    word === "an" ||
+    word === "that" ||
+    word === "this" ||
+    word === "cuando" ||
+    word === "como" ||
+    word === "cómo" ||
+    word === "cual" ||
+    word === "cuál"
+  );
+}
+
+function copulaAssignsCredential(label: string, before: string, gap: readonly string[], line: string) {
+  if (isExplanatoryPhrase(line)) return false;
+  if (labelIsPassword(label)) return true;
+  if (hasPossessive(before)) return true;
+  return gap.some((token) => CREDENTIAL_ANCHOR.has(token.toLowerCase()));
+}
+
+function secretValueFollows(rest: string, label: string, before: string) {
   let pending = rest;
   let skipped = 0;
+  const gap: string[] = [];
   while (skipped <= GAP_WORDS) {
     const head = pending.replace(/^\s+/, "");
     if (!head) return false;
@@ -112,10 +177,10 @@ function secretValueFollows(rest: string) {
       const line = assignedLine(head.slice(bridge[0].length));
       if (!line) return false;
       // Pegada a la etiqueta, o con «:»/«=», cualquier valor cierra el mensaje.
-      // Con palabras de por medio, «es»/«is» solo cierra si el valor parece secreto
-      // («La clave del F29 es el plazo» sigue siendo una explicación).
+      // Con palabras de por medio, «es»/«is» cierra la credencial entera sin
+      // mirar si el valor parece una clave. Una frase («el plazo») no lo es.
       if (skipped === 0 || isAssignment(bridge[0])) return true;
-      return tokenLooksSecret(line.split(/\s+/)[0] ?? "");
+      return copulaAssignsCredential(label, before, gap, line);
     }
     if (skipped === GAP_WORDS) return false;
     const word = head.match(/^(\S+)/u);
@@ -127,7 +192,11 @@ function secretValueFollows(rest: string) {
       if (line) return true;
     }
     if (tokenLooksSecret(token)) return true;
-    if (bareToken(token)) skipped += 1;
+    const bare = bareToken(token);
+    if (bare) {
+      skipped += 1;
+      gap.push(bare);
+    }
     pending = head.slice(token.length);
   }
   return false;
