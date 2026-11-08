@@ -82,6 +82,11 @@ describe("compositor del Contador", () => {
     act(() => root.render(createElement("div", { key }, node)));
   }
 
+  test("el compositor no acepta más de 4000 caracteres", () => {
+    render();
+    expect(host.querySelector("textarea")?.getAttribute("maxlength")).toBe("4000");
+  });
+
   test("Enter de escritorio envía y el de un móvil no", () => {
     render();
     const box = setComposer(host, "consulta de IVA");
