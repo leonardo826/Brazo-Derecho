@@ -15,7 +15,7 @@ import {
 } from "@/lib/chat/composer-draft";
 import { completeTurn, pushTurn, releasePaused, requeueFront, type TurnEnd, type TurnQueue } from "@/lib/chat/followups";
 import { ACTION_HELP, CHAT_ERROR, type ChatClientEvent, type PublicMessage } from "@/lib/chat/public";
-import { sealChatText, shouldDropUserText } from "@/lib/chat/secrets";
+import { prepareComposerTurn } from "@/lib/chat/secrets";
 import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-form";
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
@@ -526,15 +526,13 @@ export function AgentChat({
     event.preventDefault();
     if (!open) return;
     const raw = composer.trim();
-    const drop = shouldDropUserText(raw);
-    const text = sealChatText(raw);
-    const chosen = drop ? [] : files;
-    if (!text && chosen.length === 0) return;
+    const turn = prepareComposerTurn(raw, files);
+    if (!turn.text && turn.files.length === 0) return;
     const draft: Draft = {
       id: `local-${crypto.randomUUID()}`,
-      text,
-      files: chosen,
-      portal: drop ? portalPresetFromText(raw) : null,
+      text: turn.text,
+      files: [...turn.files],
+      portal: turn.seal ? portalPresetFromText(raw) : null,
     };
     updateComposer("");
     updateFiles([]);

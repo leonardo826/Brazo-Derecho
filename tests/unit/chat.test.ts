@@ -49,6 +49,8 @@ describe("chat continuo", () => {
     expect(wantsPortalAccess("¿Cuándo se paga el IVA?")).toBe(false);
     expect(wantsPortalAccess("¿Cómo se registran las ventas en el SII?")).toBe(false);
     expect(wantsPortalAccess("Presenta el F29 de octubre")).toBe(false);
+    expect(wantsPortalAccess("Quiero entrar al SII")).toBe(true);
+    expect(wantsPortalAccess("Revisa el formulario 29 del SII que te adjunto")).toBe(false);
   });
 
   test("una duda no abre una tarjeta de confirmación", () => {
