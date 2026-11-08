@@ -282,34 +282,53 @@ describe("micrófono del Contador", () => {
     expect(composer().value).toContain("nota de voz");
   });
 
-  test("el onstop tardío de xAI no borra el stop de la sesión nueva", async () => {
+  test("el onstop viejo, retenido, no suelta la sesión nueva ni deja pistas abiertas", async () => {
     render("xai");
     await act(async () => {
       mic().click();
     });
     await flush();
     const first = recorders[0];
-    await act(async () => {
-      mic().click();
-      first?.finish();
-    });
-    await flush();
+    const firstTrack = tracks[0];
+    expect(first?.state).toBe("recording");
+    expect(first?.onstop).toBeTypeOf("function");
     await act(async () => {
       mic().click();
     });
+    expect(first?.state).toBe("inactive");
+    expect(first?.onstop).toBeTypeOf("function");
+    expect(recorders).toHaveLength(1);
+    await act(async () => {
+      mic().click();
+      mic().click();
+    });
     await flush();
+    const second = recorders[1];
+    const secondTrack = tracks[1];
     expect(recorders).toHaveLength(2);
-    expect(recorders[1]?.state).toBe("recording");
+    expect(second?.state).toBe("recording");
+    expect(firstTrack?.stopped).toBe(true);
+    expect(secondTrack?.stopped).toBe(false);
     await act(async () => {
       first?.finish();
     });
     await flush();
-    expect(recorders[1]?.state).toBe("recording");
+    expect(second?.state).toBe("recording");
+    expect(secondTrack?.stopped).toBe(false);
+    expect(tracks.filter((item) => !item.stopped)).toEqual([secondTrack]);
+    expect(fetches.filter((url) => url.includes("/api/voz/stt"))).toEqual([]);
     await act(async () => {
       mic().click();
     });
-    expect(recorders[1]?.state).toBe("inactive");
+    expect(second?.state).toBe("inactive");
+    expect(mic().textContent).toMatch(/Detener grabación/);
+    await act(async () => {
+      second?.finish();
+    });
+    await flush();
+    expect(tracks.every((item) => item.stopped)).toBe(true);
     expect(fetches.some((url) => url.includes("/api/chat"))).toBe(false);
+    expect(fetches.filter((url) => url.includes("/api/voz/stt"))).toHaveLength(1);
   });
 
   test("un permiso que llega después de parar cierra las pistas y no graba", async () => {

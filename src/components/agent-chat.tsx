@@ -150,23 +150,63 @@ async function readEvents(response: Response, onEvent: (event: ChatClientEvent) 
   }
 }
 
+const DRAFT_PREFIX = "bd-contador-borrador:";
+
+function readDraft(scope: string) {
+  try {
+    return sessionStorage.getItem(DRAFT_PREFIX + scope) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const draftListeners = new Set<() => void>();
+
+function writeDraft(scope: string, value: string) {
+  try {
+    const key = DRAFT_PREFIX + scope;
+    const current = sessionStorage.getItem(key) ?? "";
+    if (current === value) return;
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch {
+    return;
+  }
+  for (const listener of draftListeners) listener();
+}
+
+function subscribeDraft(listener: () => void) {
+  draftListeners.add(listener);
+  return () => {
+    draftListeners.delete(listener);
+  };
+}
+
 export function AgentChat({
   open,
   messages,
   used,
   limit,
   voice,
+  draftScope = "",
 }: {
   open: boolean;
   messages: PublicMessage[];
   used: number;
   limit: number;
   voice: VoiceMode;
+  draftScope?: string;
 }) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const [items, setItems] = useState(messages);
+  const storedDraft = useSyncExternalStore(
+    subscribeDraft,
+    () => (draftScope ? readDraft(draftScope) : ""),
+    () => "",
+  );
   const [composer, setComposer] = useState("");
+  const [draftSource, setDraftSource] = useState("");
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [pending, setPending] = useState(false);
   const [waitingIds, setWaitingIds] = useState<string[]>([]);
@@ -192,11 +232,17 @@ export function AgentChat({
   const stopRequestedRef = useRef(false);
   const committedRef = useRef(false);
   const draftText = useRef("");
+  if (storedDraft !== draftSource) {
+    setDraftSource(storedDraft);
+    setComposer(storedDraft);
+  }
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
   const turnGen = useRef(0);
   const stickToEnd = useRef(true);
   const [atEnd, setAtEnd] = useState(true);
+  const sawReply = useRef(false);
+  const imeGuard = useRef(false);
 
   useEffect(() => {
     const earsNow = ears.current;
@@ -232,11 +278,30 @@ export function AgentChat({
   }, [items, live, status, pending]);
 
   useEffect(() => {
+    draftText.current = composer;
+  }, [composer]);
+
+  useEffect(() => {
     const node = composerRef.current;
     if (!node) return;
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, 112)}px`;
   }, [composer]);
+
+  useEffect(() => {
+    if (pending) {
+      sawReply.current = true;
+      return;
+    }
+    if (!sawReply.current) return;
+    const box = composerRef.current;
+    if (!box || document.activeElement === box) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && logRef.current?.contains(selection.anchorNode)) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    box.focus({ preventScroll: true });
+  }, [pending]);
 
   function publishQueue() {
     setWaitingIds(turns.current.waiting.map((item) => item.id));
@@ -245,6 +310,14 @@ export function AgentChat({
   function updateComposer(value: string) {
     draftText.current = value;
     setComposer(value);
+    if (draftScope) writeDraft(draftScope, value);
+  }
+
+  function endComposition() {
+    imeGuard.current = true;
+    window.setTimeout(() => {
+      imeGuard.current = false;
+    }, 0);
   }
 
   function updateFiles(next: LocalFile[]) {
@@ -256,6 +329,7 @@ export function AgentChat({
     setComposer((current) => {
       const next = current ? `${current} ${text}` : text;
       draftText.current = next;
+      if (draftScope) writeDraft(draftScope, next);
       return next;
     });
   }
@@ -480,6 +554,7 @@ export function AgentChat({
   function stopResponse() {
     stopRequestedRef.current = true;
     abortRef.current?.abort();
+    composerRef.current?.focus({ preventScroll: true });
   }
 
   function releaseQueue() {
@@ -954,8 +1029,10 @@ export function AgentChat({
             placeholder="Escribe al Contador…"
             disabled={!open}
             onChange={(event) => updateComposer(event.target.value)}
+            onCompositionEnd={endComposition}
             onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              const native = event.nativeEvent;
+              if (event.key !== "Enter" || event.shiftKey || native.isComposing || imeGuard.current || native.keyCode === 229) return;
               if (window.matchMedia("(pointer: coarse)").matches) return;
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
