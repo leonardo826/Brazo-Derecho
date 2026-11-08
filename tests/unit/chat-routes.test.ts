@@ -22,6 +22,31 @@ describe("chat y voz sin sesión", () => {
     vi.unstubAllGlobals();
   });
 
+  test("un texto de 4001 caracteres se rechaza antes del turno", async () => {
+    vi.mocked(resolveSession).mockResolvedValue({
+      userId: "user-a",
+      email: "a@brazo.cl",
+      name: "Ana",
+      organizationId: "org-a",
+      organizationName: "Org",
+      role: "OWNER",
+      authVersion: 0,
+    });
+    const response = await POST(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+          host: "localhost",
+        },
+        body: JSON.stringify({ texto: "a".repeat(4001) }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "datos" });
+  });
+
   test("el hilo, la confirmación y el adjunto exigen sesión", async () => {
     const headers = { "content-type": "application/json" };
     const responses = [
