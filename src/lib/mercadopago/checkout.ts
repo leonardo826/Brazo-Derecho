@@ -11,7 +11,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
 import { iabotChargeClp } from "@/lib/subscription";
-import { beginTrialIfIdle } from "@/lib/trial-guard";
+import { beginTrialIfIdle, hasOpenActiveContract } from "@/lib/trial-guard";
 
 type PreapprovalResponse = { id?: string | number; init_point?: string };
 
@@ -75,6 +75,15 @@ export async function startMercadoPagoSubscription(
   }
   const now = input.now ?? new Date();
   const plan = planFor(input.agent);
+  if (await hasOpenActiveContract({ organizationId: input.organizationId, agent: input.agent, now })) {
+    throw new MercadoPagoApiError("Ya hay una suscripción activa. No se reemplaza ni se cambia el monto.", 409);
+  }
+  const current = await prisma.subscription.findUnique({
+    where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
+  });
+  if (current?.mpPreapprovalId && current.status !== "CANCELED" && current.status !== "EXPIRED") {
+    throw new MercadoPagoApiError("Ya hay una suscripción de Mercado Pago. No se reemplaza ni se cambia el monto.", 409);
+  }
   await beginTrialIfIdle({ organizationId: input.organizationId, agent: input.agent, now });
   const subscription = await prisma.subscription.update({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },

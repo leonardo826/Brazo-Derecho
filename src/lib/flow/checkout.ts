@@ -1,14 +1,23 @@
 import type { AgentId } from "@/lib/catalog";
 import { appUrl } from "@/lib/env";
-import { flowCall } from "@/lib/flow/client";
+import { FlowApiError, flowCall } from "@/lib/flow/client";
 import { flowRedirectUrl, planFor, trialDaysToAsk } from "@/lib/flow/plans";
 import { prisma } from "@/lib/prisma";
 import { assertBillableOrganization } from "@/lib/qa-account";
-import { TRIAL_DAYS } from "@/lib/subscription";
-import { beginTrialIfIdle } from "@/lib/trial-guard";
+import { iabotChargeClp, TRIAL_DAYS } from "@/lib/subscription";
+import { beginTrialIfIdle, hasOpenActiveContract } from "@/lib/trial-guard";
 
 type CustomerResponse = { customerId?: string };
-type PlanResponse = { planId?: string };
+type PlanResponse = {
+  planId?: string;
+  amount?: number | string;
+  currency?: string;
+  interval?: number | string;
+  interval_count?: number | string;
+};
+
+const FLOW_MONTHLY_INTERVAL = 3;
+const FLOW_MONTHLY_COUNT = 1;
 type SubscriptionResponse = {
   subscriptionId?: string;
   status?: number | string;
@@ -46,28 +55,62 @@ async function ensureCustomer(input: { organizationId: string; name: string; ema
   return created.customerId;
 }
 
-async function ensurePlan(agent: AgentId) {
-  const plan = planFor(agent);
+function readPositiveInt(value: number | string | undefined) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) return Number(value);
+  return null;
+}
+
+function planMatchesOffer(remote: PlanResponse, offer: number) {
+  const currency = typeof remote.currency === "string" ? remote.currency.trim().toUpperCase() : "";
+  return (
+    readPositiveInt(remote.amount) === offer &&
+    currency === "CLP" &&
+    readPositiveInt(remote.interval) === FLOW_MONTHLY_INTERVAL &&
+    readPositiveInt(remote.interval_count) === FLOW_MONTHLY_COUNT
+  );
+}
+
+/** Solo un 404 permite crear. Otro error de consulta no se convierte en un plan nuevo. */
+async function readPlan(planId: string) {
   try {
-    await flowCall<PlanResponse>("plans/get", { planId: plan.planId }, "GET");
-  } catch {
+    return await flowCall<PlanResponse>("plans/get", { planId }, "GET");
+  } catch (error) {
+    if (error instanceof FlowApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** El plan remoto tiene que ser 63546 CLP al mes. Si no se puede comprobar, no hay checkout. */
+async function ensurePublishedPlan(agent: AgentId) {
+  const plan = planFor(agent);
+  const offer = iabotChargeClp();
+  if (!Number.isInteger(offer) || offer <= 0) {
+    throw new FlowApiError("El precio publicado no es válido", 400, "flow_precio");
+  }
+  let remote = await readPlan(plan.planId);
+  if (!remote) {
     await flowCall<PlanResponse>(
       "plans/create",
       {
         planId: plan.planId,
         name: plan.name,
         currency: "CLP",
-        amount: plan.amountClp,
-        interval: 3,
-        interval_count: 1,
+        amount: offer,
+        interval: FLOW_MONTHLY_INTERVAL,
+        interval_count: FLOW_MONTHLY_COUNT,
         trial_period_days: TRIAL_DAYS,
         days_until_due: 3,
         urlCallback: `${appUrl()}/api/flow/confirmacion`,
       },
       "POST",
     );
+    remote = await readPlan(plan.planId);
   }
-  return plan;
+  if (!remote || !planMatchesOffer(remote, offer)) {
+    throw new FlowApiError("Flow no tiene el precio publicado de esta oferta", 409, "flow_precio");
+  }
+  return { ...plan, amountClp: offer };
 }
 
 export async function startFlowSubscription(input: {
@@ -80,15 +123,21 @@ export async function startFlowSubscription(input: {
 }) {
   await assertBillableOrganization(input.organizationId);
   const now = input.now ?? new Date();
+  if (await hasOpenActiveContract({ organizationId: input.organizationId, agent: input.agent, now })) {
+    throw new FlowApiError("Ya hay una suscripción activa. No se reemplaza.", 409, "flow_activa");
+  }
   const existing = await prisma.subscription.findUnique({
     where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
   });
+  if (existing?.flowSubscriptionId && existing.status !== "CANCELED" && existing.status !== "EXPIRED") {
+    throw new FlowApiError("Ya hay una suscripción Flow. No se reemplaza.", 409, "flow_activa");
+  }
+  const plan = await ensurePublishedPlan(input.agent);
   const customerId = await ensureCustomer({
     organizationId: input.organizationId,
     name: `${input.name} · ${input.organizationName}`.slice(0, 120),
     email: input.email,
   });
-  const plan = await ensurePlan(input.agent);
   const trialDays = trialDaysToAsk(existing, now);
   let flowSubscriptionId = existing?.flowSubscriptionId ?? "";
 
@@ -128,7 +177,7 @@ export async function startFlowSubscription(input: {
   } else {
     await prisma.subscription.update({
       where: { organizationId_agent: { organizationId: input.organizationId, agent: input.agent } },
-      data: { flowPlanId: plan.planId, amountClp: plan.amountClp },
+      data: { flowPlanId: plan.planId },
     });
   }
 
