@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { act, createElement, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentChat } from "@/components/agent-chat";
@@ -59,25 +59,24 @@ describe("el marco del panel purga el borrador", () => {
   });
 
   function show(identity: Identity, page: Page) {
-    const chat: ReactNode = createElement(AgentChat, {
-      open: true,
-      messages: [],
-      used: 0,
-      limit: 200,
-      voice: "navegador",
-      draftUserId: identity.userId,
-      draftOrganizationId: identity.organizationId,
-      draftConversationId: identity.conversationId,
-    });
-    const vault: ReactNode = createElement("section", { "aria-label": "Bóveda" }, "Bóveda");
+    const chat = (
+      <AgentChat
+        open
+        messages={[]}
+        used={0}
+        limit={200}
+        voice="navegador"
+        draftUserId={identity.userId}
+        draftOrganizationId={identity.organizationId}
+        draftConversationId={identity.conversationId}
+      />
+    );
     act(() => {
       root.render(
-        createElement(
-          "div",
-          null,
-          createElement(LogoutButton),
-          createElement(ComposerDraftBoundary, { ...identity, children: page === "contador" ? chat : vault }),
-        ),
+        <div>
+          <LogoutButton />
+          <ComposerDraftBoundary {...identity}>{page === "contador" ? chat : <section aria-label="Bóveda">Bóveda</section>}</ComposerDraftBoundary>
+        </div>,
       );
     });
   }
