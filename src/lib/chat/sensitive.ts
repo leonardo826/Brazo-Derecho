@@ -17,39 +17,73 @@ function clip(text: string, max = 500) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-function isPayCommand(text: string) {
-  const stripped = text
-    .replace(/\bse paga\b/gi, " ")
-    .replace(/\bhay que pagar\b/gi, " ")
-    .replace(/\bdebo pagar\b/gi, " ")
-    .replace(/\btengo que pagar\b/gi, " ")
-    .replace(/\bcorresponde pagar\b/gi, " ")
-    .replace(/\bplazo para pagar\b/gi, " ")
-    .replace(/\bfecha de pago\b/gi, " ");
-  if (/\b(transfiere|transferir|transfier[ae]|abona|abonar|haz el pago|realiza el pago|realizar el pago)\b/i.test(stripped)) {
-    return true;
-  }
-  if (/\b(puedes|podr[ií]as|quiero|necesito|por favor)\b[\s\S]{0,40}\bpag(ar|a|ue|uen|á)\b/i.test(stripped)) return true;
-  if (/^\s*(¿\s*)?(paga|pagar|pague|pagá|paguen)\b/i.test(stripped)) return true;
-  if (/\b(paga|pagar|pague|pagá|paguen)\b\s+(el|la|los|las|al)\b/i.test(stripped)) return true;
-  return false;
+function withoutQuotedText(text: string) {
+  return text.replace(/«[^»]*»/g, " ").replace(/“[^”]*”/g, " ").replace(/"[^"]*"/g, " ");
 }
+
+function clausesOf(text: string) {
+  return withoutQuotedText(text)
+    .split(/\s*(?:[.?!;]|\s+y\s+|\s+pero\s+)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function negated(text: string, verbs: string) {
+  return new RegExp(`\\bno(?:\\s+\\w+){0,5}\\s+(?:${verbs})\\b`, "i").test(text);
+}
+
+function isPayCommand(text: string) {
+  return clausesOf(text).some((clause) => {
+    const stripped = clause
+      .replace(/\bse paga\b/gi, " ")
+      .replace(/\bhay que pagar\b/gi, " ")
+      .replace(/\bdebo pagar\b/gi, " ")
+      .replace(/\btengo que pagar\b/gi, " ")
+      .replace(/\bcorresponde pagar\b/gi, " ")
+      .replace(/\bplazo para pagar\b/gi, " ")
+      .replace(/\bfecha de pago\b/gi, " ");
+    if (negated(stripped, "transfiere|transferir|transfier[ae]|abona|abonar|paga|pagar|pague|pagá|paguen|puedes|quiero|necesito")) {
+      return false;
+    }
+    if (/\b(transfiere|transferir|transfier[ae]|abona|abonar|haz el pago|realiza el pago|realizar el pago)\b/i.test(stripped)) {
+      return true;
+    }
+    if (/\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(?:pagar|paga|pague|pagá|paguen)\b/i.test(stripped)) {
+      return true;
+    }
+    if (/^\s*(?:¿\s*)?(paga|pagar|pague|pagá|paguen)\b/i.test(stripped)) return true;
+    return /\b(paga|pague|pagá|paguen)\b\s+(?:el|la|los|las|al)\b/i.test(stripped);
+  });
+}
+
+const FILING_OBJECT = /\b(declaraci[oó]n|declaraciones|f29|f22|formulario\s*29|formulario\s*22)\b/i;
+const FILING_SEND =
+  /\b(env[ií]a|enviar|env[ií]es|manda|mandar|mandes)\b(?:\s+\S+){0,4}\s+(?:la\s+)?declaraci[oó]n\b/i;
 
 function isFilingCommand(text: string) {
-  const verb = /\b(presenta|presentar|presentes|presentá|presenten|presentad)\b/i.test(text);
-  const object = /\b(declaraci[oó]n|declaraciones|f29|f22|formulario\s*29|formulario\s*22)\b/i.test(text);
-  const send = /\b(env[ií]a|enviar|env[ií]es|manda|mandar|mandes)\b(?:\s+\S+){0,4}\s+(la\s+)?declaraci[oó]n\b/i.test(text);
-  return (verb && object) || send;
-}
-
-function asksWithoutOrdering(text: string) {
-  return /\b(s[oó]lo (?:quiero )?pregunt\w*|no inicies|no voy a iniciar|no empieces|sin iniciar|no hagas nada|expl[ií]c\w*|c[oó]mo se|se puede|es posible)\b/i.test(
-    text,
-  );
+  return clausesOf(text).some((clause) => {
+    if (FILING_SEND.test(clause) && !negated(clause, "env[ií]a|enviar|env[ií]es|manda|mandar|mandes")) return true;
+    if (!FILING_OBJECT.test(clause)) return false;
+    const imperative = /\b(?<!se\s)(presenta|presentá|presenten|presentad)\b/i.test(clause);
+    if (imperative && !negated(clause, "presenta|presentá|presenten|presentad|presentes|presentar")) return true;
+    const request =
+      /\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(presentes|presentar|presenta|presentá|presenten)\b/i.test(
+        clause,
+      );
+    return request && !negated(clause, "puedes|podr[ií]as|quiero|necesito|presentes|presentar|presenta|presentá|presenten");
+  });
 }
 
 function isRiskyTool(text: string) {
-  return /\b(borra|borrar|elimina|eliminar)\b[\s\S]{0,40}\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(text);
+  return clausesOf(text).some((clause) => {
+    if (!/\b(todo|toda la base|la base|los datos|la cuenta)\b/i.test(clause)) return false;
+    const request =
+      /\b(?:puedes|podr[ií]as|quiero|necesito|por favor)\s+(?:que\s+)?(?:me\s+)?(?:borres|elimines|borrar|eliminar)\b/i.test(
+        clause,
+      );
+    if (request && !negated(clause, "puedes|podr[ií]as|quiero|necesito|borres|elimines|borrar|eliminar")) return true;
+    return /\b(borra|elimina)\b/i.test(clause) && !negated(clause, "borra|elimina");
+  });
 }
 
 const PORTAL = /\b(sii|previred|tesorer[ií]a|servicio de impuestos internos)\b/i;
@@ -134,7 +168,7 @@ export function vaultActionFor(action: string): "DECLARAR" | "PAGAR" | null {
 
 export function sensitiveRequest(text: string): SensitiveAction | null {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean || asksWithoutOrdering(clean)) return null;
+  if (!clean) return null;
   if (isFilingCommand(clean)) {
     return { id: "presentar_declaracion", title: TITLES.presentar_declaracion, detail: clip(clean) };
   }

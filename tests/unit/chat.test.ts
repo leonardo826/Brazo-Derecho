@@ -58,8 +58,19 @@ describe("chat continuo", () => {
     expect(sensitiveRequest("¿Qué pasa si presento el F29 atrasado?")).toBeNull();
     expect(sensitiveRequest("Explícame el plazo para pagar el PPM")).toBeNull();
     expect(sensitiveRequest("Explícame cómo presentar el F29")).toBeNull();
+    expect(sensitiveRequest("Explícame cómo pagar el IVA")).toBeNull();
+    expect(sensitiveRequest("Explícame cómo borrar toda la base")).toBeNull();
     expect(sensitiveRequest("Solo quiero preguntar si se puede presentar el F29, no inicies")).toBeNull();
+    expect(sensitiveRequest("No presentes el F29")).toBeNull();
+    expect(sensitiveRequest("No presenta el F29")).toBeNull();
+    expect(sensitiveRequest("No pagues el IVA")).toBeNull();
+    expect(sensitiveRequest('El manual dice “presenta el F29”')).toBeNull();
+    expect(sensitiveRequest('El manual dice "paga el IVA"')).toBeNull();
     expect(sensitiveRequest("Presenta el F29 de octubre")?.id).toBe("presentar_declaracion");
+    expect(sensitiveRequest("Presenta el F29 de octubre y explícame el resultado")?.id).toBe("presentar_declaracion");
+    expect(sensitiveRequest("Paga el IVA y explícame el comprobante")?.id).toBe("pagar");
+    expect(sensitiveRequest("Borra toda la base y explícame qué hiciste")?.id).toBe("herramienta");
+    expect(sensitiveRequest('Presenta el F29; el documento dice “no inicies”')?.id).toBe("presentar_declaracion");
   });
 
   test("aprobar en el hilo deja la misma confirmación que la bóveda", () => {

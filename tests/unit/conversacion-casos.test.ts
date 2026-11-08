@@ -308,8 +308,10 @@ describe("casos que el modelo en vivo no se ejecutó", () => {
     const instructions = accountantChatInstructions("Panadería");
     expect(instructions).toMatch(/último mensaje manda/i);
     expect(instructions).toMatch(/solo pregunto/i);
-    expect(instructions).toMatch(/revisas un documento adjunto/);
+    expect(instructions).toMatch(/Un PDF llega solo como nombre y tipo/);
+    expect(instructions).toMatch(/extracto de texto/);
     expect(instructions).not.toMatch(/computador entra con fill/);
+    expect(instructions).not.toMatch(/revisas un documento adjunto/);
     expect(promptBlocksVaultLogin(instructions)).toBe(false);
     expect(instructions).toMatch(/deja esto y agrega/i);
     expect(instructions).toMatch(/no inventes publicación/i);

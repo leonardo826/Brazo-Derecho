@@ -117,7 +117,7 @@ export function PublicCatalog({ emphasis }: { emphasis: "agentes" | "precios" })
             </p>
           </details>
           <details>
-            <summary>¿El Contador entra al SII?</summary>
+            <summary>Hoy el Contador no entra al SII</summary>
             <p>
               {ACCOUNTING_PUBLIC_NOTE} El tope es {AGENT_CATALOG.ACCOUNTING.limitLabel}.
             </p>
