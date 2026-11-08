@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { latestWindow } from "@/lib/chat/history";
-import { finishReply, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
+import { FAILURE_NOTE, finishReply, LIMIT_NOTE, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
 import { SAFE_CREDENTIAL_ENTRY, sealChatText } from "@/lib/chat/secrets";
 import { shouldDropUserText } from "@/lib/chat/secrets";
 import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
@@ -99,6 +99,8 @@ describe("casos deterministas del Contador", () => {
     for (const phrase of [
       "Haz el cálculo del IVA",
       "Dame una explicación del F29",
+      "Explícame bien el F29",
+      "Detalla el crédito fiscal",
       "¿Por qué se paga PPM?",
       "Arma una lista de gastos",
       "Muéstrame una tabla de retenciones",
@@ -106,6 +108,10 @@ describe("casos deterministas del Contador", () => {
     ]) {
       expect(replyPace(phrase).maxOutputTokens).toBeGreaterThan(220);
     }
+    expect(replyPace("Resume el IVA en dos frases").maxOutputTokens).toBe(220);
+    expect(replyPace("Busca información sobre crédito fiscal").webSearch).toBe(true);
+    expect(replyPace("Responde con fuente").webSearch).toBe(true);
+    expect(replyPace("Busca información sobre crédito fiscal").maxOutputTokens).toBe(220);
     const done = finishReply([
       { text: "1.900.", incomplete: false },
     ]);
@@ -113,7 +119,17 @@ describe("casos deterministas del Contador", () => {
     expect(done.truncated).toBe(false);
     const cut = finishReply([{ text: "1. Primer caso", incomplete: true }]);
     expect(cut.text).toContain("1. Primer caso");
-    expect(cut.text).toContain(TRUNCATION_NOTE);
+    expect(cut.text).toContain(LIMIT_NOTE);
+    expect(cut.text).toBe(`1. Primer caso\n\n${TRUNCATION_NOTE}`);
+    expect(cut.truncated).toBe(true);
+    expect(cut.text).not.toMatch(/pide detalle|resumida/i);
+    const failed = finishReply([{ text: "Parte útil.", incomplete: false }], "failure");
+    expect(failed.text).toContain(FAILURE_NOTE);
+    expect(failed.truncated).toBe(true);
+    const empty = finishReply([{ text: "   ", incomplete: true }]);
+    expect(empty.text).toBe("");
+    expect(empty.truncated).toBe(false);
+    expect(empty.note).toBe("");
   });
 
   test("20: una orden externa no cambia el enlace del formulario", () => {

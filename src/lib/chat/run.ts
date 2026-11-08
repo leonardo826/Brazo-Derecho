@@ -12,7 +12,7 @@ import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensit
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
 import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
-import { finishReply, replyPace, TRUNCATION_NOTE } from "@/lib/chat/pace";
+import { finishReply, replyPace } from "@/lib/chat/pace";
 import { randomBytes } from "node:crypto";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, listCredentials } from "@/lib/credentials/service";
@@ -28,7 +28,7 @@ import {
 import { modelFor } from "@/lib/catalog";
 import { logEvent } from "@/lib/log";
 import { recordCompletedTask, recordModelCall, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
-import { USAGE_PRESETS } from "@/lib/pricing";
+import { addUsage, EMPTY_USAGE, USAGE_PRESETS, type TokenUsage } from "@/lib/pricing";
 import { Prisma, prisma } from "@/lib/prisma";
 import { reserveUsage, usedThisMonth } from "@/lib/usage-store";
 import { xaiUsesNetwork, createXaiClient } from "@/lib/xai/client";
@@ -124,6 +124,8 @@ async function* streamModel(input: {
   const client = createXaiClient();
   let raw = "";
   let incomplete = false;
+  let cut: "limit" | "failure" = "limit";
+  const billed: { id: string; model: string; usage: TokenUsage; mocked: boolean }[] = [];
   const gap = chunkGapMs(xaiUsesNetwork());
   const modelStarted = performance.now();
   let firstToken = 0;
@@ -169,6 +171,26 @@ async function* streamModel(input: {
         }
         if (event.type === "done") {
           incomplete = event.response.incomplete === true;
+          const usage = event.response.usage ?? EMPTY_USAGE;
+          const model = event.response.model.trim() || modelFor("ACCOUNTING");
+          const responseId = event.response.id.trim().slice(0, 80) || "resp_sin_id";
+          await recordModelCall({
+            organizationId: input.organizationId,
+            response: { model, usage, mocked: event.response.mocked },
+          });
+          billed.push({ id: responseId, model, usage, mocked: event.response.mocked });
+          logEvent("chat.consumo", {
+            turn,
+            organizationId: input.organizationId,
+            responseId,
+            model,
+            round,
+            incomplete,
+            inputTokens: usage.inputTokens,
+            cachedTokens: usage.cachedTokens,
+            outputTokens: usage.outputTokens,
+            mocked: event.response.mocked,
+          });
           if (!roundText.trim() && event.response.outputText.trim()) {
             roundText = event.response.outputText;
             raw += event.response.outputText;
@@ -182,45 +204,44 @@ async function* streamModel(input: {
     if (missingTable(error)) throw error;
     if (streamWasStopped(input.signal) || isAbortError(error)) return;
     logEvent("chat.ia", { organizationId: input.organizationId });
-    const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
-    yield { type: "message", message: fail };
-    yield { type: "error", code: "ia" };
-    return;
+    if (!raw.trim()) {
+      const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
+      yield { type: "message", message: fail };
+      yield { type: "error", code: "ia" };
+      return;
+    }
+    cut = "failure";
   }
   if (streamWasStopped(input.signal)) return;
-  const finished = finishReply([{ text: raw, incomplete }]);
+  const finished = finishReply([{ text: raw, incomplete }], cut);
   if (!finished.text.trim()) {
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };
     yield { type: "error", code: "ia" };
     return;
   }
-  if (finished.truncated) yield { type: "delta", text: `\n\n${TRUNCATION_NOTE}` };
+  if (finished.note) yield { type: "delta", text: `\n\n${finished.note}` };
   if (streamWasStopped(input.signal)) return;
-  const response = {
-    id: "resp_parcial",
-    model: modelFor("ACCOUNTING"),
-    outputText: finished.text,
-    usage: USAGE_PRESETS.text,
-    mocked: !xaiUsesNetwork(),
-  };
+  const usage = billed.reduce((sum, round) => addUsage(sum, round.usage), EMPTY_USAGE);
+  const last = billed[billed.length - 1];
   const split = splitAction(finished.text);
-  await recordModelCall({ organizationId: input.organizationId, response });
+  // CHAT ya guardó los tokens de cada tramo, también de un corte o de un tramo anterior a un fallo.
+  // CONSULTS cuenta una consulta del mes solo si quedó texto útil. TASK solo si la respuesta terminó.
   const saved = await prisma.$transaction(async (tx) => {
     const reserved = await reserveUsage(tx, {
       organizationId: input.organizationId,
       agent: "ACCOUNTING",
       metric: "CONSULTS",
       quantity: 1,
-      tokens: response.usage,
-      model: response.model,
+      tokens: usage,
+      model: last?.model ?? modelFor("ACCOUNTING"),
     });
     if (!reserved.ok) return null;
     if (!finished.truncated) {
       await recordCompletedTask(tx, {
         organizationId: input.organizationId,
-        model: response.model,
-        synthetic: response.mocked,
+        model: last?.model ?? modelFor("ACCOUNTING"),
+        synthetic: last?.mocked ?? !xaiUsesNetwork(),
         reservationId,
       });
     }

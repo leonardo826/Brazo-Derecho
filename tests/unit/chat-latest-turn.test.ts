@@ -89,7 +89,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { loadHistory, saveCountedAssistantMessage, saveUserMessage } from "@/lib/chat/store";
 import { streamChatTurn } from "@/lib/chat/run";
-import { recordCompletedTask, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
+import { recordCompletedTask, recordModelCall, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
 import { createXaiClient } from "@/lib/xai/client";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 
@@ -374,6 +374,7 @@ describe("turno de chat", () => {
     vi.mocked(reserveDailyTask).mockResolvedValue({ ok: true, reservationId: null });
     vi.mocked(releaseDailyTask).mockReset();
     vi.mocked(recordCompletedTask).mockReset();
+    vi.mocked(recordModelCall).mockReset();
     vi.mocked(saveUserMessage).mockImplementation(async ({ body }: { body: string }) => ({
       threadId: "thread-a",
       message: bubble("user-1", "USER", body),
@@ -585,8 +586,8 @@ describe("turno de chat", () => {
             id: "corta",
             model: "grok-4.7",
             outputText: "El 19% es una parte.",
-            usage: USAGE_PRESETS.text,
-            mocked: true,
+            usage: { inputTokens: 19, cachedTokens: 4, outputTokens: 6 },
+            mocked: false,
             incomplete: true,
           },
         };
@@ -605,8 +606,16 @@ describe("turno de chat", () => {
     const saved = events.find((event) => event.type === "message");
     const body = saved && saved.type === "message" ? saved.message.body : "";
     expect(body).toContain("El 19% es una parte.");
-    expect(body).toContain("(Respuesta resumida; pide detalle si lo necesitas)");
-    expect(body).not.toMatch(/cancel|reembol/i);
+    expect(body).toContain("(Respuesta incompleta por el límite de salida.)");
+    expect(body).not.toMatch(/pide detalle|cancel|reembol/i);
+    expect(recordModelCall).toHaveBeenCalledWith({
+      organizationId: "org-a",
+      response: {
+        model: "grok-4.7",
+        usage: { inputTokens: 19, cachedTokens: 4, outputTokens: 6 },
+        mocked: false,
+      },
+    });
     expect(recordCompletedTask).not.toHaveBeenCalled();
     expect(releaseDailyTask).toHaveBeenCalledWith("reserva-corta");
   });
