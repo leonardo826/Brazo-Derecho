@@ -301,6 +301,9 @@ describe("un IVA posterior no hereda la bóveda", () => {
       "El RUT 76.123.456-7 va en la factura del cliente.",
     );
     expect(sealChatText("¿Cuál es la clave del F29?")).toBe("¿Cuál es la clave del F29?");
+    expect(sealChatText("La clave del F29 es el plazo de declaración.")).toBe(
+      "La clave del F29 es el plazo de declaración.",
+    );
   });
 });
 
@@ -316,6 +319,15 @@ describe("corpus de claves sintéticas", () => {
     { name: "igual", text: "passwd=Demo.1234", fragments: ["Demo.1234", "Demo", "1234"] },
     { name: "varias líneas", text: "usuario: 12.345.678-5\nclave:\nDemo.1234", fragments: ["12.345.678-5", "Demo.1234", "Demo", "1234"] },
     { name: "mezcla", text: "Guarda el RUT 12.345.678-5 y la clave Demo.1234 en la bóveda", fragments: ["12.345.678-5", "Demo.1234", "Demo", "1234"] },
+    { name: "corta alfabética", text: "clave: hola", fragments: ["hola"] },
+    { name: "password igual abc", text: "password=abc", fragments: ["abc"] },
+    { name: "contraseña es verano", text: "contraseña es verano", fragments: ["verano"] },
+    { name: "comillas", text: 'clave: "hola"', fragments: ["hola"] },
+    { name: "comillas simples", text: "password='abc'", fragments: ["abc"] },
+    { name: "comillas angulares", text: "clave: «verano»", fragments: ["verano"] },
+    { name: "unicode", text: "clave: niño", fragments: ["niño"] },
+    { name: "unicode largo", text: "password: パスワード", fragments: ["パスワード"] },
+    { name: "varias líneas corta", text: "sigue el texto\nclave:\nhola", fragments: ["hola", "sigue el texto"] },
   ];
 
   test.each(samples)("$name no conserva fragmentos", ({ text, fragments }) => {
@@ -333,6 +345,18 @@ describe("corpus de claves sintéticas", () => {
     for (const fragment of fragments) expect(packed).not.toContain(fragment);
     expect(prepared.messages[1]?.text).toBe("¿Cuándo se paga el IVA de noviembre?");
     expect(prepared.vaultNote).toBe("");
+  });
+
+  test("clave: hola y una asignación en varias líneas no dejan texto plano", () => {
+    for (const text of ["clave: hola", "password=abc", "contraseña es verano", "sigue el IVA\nclave:\n«hola»"]) {
+      const sealed = sealChatText(text);
+      expect(sealed).toBe(SAFE_CREDENTIAL_ENTRY);
+      expect(sealed).not.toContain("hola");
+      expect(sealed).not.toContain("abc");
+      expect(sealed).not.toContain("verano");
+      expect(sealed).not.toContain("IVA");
+    }
+    expect(sealChatText("La clave del F29 es el plazo.")).toBe("La clave del F29 es el plazo.");
   });
 });
 

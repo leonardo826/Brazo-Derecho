@@ -1,9 +1,13 @@
 import { wantsSecureCredentialForm } from "@/lib/chat/sensitive";
 
 /**
- * Texto fijo cuando el mensaje pide un acceso o parece traer una clave.
- * No incluye ningún carácter del texto original: un recorte parcial deja
- * fragmentos (Demo.1234 → [redactado].1234). No promete reconocer toda clave.
+ * Texto fijo cuando el mensaje pide un acceso o asigna una clave.
+ * No incluye ningún carácter del texto original.
+ *
+ * Una asignación explícita (`clave`/`contraseña`/`password`/`passwd` con
+ * `:`, `=`, `es` o `is`) cierra el mensaje entero, aunque el valor sea corto,
+ * alfabético o unicode. No reconoce un secreto suelto sin esa etiqueta, ni
+ * mira archivos adjuntos. «La clave del F29» no es una asignación.
  */
 export const SAFE_CREDENTIAL_ENTRY =
   "Quiero usar el formulario seguro de la Bóveda. No dejo la clave en el chat.";
@@ -61,7 +65,7 @@ function carriesSuspectedSecret(text: string) {
 }
 
 function secretValueFollows(rest: string) {
-  const bridge = rest.match(/^\s*(?::|=|(?:es|sea|is)\b)/i);
+  const bridge = rest.match(/^\s*(?:[:=]|\uFF1A|\uFF1D|(?:es|sea|is)\b)/i);
   let value = bridge ? rest.slice(bridge[0].length) : rest;
   value = value.replace(/^\s+/, "");
   if (!value) return false;
@@ -69,12 +73,11 @@ function secretValueFollows(rest: string) {
   let line = (lines[0] ?? "").trim();
   if (!line && bridge) line = (lines[1] ?? "").trim();
   if (!line) return false;
-  if (!bridge) {
-    const token = line.split(/\s+/)[0] ?? "";
-    if (FUNCTION_WORD.has(token.toLowerCase().replace(/^[¿¡]+|[.,;:!?]+$/g, ""))) return false;
-    return tokenLooksSecret(token);
-  }
-  return line.split(/\s+/).some((token) => tokenLooksSecret(token));
+  // Etiqueta con asignación: cualquier valor no vacío, sin mirar largo ni entropía.
+  if (bridge) return true;
+  const token = line.split(/\s+/)[0] ?? "";
+  if (FUNCTION_WORD.has(token.toLowerCase().replace(/^[¿¡]+|[.,;:!?]+$/g, ""))) return false;
+  return tokenLooksSecret(token);
 }
 
 function tokenLooksSecret(token: string) {
