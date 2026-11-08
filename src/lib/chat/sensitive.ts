@@ -77,7 +77,8 @@ export function wantsVaultSave(text: string) {
   return PORTAL.test(clean) && /\b(acceso|usuario|rut|root)\b/i.test(clean);
 }
 
-const HAND_OFF = /\b(te (mando|env[ií]o|paso)|pego|pegar|por (el |este )?chat)\b/i;
+const HAND_OFF =
+  /\b(?:te (?:mando|env[ií]o|paso|dejo)|toma|ah[ií] va|aqu[ií] va|pego|pegar|por (?:el |este )?chat)\b/iu;
 
 /** Quiere pasar la clave por el chat. El formulario es el camino; borrar el mensaje no basta. */
 export function wantsChatSecretHandoff(text: string) {
