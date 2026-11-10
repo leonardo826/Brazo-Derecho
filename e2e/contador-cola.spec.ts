@@ -91,7 +91,7 @@ test("se puede escribir mientras el contador responde, encolar y detener", async
   await send.click();
   await expect(page.getByText("1 mensaje en espera")).toBeVisible();
   const queued = page.locator(".agent-bubble.user:visible").filter({ hasText: beta }).filter({ hasText: "En espera" });
-  const streaming = page.locator(".agent-bubble.assistant:visible").filter({ hasText: "Ejemplo simulado" });
+  const streaming = page.locator(".agent-bubble.assistant:visible").filter({ hasText: "Ejemplo simulado" }).last();
   await expect(queued).toBeVisible();
   await expect(streaming).toBeVisible();
   await expect(stop).toBeVisible();
@@ -100,7 +100,7 @@ test("se puede escribir mientras el contador responde, encolar y detener", async
   expect(liveBox!.y).toBeLessThan(queuedBox!.y);
 
   await stop.click();
-  const stopped = page.locator(".agent-bubble.assistant:visible").filter({ hasText: "Detuviste la respuesta." });
+  const stopped = page.locator(".agent-bubble.assistant:visible").filter({ hasText: "Detuviste la respuesta." }).last();
   await expect(stopped).toBeVisible();
   await expect(stopped).not.toContainText("No alcancé a responder");
   await expect(page.locator(".agent-bubble.assistant:visible").filter({ hasText: beta })).toBeVisible({

@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentChat } from "@/components/agent-chat";
 import { ComposerDraftBoundary } from "@/components/composer-draft-boundary";
 import { LogoutButton } from "@/components/logout-button";
-import { purgeComposerDrafts } from "@/lib/chat/composer-draft";
+import {
+  alignComposerDraftEpoch,
+  purgeComposerDrafts,
+  readComposerDraft,
+  restoreComposerDraft,
+  writeComposerDraft,
+} from "@/lib/chat/composer-draft";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
@@ -103,6 +109,81 @@ describe("el marco del panel purga el borrador", () => {
     show({ ...personA, conversationId: "otro-hilo" }, "boveda");
     show(personA, "contador");
     expect(composerValue()).toBe("");
+  });
+
+  test("la misma persona conserva el borrador al ir a la Bóveda y volver", () => {
+    show(personA, "contador");
+    act(() => setComposer(host, "nota de la misma sesion"));
+    show(personA, "boveda");
+    show(personA, "contador");
+    expect(composerValue()).toBe("nota de la misma sesion");
+  });
+
+  test("atrás no revive un borrador que ya se purgó", () => {
+    show(personA, "contador");
+    act(() => setComposer(host, "nota que no debe volver"));
+    show(personA, "boveda");
+    const leave = [...host.querySelectorAll("button")].find((button) => button.textContent === "Salir");
+    if (!leave) throw new Error("sin salir");
+    act(() => leave.click());
+    show(personA, "contador");
+    expect(composerValue()).toBe("");
+    const box = host.querySelector("textarea");
+    if (!box) throw new Error("sin compositor");
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    act(() => {
+      setter?.call(box, "nota que no debe volver");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    });
+    expect(composerValue()).toBe("");
+    expect(readComposerDraft(personA)).toBe("");
+    expect(sessionStorage.getItem("brazo-draft-epoch") ?? "").not.toContain("nota");
+    expect(localStorage.getItem("brazo-draft-epoch")).toBeNull();
+  });
+
+  test("una recarga alinea la purga y conserva un borrador nuevo", () => {
+    purgeComposerDrafts();
+    sessionStorage.setItem("brazo-draft-epoch", "40");
+    alignComposerDraftEpoch();
+    writeComposerDraft(personA, "nota nueva");
+    expect(restoreComposerDraft(personA)).toBe("nota nueva");
+  });
+
+  test("una página restaurada no recupera el texto si otra ya lo purgó", () => {
+    writeComposerDraft(personA, "nota congelada");
+    sessionStorage.setItem("brazo-draft-epoch", "99");
+    expect(restoreComposerDraft(personA)).toBe("");
+    expect(readComposerDraft(personA)).toBe("");
+    show(personA, "contador");
+    const box = host.querySelector("textarea");
+    if (!box) throw new Error("sin compositor");
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    act(() => {
+      setter?.call(box, "nota congelada");
+      const shown = new PageTransitionEvent("pageshow");
+      Object.defineProperty(shown, "persisted", { value: true });
+      window.dispatchEvent(shown);
+    });
+    expect(composerValue()).toBe("");
+    expect(readComposerDraft(personA)).toBe("");
+  });
+
+  test("remontar la misma persona tras una purga externa no devuelve el borrador", () => {
+    show(personA, "contador");
+    act(() => setComposer(host, "nota que otro documento purgó"));
+    expect(composerValue()).toBe("nota que otro documento purgó");
+    act(() => root.unmount());
+    host.remove();
+    sessionStorage.setItem("brazo-draft-epoch", "9001");
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    show(personA, "contador");
+    expect(composerValue()).toBe("");
+    expect(readComposerDraft(personA)).toBe("");
+    expect(sessionStorage.getItem("brazo-draft-epoch")).toBe("9001");
+    expect(sessionStorage.getItem("brazo-draft-epoch")).not.toContain("nota");
+    expect(localStorage.getItem("brazo-draft-epoch")).toBeNull();
   });
 
   test("salir desde la Bóveda borra el borrador antes de volver al Contador", () => {

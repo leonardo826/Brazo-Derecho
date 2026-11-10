@@ -9,7 +9,12 @@ export type DraftIdentity = {
 type HeldDraft = { key: string; text: string };
 
 let held: HeldDraft | null = null;
+let epoch = 0;
 const listeners = new Set<() => void>();
+
+// Solo un número de purga, nunca el texto. Sirve para que una página
+// restaurada desde el historial vea que otro documento de la pestaña ya borró el borrador.
+const EPOCH_KEY = "brazo-draft-epoch";
 
 function identityKey(identity: DraftIdentity) {
   const userId = identity.userId.trim();
@@ -30,7 +35,21 @@ export function subscribeComposerDraft(listener: () => void) {
   };
 }
 
+function dropIfEpochRevoked() {
+  const remote = visibleEpoch();
+  if (remote === null || remote === String(epoch)) return false;
+  const parsed = Number(remote);
+  if (Number.isSafeInteger(parsed)) epoch = parsed;
+  else {
+    epoch += 1;
+    publishEpoch();
+  }
+  held = null;
+  return true;
+}
+
 export function readComposerDraft(identity: DraftIdentity) {
+  dropIfEpochRevoked();
   const key = identityKey(identity);
   if (!key || held?.key !== key) return "";
   return held.text;
@@ -50,15 +69,69 @@ export function writeComposerDraft(identity: DraftIdentity, text: string) {
   emitDraft();
 }
 
+function publishEpoch() {
+  try {
+    sessionStorage.setItem(EPOCH_KEY, String(epoch));
+  } catch {
+    // Sin sessionStorage la memoria del documento vivo sigue siendo la fuente.
+  }
+}
+
+function visibleEpoch() {
+  try {
+    return sessionStorage.getItem(EPOCH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function bumpEpoch() {
+  epoch += 1;
+  publishEpoch();
+}
+
+export function alignComposerDraftEpoch() {
+  const remote = visibleEpoch();
+  const parsed = Number(remote);
+  if (remote !== null && Number.isSafeInteger(parsed)) epoch = parsed;
+}
+
+alignComposerDraftEpoch();
+
 export function adoptComposerDraft(identity: DraftIdentity) {
+  if (dropIfEpochRevoked()) {
+    emitDraft();
+    return;
+  }
   const key = identityKey(identity);
   if (!key || !held || held.key === key) return;
   held = null;
+  bumpEpoch();
   emitDraft();
 }
 
 export function purgeComposerDrafts() {
-  if (!held) return;
+  const had = held !== null;
   held = null;
-  emitDraft();
+  bumpEpoch();
+  if (had) emitDraft();
+}
+
+export function restoreComposerDraft(identity: DraftIdentity) {
+  if (dropIfEpochRevoked()) {
+    emitDraft();
+    return "";
+  }
+  return readComposerDraft(identity);
+}
+
+export function reconcileRestoredComposer(identity: DraftIdentity) {
+  if (typeof document === "undefined") return;
+  const allowed = restoreComposerDraft(identity);
+  for (const box of document.querySelectorAll<HTMLTextAreaElement>("textarea[name='texto']")) {
+    if (box.value === allowed) continue;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    setter?.call(box, allowed);
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
