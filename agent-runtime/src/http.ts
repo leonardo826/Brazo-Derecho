@@ -12,6 +12,7 @@ export type AgentEnv = {
   XAI_API_URL?: string;
   XAI_COMPUTER_MODEL?: string;
   AGENT_RUNTIME_TOKEN?: string;
+  MACHINE_ID?: string;
   VAULT_FILL_URL?: string;
   DISPLAY?: string;
   CHROME_PROFILE?: string;
@@ -53,8 +54,10 @@ function header(headers: AgentRequest["headers"], name: string) {
   return "";
 }
 
+const inflight = new Map<string, AbortController>();
+
 function authorized(headers: AgentRequest["headers"], expected: string) {
-  if (!expected) return true;
+  if (!expected) return false;
   const raw = header(headers, "authorization");
   const got = raw.startsWith("Bearer ") ? raw.slice("Bearer ".length) : "";
   const a = createHash("sha256").update(got).digest();
@@ -81,6 +84,7 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
       profileDir: status.profileDir,
       xaiMode: mode,
       model: computerModelName(deps.env.XAI_COMPUTER_MODEL),
+      machineId: (deps.env.MACHINE_ID ?? "").trim(),
     });
   }
 
@@ -93,10 +97,16 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
     }
   }
 
-  if (method === "POST" && (path === "/action" || path === "/task")) {
+  if (method === "POST" && (path === "/action" || path === "/task" || path === "/task/cancel")) {
     if (request.body === null || request.body === undefined || typeof request.body !== "object") {
       return json(400, { ok: false, error: "datos" });
     }
+  }
+
+  const machineId = (deps.env.MACHINE_ID ?? "").trim();
+  function boundMachine(body: unknown) {
+    const claimed = body && typeof body === "object" ? (body as { machineId?: unknown }).machineId : "";
+    return Boolean(machineId) && typeof claimed === "string" && claimed === machineId;
   }
 
   if (method === "POST" && path === "/action") {
@@ -113,12 +123,21 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
     return json(200, { ok: true });
   }
 
+  if (method === "POST" && path === "/task/cancel") {
+    if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
+    inflight.get(machineId)?.abort();
+    return json(200, { ok: true, status: "FAILED", result: "Cancelada. No hay resultado." });
+  }
+
   if (method === "POST" && path === "/task") {
+    if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
     const record = request.body as { goal?: unknown; model?: unknown; credentials?: unknown; fillGrant?: unknown };
     const goal = typeof record.goal === "string" ? record.goal.trim() : "";
     if (!goal || goal.length > 2000) return json(400, { ok: false, error: "Escribe un objetivo de hasta 2000 caracteres." });
     const credentials = sanitizeCredentialMeta(record.credentials);
     const fillGrant = typeof record.fillGrant === "string" ? record.fillGrant : "";
+    const controller = new AbortController();
+    inflight.set(machineId, controller);
     const mode = resolveXaiMode(deps.env);
     const modelName = computerModelName(typeof record.model === "string" ? record.model : deps.env.XAI_COMPUTER_MODEL);
     const model =
@@ -130,9 +149,18 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
             model: modelName,
             fetchImpl: deps.fetchImpl,
           });
-    const fillLogin = (credentialId: string) => fillFromVault(deps, fillGrant, credentialId);
+    const fillLogin = fillGrant ? (credentialId: string) => fillFromVault(deps, fillGrant, credentialId) : undefined;
     // clientConfirmed no se acepta en el cuerpo: declarar y pagar siguen bloqueados en esta ruta.
-    const result = await runComputerTask({ goal, desktop: deps.desktop, model, credentials, fillLogin });
+    const result = await runComputerTask({
+      goal,
+      desktop: deps.desktop,
+      model,
+      credentials,
+      fillLogin,
+      allowFill: Boolean(fillGrant),
+      signal: controller.signal,
+    });
+    if (inflight.get(machineId) === controller) inflight.delete(machineId);
     console.log(JSON.stringify({ evento: "tarea", status: result.status, pasos: result.steps.length, modo: mode }));
     return json(200, { ok: result.status === "DONE", ...result, xaiMode: mode, model: modelName });
   }

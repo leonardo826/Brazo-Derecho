@@ -1,4 +1,4 @@
-import { describeAction } from "./actions.ts";
+import { describeAction, isPublicDestination } from "./actions.ts";
 import type { CredentialMeta } from "./credentials.ts";
 import type { ComputerModel, Desktop } from "./desktop.ts";
 import { redactText } from "./redact.ts";
@@ -27,6 +27,8 @@ export async function runComputerTask(input: {
   maxSteps?: number;
   credentials?: CredentialMeta[];
   clientConfirmed?: boolean;
+  allowFill?: boolean;
+  signal?: AbortSignal;
   fillLogin?: (credentialId: string) => Promise<FillMaterial | null>;
 }): Promise<TaskResult> {
   const goal = input.goal.trim();
@@ -46,10 +48,19 @@ export async function runComputerTask(input: {
   const knownSecrets: string[] = [];
   const maxSteps = input.maxSteps ?? 8;
   for (let step = 0; step < maxSteps; step += 1) {
+    if (input.signal?.aborted) return { status: "FAILED", result: "Cancelada. No hay resultado.", steps };
     let screenshot: Buffer;
     try {
-      screenshot = await input.desktop.screenshot();
+      screenshot = await Promise.race([
+        input.desktop.screenshot(),
+        new Promise<Buffer>((_resolve, reject) => {
+          if (!input.signal) return;
+          if (input.signal.aborted) reject(new Error("abort"));
+          input.signal.addEventListener("abort", () => reject(new Error("abort")), { once: true });
+        }),
+      ]);
     } catch {
+      if (input.signal?.aborted) return { status: "FAILED", result: "Cancelada. No hay resultado.", steps };
       return { status: "FAILED", result: "No pude tomar la captura del escritorio.", steps };
     }
     steps.push({ kind: "screenshot", bytes: screenshot.length });
@@ -68,6 +79,12 @@ export async function runComputerTask(input: {
     }
     if (decision.kind === "done") {
       return { status: "DONE", result: redactText(decision.result, knownSecrets).slice(0, 2000), steps };
+    }
+    if (decision.action.type === "goto" && !isPublicDestination(decision.action.url)) {
+      return { status: "FAILED", result: "Ese destino no es una página pública. No navegué.", steps };
+    }
+    if (decision.action.type === "fill" && input.allowFill === false) {
+      return { status: "FAILED", result: "No hay permiso para usar una clave. No la escribí.", steps };
     }
     if (decision.action.type === "fill") {
       let material: FillMaterial | null = null;

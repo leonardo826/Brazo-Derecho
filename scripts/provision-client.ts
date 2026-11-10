@@ -11,7 +11,8 @@ Solo llama a la Machines API si se cumplen las tres:
   FLY_API_TOKEN con valor
   y el flag --confirmo-gasto
 
-Sin eso imprime el plan y termina. No corras fly apps create.`;
+Sin eso imprime el plan y termina. No corras fly apps create.
+Imprimir ids no registra un arriendo alcanzable. XAI_MODE=mock no es un resultado real.`;
 
 function readClient(argv: string[]) {
   const index = argv.indexOf("--client");

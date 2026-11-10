@@ -31,10 +31,11 @@ export function readMasterKey(env: VaultEnv = process.env) {
   return key;
 }
 
-export function encryptSecret(plaintext: string, key: Buffer): CipherBundle {
+export function encryptSecret(plaintext: string, key: Buffer, aad?: string): CipherBundle {
   if (key.length !== 32) throw new VaultKeyError();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
+  if (aad) cipher.setAAD(Buffer.from(aad, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return {
@@ -44,7 +45,7 @@ export function encryptSecret(plaintext: string, key: Buffer): CipherBundle {
   };
 }
 
-export function decryptSecret(bundle: CipherBundle, key: Buffer) {
+export function decryptSecret(bundle: CipherBundle, key: Buffer, aad?: string) {
   if (key.length !== 32) throw new VaultKeyError();
   const iv = Buffer.from(bundle.iv, "base64");
   const authTag = Buffer.from(bundle.authTag, "base64");
@@ -55,6 +56,7 @@ export function decryptSecret(bundle: CipherBundle, key: Buffer) {
   try {
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(authTag);
+    if (aad) decipher.setAAD(Buffer.from(aad, "utf8"));
     return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
   } catch (error) {
     if (error instanceof VaultKeyError) throw error;

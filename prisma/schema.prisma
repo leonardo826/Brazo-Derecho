@@ -381,6 +381,14 @@ model Computer {
   clientId       String         @unique
   flyApp         String         @default("")
   machineId      String         @default("")
+  // Origen HTTPS alcanzable desde la app, o http://127.0.0.1 en local. Nunca *.internal.
+  agentEndpoint  String         @default("")
+  // Token de esa máquina, cifrado. No sale al chat, a la UI ni a los logs.
+  agentTokenCiphertext String  @default("")
+  agentTokenIv   String         @default("")
+  agentTokenAuthTag String      @default("")
+  agentPinnedAddress String     @default("")
+  leaseEpoch     Int            @default(0)
   volumeId       String         @default("")
   status         ComputerStatus @default(PENDING)
   region         String         @default("gru")
@@ -408,6 +416,20 @@ model ComputerTask {
 
   @@index([clientId, createdAt])
   @@index([computerId])
+}
+
+/// Alta, rotación o revocación hecha por un operador. Sin token y sin URL.
+model ComputerLeaseAudit {
+  id             String   @id @default(cuid())
+  organizationId String
+  machineId      String
+  operatorId     String
+  action         String
+  outcome        String
+  leaseEpoch     Int
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
 }
 
 /// Acceso de un portal (SII, banco, etc.). El usuario y la clave van solo cifrados.

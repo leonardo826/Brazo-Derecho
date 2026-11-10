@@ -1,4 +1,7 @@
 import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/chat/abort";
+import { executeDesktopRequest } from "@/lib/chat/desktop-task";
+import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
+import { loadTenantLease } from "@/lib/computer/lease";
 import {
   accountantChatInstructions,
   APPROVED_PORTAL_NOTE,
@@ -328,6 +331,39 @@ export async function* streamChatTurn(input: {
   if (action) {
     const card = await saveConfirmation(saved.threadId, action);
     yield { type: "message", message: card };
+    yield { type: "done" };
+    return;
+  }
+  const desktop = await executeDesktopRequest({
+    organizationId: input.organizationId,
+    userId: input.actorUserId,
+    conversationId: CONTADOR_CONVERSATION_ID,
+    text,
+    signal: input.signal,
+    loadLease: (organizationId) => loadTenantLease(organizationId),
+    reserve: () => reserveDailyTask(input.organizationId),
+    release: (reservationId) => releaseDailyTask(reservationId),
+    log: (fields) => logEvent("chat.computador", fields),
+  });
+  if (desktop.kind === "confirm") {
+    const card = await saveConfirmation(saved.threadId, {
+      id: "herramienta",
+      title: "Confirmar antes de seguir",
+      detail: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    });
+    yield { type: "message", message: card };
+    yield { type: "done" };
+    return;
+  }
+  if (desktop.kind === "reply") {
+    if (streamWasStopped(input.signal)) return;
+    const message = await saveCountedAssistantMessage(input.organizationId, saved.threadId, desktop.text);
+    if (!message) {
+      yield { type: "error", code: "limite" };
+      return;
+    }
+    yield { type: "message", message };
+    yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
     yield { type: "done" };
     return;
   }

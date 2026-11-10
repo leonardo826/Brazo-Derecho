@@ -23,10 +23,10 @@ Eso no usa el `docker compose` de Postgres. Cuando el healthcheck responda:
 Tarea de ejemplo, sin API de pago:
 
 ```bash
-curl -sS http://127.0.0.1:8787/status
-bash infra/desktop/sample-task.sh "Abre https://example.com y dime el título"
-bash infra/desktop/sample-task.sh "Busca Chile en Wikipedia"
-curl -sS http://127.0.0.1:8787/screenshot -o /tmp/pantalla.png
+curl -sS http://127.0.0.1:8787/status -H "authorization: Bearer local"
+AGENT_RUNTIME_TOKEN=local MACHINE_ID=desktop-local bash infra/desktop/sample-task.sh "Abre https://example.com y dime el título"
+AGENT_RUNTIME_TOKEN=local MACHINE_ID=desktop-local bash infra/desktop/sample-task.sh "Busca Chile en Wikipedia"
+curl -sS http://127.0.0.1:8787/screenshot -H "authorization: Bearer local" -o /tmp/pantalla.png
 ```
 
 El simulador abre la URL y devuelve el texto. No llama a xAI. Para mirar la página, usa noVNC o el PNG.
@@ -49,9 +49,10 @@ Para bajarlo: `docker compose -f infra/desktop/docker-compose.yml down`. El volu
 | `XAI_API_KEY` | Clave de la Responses API. Solo por entorno, nunca en el repo. | Simulador, sin red. |
 | `XAI_API_URL` | Base de la API. | `https://api.x.ai/v1` |
 | `XAI_COMPUTER_MODEL` | `grok-4.3` (default) o `grok-4.7`. | `grok-4.3` |
-| `AGENT_RUNTIME_TOKEN` | Si tiene valor, `/task` y el resto exigen `Authorization: Bearer`. Tiene que ser el mismo valor que `COMPUTER_AGENT_TOKEN` de la app. | La API escucha sin clave. En compose el puerto del host es `127.0.0.1`. |
+| `AGENT_RUNTIME_TOKEN` | Obligatorio. `/task` y el resto exigen `Authorization: Bearer`. Si falta, la API responde 401. El chat no usa este valor. | 401. En compose el puerto del host es `127.0.0.1` y el default local es `local`. |
+| `MACHINE_ID` | Identificador de esta máquina. `/task` lo exige igual al cuerpo. | 403. En compose el default local es `desktop-local`. |
 | `VAULT_FILL_URL` | URL de `POST /api/credenciales/rellenar` para escribir un acceso en el formulario. La clave no va al modelo. | El relleno falla y no se inventa una clave. La llave maestra no vive en este computador: está en `CREDENTIALS_MASTER_KEY` de la app. |
-| `COMPUTER_AGENT_URL` | La app Next le manda la tarea a `POST /task`. En local: `http://127.0.0.1:8787`. | La tarea queda en cola y no hay red. |
+| `COMPUTER_AGENT_URL` | El panel puede encolar hacia esta URL. El chat no la usa: no aísla una máquina. | La tarea del panel queda en cola y no hay red. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En `next dev` se muestra. En producción no. |
 | `FLY_API_TOKEN` | Token de Fly. Solo por entorno. | El alta no llama a Fly. |
 | `FLY_DRY_RUN` | Exactamente `false` para permitir la API. | Dry-run. |

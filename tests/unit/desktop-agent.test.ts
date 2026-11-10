@@ -17,6 +17,22 @@ const PNG = Buffer.from(
   "base64",
 );
 
+const AGENT_TOKEN = "agent-token";
+const MACHINE_ID = "machine-1";
+
+function agentEnv(extra: Record<string, string> = {}) {
+  return { AGENT_RUNTIME_TOKEN: AGENT_TOKEN, MACHINE_ID, ...extra };
+}
+
+function agentTask(body: Record<string, unknown>) {
+  return {
+    method: "POST",
+    path: "/task",
+    body: { machineId: MACHINE_ID, ...body },
+    headers: { authorization: `Bearer ${AGENT_TOKEN}` },
+  };
+}
+
 function fakeDesktop() {
   const actions: DesktopAction[] = [];
   let shots = 0;
@@ -60,8 +76,8 @@ describe("agente de computador en simulador", () => {
       throw new Error("no debía haber red");
     });
     const response = await handleAgent(
-      { method: "POST", path: "/task", body: { goal: "Abre https://example.com y dime el título" } },
-      { env: { XAI_MODE: "mock", XAI_API_KEY: "no-usar" }, desktop: rig.desktop, fetchImpl: fetchMock as typeof fetch },
+      agentTask({ goal: "Abre https://example.com y dime el título" }),
+      { env: agentEnv({ XAI_MODE: "mock", XAI_API_KEY: "no-usar" }), desktop: rig.desktop, fetchImpl: fetchMock as typeof fetch },
     );
     expect(response.status).toBe(200);
     const body = JSON.parse(response.body.toString("utf8")) as { status: string; xaiMode: string };
@@ -172,8 +188,8 @@ describe("agente de computador en simulador", () => {
     expect(isSensitiveGoal("Entra al SII con mi clave")).toBe(false);
 
     const response = await handleAgent(
-      { method: "POST", path: "/task", body: { goal: "Paga la cuenta del proveedor", clientConfirmed: true } },
-      { env: { XAI_MODE: "mock" }, desktop: rig.desktop },
+      agentTask({ goal: "Paga la cuenta del proveedor", clientConfirmed: true }),
+      { env: agentEnv({ XAI_MODE: "mock" }), desktop: rig.desktop },
     );
     expect(JSON.parse(response.body.toString("utf8")).status).toBe("PENDING_APPROVAL");
     expect(rig.shots()).toBe(0);
@@ -292,18 +308,18 @@ describe("agente de computador en simulador", () => {
         path: "/task",
         body: {
           goal: "Entra al SII con mi clave",
+          machineId: MACHINE_ID,
           fillGrant: "grant-de-prueba-que-no-es-la-clave",
           credentials: [{ id: "cred12345678", label: "SII", portal: "SII", usernameHint: "9988", secret }],
         },
         headers: { authorization: "Bearer agent-token" },
       },
       {
-        env: {
+        env: agentEnv({
           XAI_API_KEY: "xai-test",
           XAI_API_URL: "https://api.x.ai/v1",
           VAULT_FILL_URL: "https://app.test/api/credenciales/rellenar",
-          AGENT_RUNTIME_TOKEN: "agent-token",
-        },
+        }),
         desktop: rig.desktop,
         fetchImpl: fetchMock as typeof fetch,
       },
@@ -317,6 +333,59 @@ describe("agente de computador en simulador", () => {
     expect(seen.join("\n")).not.toContain("grant-de-prueba-que-no-es-la-clave");
     expect(seen.join("\n")).not.toContain("agent-token");
     expect(rig.actions).toContainEqual({ type: "type", text: secret });
+  });
+
+  test("sin token o sin la máquina pedida no abre el escritorio", async () => {
+    const rig = fakeDesktop();
+    const open = await handleAgent(
+      { method: "POST", path: "/task", body: { goal: "Abre https://example.com", machineId: MACHINE_ID } },
+      { env: { XAI_MODE: "mock", MACHINE_ID }, desktop: rig.desktop },
+    );
+    expect(open.status).toBe(401);
+    const wrong = await handleAgent(agentTask({ goal: "Abre https://example.com", machineId: "otra-maquina" }), {
+      env: agentEnv({ XAI_MODE: "mock" }),
+      desktop: rig.desktop,
+    });
+    expect(wrong.status).toBe(403);
+    expect(rig.shots()).toBe(0);
+    expect(rig.actions).toHaveLength(0);
+  });
+
+  test("el modelo no puede abrir un destino privado ni de pago", async () => {
+    const rig = fakeDesktop();
+    const model: ComputerModel = {
+      async decide() {
+        return { kind: "act", action: { type: "goto", url: "http://169.254.169.254/latest" } };
+      },
+    };
+    const privateNet = await runComputerTask({ goal: "Abre el panel interno", desktop: rig.desktop, model });
+    expect(privateNet.status).toBe("FAILED");
+    expect(rig.actions).toHaveLength(0);
+    const checkout: ComputerModel = {
+      async decide() {
+        return { kind: "act", action: { type: "goto", url: "http://10.0.0.8/pago" } };
+      },
+    };
+    const blocked = await runComputerTask({ goal: "Sigue el enlace", desktop: rig.desktop, model: checkout });
+    expect(blocked.status).toBe("FAILED");
+    expect(rig.actions).toHaveLength(0);
+    expect(parseAction({ type: "goto", url: "http://app.internal/task" }).ok).toBe(false);
+    const secret = "ZzVaultSecret99";
+    const fill: ComputerModel = {
+      async decide() {
+        return { kind: "act", action: { type: "fill", credentialId: "cred12345678" } };
+      },
+    };
+    const denied = await runComputerTask({
+      goal: "Entra con la clave",
+      desktop: rig.desktop,
+      model: fill,
+      allowFill: false,
+      fillLogin: async () => ({ username: "user-sii-9988", secret }),
+    });
+    expect(denied.status).toBe("FAILED");
+    expect(rig.actions).toHaveLength(0);
+    expect(JSON.stringify(denied)).not.toContain(secret);
   });
 
   test("WhatsApp Web se abre en una pestaña si todavía no está", async () => {
