@@ -237,7 +237,6 @@ export function AgentChat({
   if (storedDraft !== draftSource) {
     setDraftSource(storedDraft);
     setComposer(storedDraft);
-    draftText.current = storedDraft;
   }
   const filesRef = useRef<LocalFile[]>([]);
   const mountedRef = useRef(true);
