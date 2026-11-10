@@ -168,8 +168,13 @@ describe("casos deterministas del Contador", () => {
     const text = "Guarda mi root para el SII";
     expect(wantsSecureCredentialForm(text)).toBe(true);
     const body = form(text);
-    expect(body).toContain("Usuario / RUT");
-    expect(body).toContain("campo Clave");
+    expect(body).toContain(vaultFormPath("sii"));
+    expect(body).toMatch(/Abrir formulario seguro/);
+    expect(body.replace(/\[[^\]]*]\([^)]*\)/g, "enlace").split(/[.!?]+/).filter((part) => part.trim())).toHaveLength(3);
+    expect(body).toMatch(/No las escribas en este chat/);
+    expect(body).toMatch(/no inicia sesión/i);
+    expect(body).toMatch(/No entré al portal/);
+    expect(body).not.toMatch(/campo Clave|Usuario \/ RUT/);
     expect(body).not.toMatch(/escríbeme el rut|pásame la clave/i);
   });
 

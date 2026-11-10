@@ -24,6 +24,12 @@ import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
 
+export const EMPTY_SUGGESTIONS = [
+  "Resume qué es el IVA en dos frases, sin consultar portales",
+  "Explícame bien el F29",
+  "Quiero guardar un acceso del SII en el formulario seguro",
+] as const;
+
 function selectionInside(log: HTMLElement | null) {
   const selection = window.getSelection();
   return Boolean(selection && !selection.isCollapsed && log?.contains(selection.anchorNode));
@@ -309,6 +315,13 @@ export function AgentChat({
     draftText.current = value;
     setComposer(value);
     writeComposerDraft(draftIdentity, value);
+  }
+
+  function applySuggestion(text: string) {
+    const current = composerRef.current?.value ?? draftText.current;
+    if (current.length > 0 || filesRef.current.length > 0) return;
+    updateComposer(text);
+    composerRef.current?.focus();
   }
 
   function endComposition() {
@@ -929,7 +942,18 @@ export function AgentChat({
         }}
       >
         {items.length === 0 && !shownLive ? (
-          <p className="muted agent-empty">Escríbeme una duda de IVA, F29 o remuneraciones. El hilo queda guardado en tu empresa.</p>
+          <div className="agent-empty">
+            <p>Puedo ayudarte con el IVA, el F29 o un acceso. El hilo queda en tu empresa.</p>
+            {composer.length === 0 && files.length === 0 ? (
+              <div className="suggestion-row">
+                {EMPTY_SUGGESTIONS.map((text) => (
+                  <button key={text} className="suggestion" type="button" disabled={!open} onClick={() => applySuggestion(text)}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ) : null}
         {settled.map((message) => renderMessage(message))}
         {pending && !shownLive ? (

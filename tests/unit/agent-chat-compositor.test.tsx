@@ -2,9 +2,9 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AgentChat } from "@/components/agent-chat";
+import { AgentChat, EMPTY_SUGGESTIONS } from "@/components/agent-chat";
 import { LogoutButton } from "@/components/logout-button";
-import { purgeComposerDrafts } from "@/lib/chat/composer-draft";
+import { purgeComposerDrafts, writeComposerDraft } from "@/lib/chat/composer-draft";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
@@ -85,6 +85,96 @@ describe("compositor del Contador", () => {
   test("el compositor no acepta más de 4000 caracteres", () => {
     render();
     expect(host.querySelector("textarea")?.getAttribute("maxlength")).toBe("4000");
+  });
+
+  test("el hilo vacío ofrece sugerencias que solo rellenan el compositor", () => {
+    render();
+    const buttons = [...host.querySelectorAll("button.suggestion")];
+    expect(buttons.map((button) => button.textContent)).toEqual([...EMPTY_SUGGESTIONS]);
+    for (const text of EMPTY_SUGGESTIONS) {
+      expect(text).not.toMatch(/clave|rut|tarjeta/i);
+    }
+    act(() => {
+      buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(host.querySelector("textarea")?.value).toBe(EMPTY_SUGGESTIONS[1]);
+    expect(document.activeElement).toBe(host.querySelector("textarea"));
+    expect(fetches).toEqual([]);
+
+    act(() => {
+      root.render(
+        createElement(AgentChat, {
+          open: true,
+          messages: [
+            {
+              id: "m1",
+              role: "USER",
+              kind: "TEXT",
+              body: "Hola",
+              action: "",
+              actionTitle: "",
+              confirmation: null,
+              createdAt: "2026-11-08T12:00:00.000Z",
+              attachments: [],
+            },
+          ],
+          used: 0,
+          limit: 200,
+          voice: "navegador",
+          draftUserId: "usuario-a",
+          draftOrganizationId: "empresa-a",
+          draftConversationId: "contador",
+        }),
+      );
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
+  });
+
+  test("una sugerencia no pisa un borrador escrito, restaurado o con espacio", () => {
+    render();
+    const box = host.querySelector("textarea");
+    if (!box) throw new Error("sin compositor");
+    box.value = "Necesito revisar mis ventas de octubre";
+    const stale = host.querySelector("button.suggestion");
+    act(() => {
+      stale?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(box.value).toBe("Necesito revisar mis ventas de octubre");
+    expect(fetches).toEqual([]);
+
+    act(() => {
+      setComposer(host, "   ");
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(host.querySelector("textarea")?.value).toBe("   ");
+
+    const fileInput = host.querySelector('input[type="file"]');
+    if (!(fileInput instanceof HTMLInputElement)) throw new Error("sin adjunto");
+    const file = new File(["nota"], "nota.txt", { type: "text/plain" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    fileInput.files = transfer.files;
+    act(() => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("nota.txt");
+    act(() => {
+      setComposer(host, "");
+    });
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(host.textContent).toContain("nota.txt");
+    expect(fetches).toEqual([]);
+  });
+
+  test("el borrador restaurado de la Bóveda no muestra sugerencias ni se envía", () => {
+    writeComposerDraft(
+      { userId: "usuario-a", organizationId: "empresa-a", conversationId: "contador" },
+      "Necesito revisar mis ventas de octubre",
+    );
+    render();
+    expect(host.querySelector("textarea")?.value).toBe("Necesito revisar mis ventas de octubre");
+    expect(host.querySelector("button.suggestion")).toBeNull();
+    expect(fetches).toEqual([]);
   });
 
   test("Enter de escritorio envía y el de un móvil no", () => {
