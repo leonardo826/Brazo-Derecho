@@ -154,15 +154,17 @@ describe("herramientas de la web", () => {
     expect(leaked).not.toMatch(/Sigo buscando/);
     expect(leaked).toContain("LATAM sale a las 09:24");
     const cited = withSources(
-      "LATAM LA8: 09:24–10:32. [LATAM](https://www.latam.com/vuelo). Fuente: https://www.latam.com/otro",
-      ["https://latam.com/a", "https://www.latam.com/b", "https://www.skyairline.com/c"],
+      "- LATAM LA8: 09:24–10:32. [LATAM](https://www.latamairlines.com/cl/es)\nsegún lo publicado en [tecna-zinc.cl](https://www.tecna-zinc.cl/ficha). Fuente: https://www.tecna-zinc.cl/otro",
+      ["https://tecna-zinc.cl/", "https://weather.metoffice.gov.uk/forecast", "https://www.google.com/search"],
     );
-    expect(cited).toContain("[(fuente)](https://www.latam.com/vuelo)");
-    expect(cited).not.toMatch(/\[LATAM\]/);
+    expect(cited).toContain("- LATAM LA8: 09:24–10:32. [(fuente)](https://www.latamairlines.com/cl/es)");
+    expect(cited).toContain("según lo publicado en [tecna-zinc.cl](https://www.tecna-zinc.cl/ficha)");
     expect(cited).not.toMatch(/Fuente: https?:/);
     const fuentes = cited.split("Fuentes:")[1] ?? "";
-    expect(fuentes.split("\n").filter((line) => line.includes("latam.com"))).toHaveLength(1);
-    expect(cited).toContain("skyairline.com");
+    expect(fuentes).toContain("[tecna-zinc.cl](");
+    expect(fuentes).toContain("[weather.metoffice.gov.uk](");
+    expect(fuentes).toContain("[google.com](");
+    expect(fuentes).not.toContain("(fuente)");
     const post = normalizeSections("Gancho: Mira. Cuerpo: El texto. Llamado a la acción: Escribe. Hashtags: #Concepción. Idea de imagen: Un taller.");
     expect(post).toContain("\n\nCuerpo:");
     expect(post).toContain("\n\nLlamado a la acción:");

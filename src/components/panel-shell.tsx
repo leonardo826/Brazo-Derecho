@@ -12,12 +12,12 @@ import type { Session } from "@/lib/session";
 export function PanelShell({
   session,
   showAdmin = false,
-  showComputer = false,
+  computerHref = null,
   children,
 }: {
   session: Session;
   showAdmin?: boolean;
-  showComputer?: boolean;
+  computerHref?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -31,7 +31,7 @@ export function PanelShell({
             <Logo href="/panel" />
             <p className="org">{session.organizationName}</p>
           </div>
-          <PanelNav showAdmin={showAdmin} showComputer={showComputer} />
+          <PanelNav showAdmin={showAdmin} computerHref={computerHref} />
           <div className="side-foot">
             <p className="whoami">
               <span>{session.name}</span>
