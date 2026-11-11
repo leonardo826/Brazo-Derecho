@@ -17,6 +17,10 @@ export type ChatSurface = {
   /** Piso de cada tramo. El cupo mensual sigue siendo una respuesta por turno. */
   outputTokens: number;
   outputRounds: number;
+  /** Búsqueda web pública. x_search queda apagado: no es más barato. */
+  webSearch: boolean;
+  xSearch: boolean;
+  images: boolean;
 };
 
 const SURFACES: Record<ChatAgentId, ChatSurface> = {
@@ -36,6 +40,9 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     desktop: true,
     outputTokens: 0,
     outputRounds: 1,
+    webSearch: true,
+    xSearch: false,
+    images: false,
   },
   MARKETING: {
     agent: "MARKETING",
@@ -53,6 +60,9 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     desktop: false,
     outputTokens: 3200,
     outputRounds: 4,
+    webSearch: true,
+    xSearch: false,
+    images: true,
   },
   WHATSAPP: {
     agent: "WHATSAPP",
@@ -70,6 +80,9 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     desktop: false,
     outputTokens: 500,
     outputRounds: 1,
+    webSearch: true,
+    xSearch: false,
+    images: false,
   },
 };
 
@@ -93,6 +106,18 @@ export function outputBudget(
   };
 }
 
+export function sharedTurnRules() {
+  return [
+    "Responde exactamente lo pedido. No agregues una vuelta, otra ciudad, otro producto ni un supuesto que nadie pidió.",
+    "Si en el hilo aclaran («solo ida», «me refiero a…»), esa aclaración manda sobre lo anterior.",
+    "Si nombran un sitio o una empresa, busca esa página pública y úsala por encima del perfil guardado de esta cuenta.",
+    "Si falta la ciudad o el público y el sitio no lo dice, haz una sola pregunta corta. No supongas en silencio.",
+    "Cuando uses la web, cita la URL de la fuente. Los precios y los horarios cambian. No puedes comprar, reservar ni pagar.",
+    "No rechaces un pedido solo porque está fuera de tu especialidad. Si es información pública, búscala.",
+    "La frase «No reemplaza a un contador certificado.» solo va si la respuesta es contable o tributaria.",
+  ].join("\n");
+}
+
 export function marketingChatInstructions(organizationName: string) {
   return [
     instructionsFor("MARKETING", organizationName),
@@ -101,7 +126,10 @@ export function marketingChatInstructions(organizationName: string) {
     "Cada post lleva, en este orden: un gancho, el cuerpo, un llamado a la acción claro, de 3 a 6 hashtags pertinentes y una idea de imagen.",
     "Los hashtags son del rubro y, cuando calce, de la zona de la empresa (por ejemplo #Concepción). No uses etiquetas genéricas que servirían para cualquier negocio.",
     "En un calendario, cada día nombra el post y usa esa misma estructura.",
-    "Usa el nombre de la empresa, sus productos y su zona. Si falta uno, haz una sola pregunta corta o di qué supusiste. No inventes un local genérico.",
+    "Usa el nombre de la empresa, sus productos y su zona solo cuando el pedido sea de esta cuenta.",
+    "Si el mensaje trae un sitio o el nombre de otra empresa, investiga ese sitio con la búsqueda web y no uses el perfil guardado.",
+    "Si falta la ciudad o el público, haz una sola pregunta corta. No escribas «supuse que…».",
+    "Si piden una imagen, será para redes, con texto en español y sin logos de marcas ajenas.",
     "No publiques. No digas que un post, una historia o un aviso ya quedó publicado. Publicar exige la aprobación de la persona.",
     "No gastes presupuesto de avisos, no compres publicidad y no actives campañas pagadas.",
     "No respondas comentarios ni mensajes de redes como si ya los hubieras enviado.",
@@ -125,9 +153,13 @@ export function whatsappChatInstructions(organizationName: string) {
 }
 
 export function chatInstructions(agent: ChatAgentId, organizationName: string) {
-  if (agent === "ACCOUNTING") return accountantChatInstructions(organizationName);
-  if (agent === "MARKETING") return marketingChatInstructions(organizationName);
-  return whatsappChatInstructions(organizationName);
+  const specialty =
+    agent === "ACCOUNTING"
+      ? accountantChatInstructions(organizationName)
+      : agent === "MARKETING"
+        ? marketingChatInstructions(organizationName)
+        : whatsappChatInstructions(organizationName);
+  return `${specialty}\n${sharedTurnRules()}`;
 }
 
 export function marketingContext(input: { name: string; profile: { voice: string; audience: string; summary: string } | null }) {
@@ -140,7 +172,7 @@ export function marketingContext(input: { name: string; profile: { voice: string
     `Voz: ${input.profile.voice}`,
     `Público y zona: ${input.profile.audience}`,
     `Productos y resumen: ${input.profile.summary}`,
-    "Usa el nombre, los productos y la zona en cada texto. Si falta uno, haz una sola pregunta corta o di qué supusiste.",
+    "Este perfil es de la cuenta. Si el mensaje nombra otro sitio u otra empresa, no lo uses: investiga ese sitio. Si falta la ciudad o el público, pregunta; no supongas.",
   ].join("\n");
 }
 

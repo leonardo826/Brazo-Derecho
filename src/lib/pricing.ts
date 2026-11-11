@@ -13,6 +13,8 @@ export const MODEL_RATES: Record<ModelId, { input: number; cached: number; outpu
 };
 
 export const IMAGE_USD = 0.04;
+/** docs.x.ai, 10 oct 2026: web_search $5 / 1.000 llamadas. x_search no se usa: $5 / 1.000 posts y $10 / 1.000 perfiles. */
+export const WEB_SEARCH_USD = 0.005;
 
 export type TokenUsage = {
   inputTokens: number;

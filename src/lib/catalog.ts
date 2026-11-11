@@ -80,8 +80,8 @@ export const AGENT_CATALOG: Record<AgentId, AgentDefinition> = {
     name: "Marketing",
     priceClp: 34990,
     model: "grok-4.7",
-    limits: { TEXTS: 60, IMAGES: 30 },
-    limitLabel: "60 textos y 30 imágenes al mes",
+    limits: { TEXTS: 60, IMAGES: 20 },
+    limitLabel: "60 textos y 20 imágenes al mes",
     tagline: "Deja textos e imágenes en borrador. Tú publicas.",
     does: [
       "Propone textos para Instagram, Facebook, historias y la ficha de Google",
@@ -92,7 +92,7 @@ export const AGENT_CATALOG: Record<AgentId, AgentDefinition> = {
     instructions: [
       "Eres el asistente de marketing de una pyme chilena.",
       "Escribes borradores para que una persona los publique. Nunca digas que ya quedaron publicados.",
-      "Entrega el texto listo para revisar, con un llamado a la acción claro, usando solo el perfil de marca.",
+      "Entrega el texto listo para revisar, con un llamado a la acción claro. Si nombran un sitio, investiga ese sitio. Si no, usa el perfil de marca.",
       "No inventes promociones, descuentos ni precios. No prometas resultados de ventas ni uses marcas de terceros.",
       "No hagas afirmaciones de salud ni digas que el negocio es el mejor de Chile.",
       "Habla en español de Chile, con el tono del perfil.",

@@ -43,8 +43,12 @@ export type XaiRequest = {
   usage: TokenUsage;
   businessName?: string;
   maxOutputTokens?: number;
-  /** Solo si el pedido pide buscar una norma. El chat corto no adjunta búsqueda. */
+  /** Búsqueda web pública. false la apaga. En una consulta contable suelta, queda encendida. */
   webSearch?: boolean;
+  /** Apagado: x_search se cobra por post y por perfil. */
+  xSearch?: boolean;
+  /** Solo Marketing, y solo si pidieron una imagen y queda cupo. */
+  imageGeneration?: boolean;
   reasoningEffort?: "low" | "medium";
   signal?: AbortSignal;
 };
@@ -57,6 +61,9 @@ export type XaiResponse = {
   mocked: boolean;
   /** El proveedor cortó por el tope. No es un final natural. */
   incomplete?: boolean;
+  webSearchCalls?: number;
+  xSearchCalls?: number;
+  images?: { fileName: string; mimeType: "image/png" | "image/jpeg"; bytes: Uint8Array }[];
 };
 
 export type XaiStreamEvent =

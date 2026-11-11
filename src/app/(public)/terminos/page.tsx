@@ -30,7 +30,7 @@ export default function TermsPage() {
       </p>
       <h2>Límites</h2>
       <p>
-        Atención WhatsApp: 1.000 respuestas al mes. Cotizador: 300 cotizaciones. Marketing: 60 textos y 30 imágenes. Al
+        Atención WhatsApp: 1.000 respuestas al mes. Cotizador: 300 cotizaciones. Marketing: 60 textos y 20 imágenes. Al
         llegar al límite, el agente se detiene hasta el mes siguiente.
       </p>
       <h2>Cuenta</h2>

@@ -190,7 +190,7 @@ describe("chat continuo", () => {
     for await (const raw of readSseData(new Response(sse).body!)) events.push(mapXaiStreamEvent(raw));
     expect(events.map((event) => event?.type)).toEqual(["delta", "status", "delta", "done"]);
     expect(events[0]).toMatchObject({ text: "Hola " });
-    expect(events[1]).toMatchObject({ text: "Buscando la norma vigente…" });
+    expect(events[1]).toMatchObject({ text: "Buscando en la web…" });
     expect(events[3]).toMatchObject({
       response: { id: "resp_9", outputText: "Hola Chile", usage: { inputTokens: 10, cachedTokens: 1, outputTokens: 2 } },
     });
