@@ -251,6 +251,7 @@ export function AgentChat({
   const mountedRef = useRef(true);
   const turnGen = useRef(0);
   const stickToEnd = useRef(true);
+  const shellRef = useRef<HTMLFormElement>(null);
   const [atEnd, setAtEnd] = useState(true);
   const sawReply = useRef(false);
   const imeGuard = useRef(false);
@@ -284,9 +285,37 @@ export function AgentChat({
   }, []);
 
   useEffect(() => {
-    const node = logRef.current;
-    if (node && stickToEnd.current) node.scrollTop = node.scrollHeight;
+    const log = logRef.current;
+    const shell = shellRef.current;
+    if (!log || !shell) return;
+    const bar = shell.querySelector(".composer-bar");
+    const barHeight = bar instanceof HTMLElement ? bar.offsetHeight : shell.offsetHeight;
+    const shellTop = shell.getBoundingClientRect().top;
+    const covers = shellTop < log.getBoundingClientRect().bottom - 4;
+    log.style.paddingBottom = covers ? `calc(${barHeight}px + env(safe-area-inset-bottom))` : "";
+    if (!stickToEnd.current) return;
+    log.scrollTop = log.scrollHeight;
+    const last = log.lastElementChild;
+    if (!(last instanceof HTMLElement)) return;
+    const overlap = last.getBoundingClientRect().bottom - shellTop + 8;
+    if (overlap <= 0) return;
+    if (log.scrollHeight > log.clientHeight + 2) log.scrollTop += overlap;
+    else if (typeof window.scrollBy === "function") window.scrollBy(0, overlap);
   }, [items, live, status, pending]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const log = logRef.current;
+      const bar = shell.querySelector(".composer-bar");
+      if (!log || !(bar instanceof HTMLElement)) return;
+      const covers = shell.getBoundingClientRect().top < log.getBoundingClientRect().bottom - 4;
+      log.style.paddingBottom = covers ? `calc(${bar.offsetHeight}px + env(safe-area-inset-bottom))` : "";
+    });
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     draftText.current = composer;
@@ -1005,7 +1034,7 @@ export function AgentChat({
       ) : null}
       {!open ? <p className="muted">Activa la prueba para conversar. El hilo anterior sigue aquí.</p> : null}
       {over ? <p className="muted">{limitNote}</p> : null}
-      <form className="agent-composer" onSubmit={onSubmit}>
+      <form className="agent-composer" ref={shellRef} onSubmit={onSubmit}>
         {files.length > 0 ? (
           <ul className="file-chips">
             {files.map((item, index) => (

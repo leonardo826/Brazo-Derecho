@@ -4,9 +4,11 @@ import {
   chatSurface,
   isChatAgent,
   marketingContext,
+  outputBudget,
   whatsappContext,
 } from "@/lib/chat/agents";
 import { historyWhere } from "@/lib/chat/history";
+import { closeDeliverable, LIMIT_NOTE, replyPace } from "@/lib/chat/pace";
 
 describe("base compartida de los agentes", () => {
   test("marketing y atención usan el mismo motor, con su cupo y sin el computador", () => {
@@ -40,7 +42,29 @@ describe("base compartida de los agentes", () => {
     expect(context).toContain("Taller E2E");
     expect(context).toContain("76.123.456-0");
     expect(context).toContain("El sábado abrimos de 9:00 a 14:00.");
-    expect(marketingContext(null)).toContain("No hay perfil de marca");
+    const brand = marketingContext({
+      name: "Ferretería Los Aromos",
+      profile: { voice: "cercana", audience: "maestros en Concepción", summary: "tornillos y despacho" },
+    });
+    expect(brand).toContain("Ferretería Los Aromos");
+    expect(brand).toContain("tornillos y despacho");
+    expect(brand).toContain("Concepción");
+    expect(marketingContext({ name: "Taller", profile: null })).toContain("No hay perfil de marca");
+    expect(chatInstructions("MARKETING", "Ferretería Los Aromos")).toContain("gancho");
+    expect(chatInstructions("MARKETING", "Ferretería Los Aromos")).toContain("idea de imagen");
+    expect(chatSurface("MARKETING").outputTokens).toBeGreaterThan(chatSurface("ACCOUNTING").outputTokens);
+    expect(chatSurface("MARKETING").outputRounds).toBeGreaterThan(1);
+  });
+
+  test("marketing puede escribir varios posts y, si el tope corta, cierra sin el aviso", () => {
+    const pace = outputBudget("MARKETING", replyPace("Propón 3 ideas de post"));
+    expect(pace.maxOutputTokens).toBeGreaterThanOrEqual(3200);
+    expect(pace.rounds).toBeGreaterThanOrEqual(4);
+    expect(outputBudget("ACCOUNTING", replyPace("Resume el IVA en dos frases")).maxOutputTokens).toBe(220);
+    const closed = closeDeliverable(`Primer post\n\nSegundo post a medias\n\n${LIMIT_NOTE}`);
+    expect(closed).toContain("Primer post");
+    expect(closed).not.toContain(LIMIT_NOTE);
+    expect(closed).toContain("sigo con lo que falta");
   });
 
   test("cada agente guarda su propio hilo", () => {
