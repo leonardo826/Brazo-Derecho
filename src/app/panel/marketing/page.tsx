@@ -24,7 +24,7 @@ export default async function MarketingPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [{ subscription, open }, profile, posts, usage] = await Promise.all([
+  const [{ subscription, open, qa }, profile, posts, usage] = await Promise.all([
     agentIsOpen(session.organizationId, "MARKETING"),
     prisma.brandProfile.findUnique({ where: { organizationId: session.organizationId } }),
     prisma.marketingPost.findMany({
@@ -54,7 +54,7 @@ export default async function MarketingPage({
           <h1>Marketing</h1>
           <p className="muted">Los textos quedan en borrador. Brazo Derecho no publica ni compra avisos.</p>
         </div>
-        <SubscribeActions agent="MARKETING" back="/panel/marketing" subscription={subscription} />
+        <SubscribeActions agent="MARKETING" back="/panel/marketing" subscription={subscription} qa={qa} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (

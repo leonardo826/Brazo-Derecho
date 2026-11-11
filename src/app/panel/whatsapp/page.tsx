@@ -26,7 +26,7 @@ export default async function WhatsappPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [{ subscription, open }, knowledge, usage] = await Promise.all([
+  const [{ subscription, open, qa }, knowledge, usage] = await Promise.all([
     agentIsOpen(session.organizationId, "WHATSAPP"),
     prisma.knowledgeItem.findMany({
       where: { organizationId: session.organizationId },
@@ -56,7 +56,7 @@ export default async function WhatsappPage({
             Prueba de atención en esta pantalla, con los datos de tu empresa. Todavía no hay conexión a WhatsApp.
           </p>
         </div>
-        <SubscribeActions agent="WHATSAPP" back="/panel/whatsapp" subscription={subscription} />
+        <SubscribeActions agent="WHATSAPP" back="/panel/whatsapp" subscription={subscription} qa={qa} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (

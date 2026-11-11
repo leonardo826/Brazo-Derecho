@@ -21,8 +21,8 @@ const CLOSED = `<!doctype html>
 <main>
 <p>404</p>
 <h1>No está esta página</h1>
-<p>El enlace no existe o la cotización no es de tu empresa.</p>
-<p><a href="/">Volver al inicio</a></p>
+<p>Esta página no existe.</p>
+<p><a href="/panel">Ir al panel</a></p>
 </main>
 </body>
 </html>`;

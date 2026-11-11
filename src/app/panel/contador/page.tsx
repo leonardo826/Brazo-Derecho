@@ -6,7 +6,6 @@ import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
 import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { ACCOUNTING_DISCLAIMER, limitFor } from "@/lib/catalog";
 import { tasksToday } from "@/lib/meter-store";
-import { organizationIsQa } from "@/lib/qa-account";
 import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 import { DAILY_TASK_LIMIT } from "@/lib/usage";
@@ -22,10 +21,9 @@ export default async function ContadorPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [{ subscription, open }, usage, qa] = await Promise.all([
+  const [{ subscription, open, qa }, usage] = await Promise.all([
     agentIsOpen(session.organizationId, "ACCOUNTING"),
     usageSnapshot(session.organizationId),
-    organizationIsQa(session.organizationId),
   ]);
   const tasks = qa ? null : await tasksToday(session.organizationId);
   const limit = limitFor("ACCOUNTING", "CONSULTS");

@@ -9,6 +9,8 @@ import { activateMockPlan } from "@/lib/flow/mock-checkout";
 import { startFlowSubscription } from "@/lib/flow/checkout";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { agentIsOpen } from "@/lib/agent-access";
+import { AGENT_ORDER } from "@/lib/catalog";
 import { QA_ACCESS_MS, QA_ORG_NAME, QA_ORG_SLUG, QA_USER_NAME, QaSinCobroError, recordsBillingUsage } from "@/lib/qa-account";
 import { reserveUsage, usageSnapshot } from "@/lib/usage-store";
 
@@ -133,6 +135,25 @@ describe("cuenta QA", () => {
     expect(await prisma.user.count({ where: { email: QA_EMAIL } })).toBe(1);
     expect(await prisma.subscription.count({ where: { organizationId: organization.id } })).toBe(1);
     await removeQaAccount();
+  });
+
+  test("la empresa QA abre los cuatro módulos sin suscripción y una normal no", async () => {
+    const qa = await makeOrg("qa-modulos", true);
+    const normal = await makeOrg("cliente-modulos", false);
+    expect(recordsBillingUsage(true)).toBe(false);
+    for (const agent of AGENT_ORDER) {
+      const opened = await agentIsOpen(qa.organizationId, agent);
+      expect(opened.qa).toBe(true);
+      expect(opened.open).toBe(true);
+      expect(opened.subscription).toBeNull();
+      const closed = await agentIsOpen(normal.organizationId, agent);
+      expect(closed.qa).toBe(false);
+      expect(closed.open).toBe(false);
+      expect(closed.subscription).toBeNull();
+    }
+    expect(await prisma.subscription.count({ where: { organizationId: { in: [qa.organizationId, normal.organizationId] } } })).toBe(0);
+    await prisma.organization.update({ where: { id: qa.organizationId }, data: { suspendedAt: new Date() } });
+    expect((await agentIsOpen(qa.organizationId, "MARKETING")).open).toBe(false);
   });
 
   test("medición y cobro ignoran la empresa de prueba y siguen para una normal", async () => {

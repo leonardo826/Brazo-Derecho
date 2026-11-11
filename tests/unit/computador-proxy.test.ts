@@ -12,7 +12,10 @@ describe("el computador apagado", () => {
       }),
     );
     expect(response.status).toBe(404);
-    expect(await response.text()).toContain("No está esta página");
+    const html = await response.text();
+    expect(html).toContain("Esta página no existe.");
+    expect(html).toContain('href="/panel"');
+    expect(html).not.toContain("cotización");
     if (previous === undefined) delete process.env.COMPUTER_FEATURE_ENABLED;
     else process.env.COMPUTER_FEATURE_ENABLED = previous;
   });

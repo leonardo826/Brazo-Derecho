@@ -15,11 +15,20 @@ export function SubscribeActions({
   agent,
   back,
   subscription,
+  qa = false,
 }: {
   agent: string;
   back: string;
   subscription: SubscriptionView;
+  qa?: boolean;
 }) {
+  if (qa) {
+    return (
+      <div className="stack">
+        <p className="badge good">Revisión interna</p>
+      </div>
+    );
+  }
   const flow = flowIsConfigured();
   const open = isSubscriptionOpen(subscription);
   const needsCard = Boolean(flow && subscription?.status === "TRIAL" && !subscription.flowSubscriptionId);
