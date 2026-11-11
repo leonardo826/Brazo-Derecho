@@ -101,6 +101,13 @@ test("la beta cabe en 360, 390 y 414 px y deja capturas", async ({ page }) => {
     await expect(page.getByText("Información guardada")).toBeVisible({ timeout: 3_000 });
   });
   await sendAgentChat(page, "¿A qué hora abren el sábado?");
+  const lastReply = page.locator(".agent-row.assistant").last();
+  const bar = page.locator(".composer-bar");
+  await expect(lastReply).toBeVisible();
+  const replyBox = await lastReply.boundingBox();
+  const barBox = await bar.boundingBox();
+  if (!replyBox || !barBox) throw new Error("El último mensaje o la barra no se midieron");
+  expect(replyBox.y + replyBox.height).toBeLessThanOrEqual(barBox.y + 2);
   await expectFits(page);
   await shot(page, "08-chat");
 

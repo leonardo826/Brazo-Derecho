@@ -14,6 +14,9 @@ export type ChatSurface = {
   suggestions: readonly string[];
   limitNote: string;
   desktop: boolean;
+  /** Piso de cada tramo. El cupo mensual sigue siendo una respuesta por turno. */
+  outputTokens: number;
+  outputRounds: number;
 };
 
 const SURFACES: Record<ChatAgentId, ChatSurface> = {
@@ -31,6 +34,8 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     ],
     limitNote: "Llegaste al cupo de consultas de este mes. Puedes revisar el hilo.",
     desktop: true,
+    outputTokens: 0,
+    outputRounds: 1,
   },
   MARKETING: {
     agent: "MARKETING",
@@ -46,6 +51,8 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     ],
     limitNote: "Llegaste al cupo de textos de este mes. Puedes revisar el hilo.",
     desktop: false,
+    outputTokens: 3200,
+    outputRounds: 4,
   },
   WHATSAPP: {
     agent: "WHATSAPP",
@@ -61,6 +68,8 @@ const SURFACES: Record<ChatAgentId, ChatSurface> = {
     ],
     limitNote: "Llegaste al cupo de respuestas de este mes. Puedes revisar el hilo.",
     desktop: false,
+    outputTokens: 500,
+    outputRounds: 1,
   },
 };
 
@@ -72,11 +81,27 @@ export function chatSurface(agent: ChatAgentId) {
   return SURFACES[agent];
 }
 
+export function outputBudget(
+  agent: ChatAgentId,
+  pace: { maxOutputTokens: number; rounds: number; webSearch: boolean; reasoningEffort: "low" | "medium" },
+) {
+  const floor = chatSurface(agent);
+  return {
+    ...pace,
+    maxOutputTokens: Math.max(pace.maxOutputTokens, floor.outputTokens),
+    rounds: Math.max(pace.rounds, floor.outputRounds),
+  };
+}
+
 export function marketingChatInstructions(organizationName: string) {
   return [
     instructionsFor("MARKETING", organizationName),
     "Estás en un chat continuo con quien lleva una pyme chilena. Hablas en español de Chile, de tú, claro y cercano.",
     "Sirves para ideas, textos de post, calendarios de redes sociales y copys de campaña. Entrega el borrador listo para revisar.",
+    "Cada post lleva, en este orden: un gancho, el cuerpo, un llamado a la acción claro, de 3 a 6 hashtags pertinentes y una idea de imagen.",
+    "Los hashtags son del rubro y, cuando calce, de la zona de la empresa (por ejemplo #Concepción). No uses etiquetas genéricas que servirían para cualquier negocio.",
+    "En un calendario, cada día nombra el post y usa esa misma estructura.",
+    "Usa el nombre de la empresa, sus productos y su zona. Si falta uno, haz una sola pregunta corta o di qué supusiste. No inventes un local genérico.",
     "No publiques. No digas que un post, una historia o un aviso ya quedó publicado. Publicar exige la aprobación de la persona.",
     "No gastes presupuesto de avisos, no compres publicidad y no actives campañas pagadas.",
     "No respondas comentarios ni mensajes de redes como si ya los hubieras enviado.",
@@ -105,11 +130,18 @@ export function chatInstructions(agent: ChatAgentId, organizationName: string) {
   return whatsappChatInstructions(organizationName);
 }
 
-export function marketingContext(profile: { voice: string; audience: string; summary: string } | null) {
-  if (!profile) {
-    return "No hay perfil de marca guardado. Pide la voz, el público y un resumen antes de inventar una promoción. No publiques ni gastes presupuesto.";
+export function marketingContext(input: { name: string; profile: { voice: string; audience: string; summary: string } | null }) {
+  const name = input.name.trim() || "la empresa";
+  if (!input.profile) {
+    return `Empresa: ${name}. No hay perfil de marca: faltan la voz, los productos y la zona. Haz una sola pregunta corta o di qué supusiste. No publiques ni gastes presupuesto.`;
   }
-  return [`Perfil de marca de la empresa.`, `Voz: ${profile.voice}`, `Público: ${profile.audience}`, `Resumen: ${profile.summary}`].join("\n");
+  return [
+    `Empresa: ${name}.`,
+    `Voz: ${input.profile.voice}`,
+    `Público y zona: ${input.profile.audience}`,
+    `Productos y resumen: ${input.profile.summary}`,
+    "Usa el nombre, los productos y la zona en cada texto. Si falta uno, haz una sola pregunta corta o di qué supusiste.",
+  ].join("\n");
 }
 
 export function whatsappContext(input: { name: string; rut: string | null; knowledge: { title: string; body: string }[] }) {

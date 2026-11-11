@@ -6,8 +6,11 @@ import { prisma } from "@/lib/prisma";
 export async function agentTurnContext(agent: ChatAgentId, organizationId: string) {
   try {
     if (agent === "MARKETING") {
-      const profile = await prisma.brandProfile.findUnique({ where: { organizationId } });
-      return marketingContext(profile);
+      const [organization, profile] = await Promise.all([
+        prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+        prisma.brandProfile.findUnique({ where: { organizationId } }),
+      ]);
+      return marketingContext({ name: organization?.name ?? "", profile });
     }
     if (agent === "WHATSAPP") {
       const [organization, knowledge] = await Promise.all([

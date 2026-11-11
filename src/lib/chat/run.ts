@@ -4,7 +4,7 @@ import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
 import { loadTenantLease } from "@/lib/computer/lease";
 import { APPROVED_PORTAL_NOTE, vaultContext } from "@/lib/chat/accountant";
 import { agentTurnContext } from "@/lib/chat/agent-context";
-import { chatInstructions, chatSurface, type ChatAgentId } from "@/lib/chat/agents";
+import { chatInstructions, chatSurface, outputBudget, type ChatAgentId } from "@/lib/chat/agents";
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
@@ -13,7 +13,7 @@ import { sensitiveRequest, splitAction, vaultActionFor } from "@/lib/chat/sensit
 import { missingVaultTable } from "@/lib/credentials/http";
 import { clientAskedForLogin, explicitVaultAsk, metadataForModel } from "@/lib/credentials/policy";
 import { portalPresetFromText, vaultFormMessage, type PortalId } from "@/lib/credentials/portal-form";
-import { finishReply, replyPace } from "@/lib/chat/pace";
+import { closeDeliverable, finishReply, LIMIT_NOTE, replyPace } from "@/lib/chat/pace";
 import { randomBytes } from "node:crypto";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
 import { confirmRisk, listCredentials } from "@/lib/credentials/service";
@@ -121,7 +121,7 @@ async function* streamModel(input: {
   const business = await agentTurnContext(input.agent, input.organizationId);
   const prepared = prepareModelTurn(history, vault);
   const extra = [business, prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
-  const pace = replyPace(latest);
+  const pace = outputBudget(input.agent, replyPace(latest));
   const client = createXaiClient();
   let raw = "";
   let incomplete = false;
@@ -214,7 +214,11 @@ async function* streamModel(input: {
     cut = "failure";
   }
   if (streamWasStopped(input.signal)) return;
-  const finished = finishReply([{ text: raw, incomplete }], cut);
+  const drafted = finishReply([{ text: raw, incomplete }], cut);
+  const finished =
+    input.agent === "MARKETING" && drafted.truncated && drafted.note === LIMIT_NOTE
+      ? { ...drafted, text: closeDeliverable(drafted.text), note: "" }
+      : drafted;
   if (!finished.text.trim()) {
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };

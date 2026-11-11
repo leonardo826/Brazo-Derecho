@@ -17,6 +17,7 @@ const SEARCH = /\b(busca\w*|b[uú]squeda|informaci[oó]n sobre|con fuente|fuente
 const TRIVIAL = /^(hola|buenas|gracias|ok|listo|chao|adi[oó]s)[.!?\s]*$/i;
 
 export const LIMIT_NOTE = "(Respuesta incompleta por el límite de salida.)";
+export const CLEAN_CUT = "Si quieres, sigo con lo que falta.";
 export const FAILURE_NOTE = "(Respuesta incompleta por un fallo al continuar.)";
 export const TRUNCATION_NOTE = LIMIT_NOTE;
 
@@ -41,6 +42,14 @@ export function finishReply(
     truncated,
     note,
   };
+}
+
+/** Cierra un entregable cortado en el último bloque completo, sin el aviso del tope. */
+export function closeDeliverable(text: string) {
+  const body = text.replace(LIMIT_NOTE, "").replace(FAILURE_NOTE, "").trim();
+  const blocks = body.split(/\n\n/).map((part) => part.trim()).filter(Boolean);
+  const kept = blocks.length > 1 ? blocks.slice(0, -1).join("\n\n") : body;
+  return `${kept}\n\n${CLEAN_CUT}`;
 }
 
 /**
