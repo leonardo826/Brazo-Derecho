@@ -67,7 +67,7 @@ export type XaiResponse = {
 };
 
 export type XaiStreamEvent =
-  | { type: "status"; text: string }
+  | { type: "status"; text: string; dropDraft?: boolean }
   | { type: "delta"; text: string }
   | { type: "done"; response: XaiResponse };
 

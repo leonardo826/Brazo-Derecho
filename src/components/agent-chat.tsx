@@ -424,6 +424,16 @@ export function AgentChat({
       tempId.current = "";
       remember(event.message, localId);
     }
+    if (event.type === "draft_clear") {
+      liveRef.current = "";
+      setLive("");
+    }
+    if (event.type === "draft_replace") {
+      const next = hideActionMarker(event.text);
+      liveRef.current = next;
+      setLive(next);
+      setStatus("escribiendo…");
+    }
     if (event.type === "delta") {
       const next = hideActionMarker(liveRef.current + event.text);
       liveRef.current = next;

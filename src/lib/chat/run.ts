@@ -174,7 +174,14 @@ async function* streamModel(input: {
         signal: input.signal,
       })) {
         if (streamWasStopped(input.signal)) return;
-        if (event.type === "status") yield { type: "status", text: event.text };
+        if (event.type === "status") {
+          yield { type: "status", text: event.text };
+          if (event.dropDraft) {
+            raw = raw.slice(0, Math.max(0, raw.length - roundText.length));
+            roundText = "";
+            yield { type: "draft_clear" };
+          }
+        }
         if (event.type === "delta") {
           if (firstToken === 0) {
             firstToken = performance.now() - modelStarted;
@@ -212,10 +219,11 @@ async function* streamModel(input: {
             outputTokens: usage.outputTokens,
             mocked: event.response.mocked,
           });
-          if (!roundText.trim() && event.response.outputText.trim()) {
-            roundText = event.response.outputText;
-            raw += event.response.outputText;
-            yield { type: "delta", text: event.response.outputText };
+          const clean = event.response.outputText.trim();
+          if (clean && clean !== roundText.trim()) {
+            raw = raw.slice(0, Math.max(0, raw.length - roundText.length)) + clean;
+            roundText = clean;
+            yield { type: "draft_replace", text: clean };
           }
         }
       }
@@ -303,7 +311,7 @@ async function* streamModel(input: {
       },
       include: messageInclude,
     });
-  });
+  }, { maxWait: 10_000, timeout: 25_000 });
   if (!saved) {
     yield { type: "error", code: "limite" };
     return;
