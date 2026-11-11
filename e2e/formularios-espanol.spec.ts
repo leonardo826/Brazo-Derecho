@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { ensureAdmin, waitForHydration } from "./helpers";
 
 test("registro vacío y con correo inválido muestra el aviso en español", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
   await page.goto("/registro");
   await waitForHydration(page);
   await page.getByRole("button", { name: "Crear empresa" }).click();
@@ -17,9 +18,15 @@ test("registro vacío y con correo inválido muestra el aviso en español", asyn
   await page.getByRole("button", { name: "Crear empresa" }).click();
   await expect(page.getByRole("alert", { name: "Escribe un correo válido." })).toBeVisible();
   await expect(page.getByText(/Please include an @/)).toHaveCount(0);
+
+  await page.getByLabel("Correo").fill("ana@tuempresa.cl");
+  await page.getByLabel("Contraseña").fill("corta");
+  await page.getByRole("button", { name: "Crear empresa" }).click();
+  await expect(page.getByRole("alert", { name: "Usa al menos 8 caracteres." })).toBeVisible();
 });
 
 test("ingresar vacío y con correo inválido muestra el aviso en español", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
   await page.goto("/ingresar");
   await waitForHydration(page);
   await page.getByRole("button", { name: "Entrar al panel" }).click();

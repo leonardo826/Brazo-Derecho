@@ -16,4 +16,17 @@ describe("el computador apagado", () => {
     if (previous === undefined) delete process.env.COMPUTER_FEATURE_ENABLED;
     else process.env.COMPUTER_FEATURE_ENABLED = previous;
   });
+
+  test("con la función encendida deja pasar la página", () => {
+    const previous = process.env.COMPUTER_FEATURE_ENABLED;
+    process.env.COMPUTER_FEATURE_ENABLED = "true";
+    const response = proxy(
+      new NextRequest("http://localhost/panel/computador", {
+        headers: { cookie: "bd_session=sesion-valida" },
+      }),
+    );
+    expect(response.status).toBe(200);
+    if (previous === undefined) delete process.env.COMPUTER_FEATURE_ENABLED;
+    else process.env.COMPUTER_FEATURE_ENABLED = previous;
+  });
 });
