@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { chatInstructions, chatSurface } from "@/lib/chat/agents";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { billedToolUse, messageAsksImage, messageNeedsWeb, readToolReport, toolsForAgent } from "@/lib/chat/tools";
-import { LiveXaiClient, requestTools } from "@/lib/xai/live";
+import { LiveXaiClient, requestTools, xaiErrorDetail } from "@/lib/xai/live";
 import { mapXaiStreamEvent } from "@/lib/xai/parse";
 import { USAGE_PRESETS } from "@/lib/pricing";
 
@@ -16,15 +16,16 @@ describe("herramientas de la web", () => {
     for (const agent of ["ACCOUNTING", "MARKETING", "WHATSAPP"] as const) {
       expect(chatSurface(agent).webSearch).toBe(true);
       expect(chatSurface(agent).xSearch).toBe(false);
-      expect(toolsForAgent(agent, site, 20).some((tool) => tool.type === "web_search")).toBe(true);
-      expect(toolsForAgent(agent, site, 20).some((tool) => tool.type === "x_search")).toBe(false);
+      expect(toolsForAgent(agent, 20).some((tool) => tool.type === "web_search")).toBe(true);
+      expect(toolsForAgent(agent, 20).some((tool) => tool.type === "x_search")).toBe(false);
     }
-    expect(toolsForAgent("ACCOUNTING", "hola", 20)).toEqual([]);
+    expect(toolsForAgent("ACCOUNTING", 20)).toEqual([{ type: "web_search" }]);
     const image = "Prepárame una imagen publicitaria para las redes";
     expect(messageAsksImage(image)).toBe(true);
-    expect(toolsForAgent("MARKETING", image, 20).map((tool) => tool.type)).toEqual(["web_search", "image_generation"]);
-    expect(toolsForAgent("MARKETING", image, 0).map((tool) => tool.type)).toEqual(["web_search"]);
-    expect(toolsForAgent("ACCOUNTING", image, 20).some((tool) => tool.type === "image_generation")).toBe(false);
+    expect(messageNeedsWeb(site)).toBe(true);
+    expect(toolsForAgent("MARKETING", 20).map((tool) => tool.type)).toEqual(["web_search", "image_generation"]);
+    expect(toolsForAgent("MARKETING", 0).map((tool) => tool.type)).toEqual(["web_search"]);
+    expect(toolsForAgent("ACCOUNTING", 20).some((tool) => tool.type === "image_generation")).toBe(false);
   });
 
   test("el cliente manda web_search e image_generation, y no manda x_search", async () => {
@@ -78,6 +79,9 @@ describe("herramientas de la web", () => {
       response: { id: "r", output_text: "Listo", usage: { server_side_tool_usage: { web_search_calls: 1 } }, output: [] },
     });
     expect(parsed?.type === "done" && parsed.response.webSearchCalls).toBe(1);
+    const denied = xaiErrorDetail(403, JSON.stringify({ error: { message: "Your API key does not have access to web_search. sk-supersecreto" } }));
+    expect(denied).toBe("xAI 403: Your API key does not have access to web_search. [clave]");
+    expect(denied).not.toContain("sk-supersecreto");
   });
 
   test("el prompt cita la fuente, no supone la ciudad y no pisa un sitio nombrado", () => {

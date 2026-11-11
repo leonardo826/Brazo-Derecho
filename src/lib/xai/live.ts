@@ -7,6 +7,39 @@ import type { XaiClient, XaiRequest, XaiResponse, XaiStreamEvent } from "@/lib/x
 
 export { readOutputText, readTokenUsage } from "@/lib/xai/parse";
 
+export class XaiApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.name = "XaiApiError";
+    this.status = status;
+  }
+}
+
+export function xaiFailure(status: number, body: string) {
+  return new XaiApiError(status, xaiErrorDetail(status, body));
+}
+
+export function xaiErrorDetail(status: number, body: string) {
+  let message = "";
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } | string; message?: string };
+    if (typeof parsed.error === "string") message = parsed.error;
+    else if (parsed.error && typeof parsed.error.message === "string") message = parsed.error.message;
+    else if (typeof parsed.message === "string") message = parsed.message;
+  } catch {
+    message = body;
+  }
+  const clean = message
+    .replace(/sk-[A-Za-z0-9_-]+/g, "[clave]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [clave]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 400);
+  return `xAI ${status}: ${clean || "sin detalle"}`;
+}
+
 function inputFor(request: XaiRequest) {
   if (request.task.type === "agent_chat") return modelInput(request.task, request.businessName);
   if (request.task.type === "accounting_question") {
@@ -92,9 +125,7 @@ export class LiveXaiClient implements XaiClient {
         throw new Error("La API de xAI respondió en un formato que no pudimos leer");
       }
     }
-    if (!response.ok) {
-      throw new Error("La API de xAI no respondió");
-    }
+    if (!response.ok) throw xaiFailure(response.status, text);
     const outputText = readOutputText(body);
     if (!outputText) {
       throw new Error("La API de xAI no entregó texto");
@@ -134,7 +165,7 @@ export class LiveXaiClient implements XaiClient {
       body: JSON.stringify(requestBody(request, true)),
       signal: linkAbortSignal(slowTask(request) ? 240_000 : 45_000, request.signal),
     });
-    if (!response.ok) throw new Error("La API de xAI no respondió");
+    if (!response.ok) throw xaiFailure(response.status, await response.text());
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.body || contentType.includes("application/json")) {

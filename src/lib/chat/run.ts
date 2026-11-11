@@ -5,7 +5,8 @@ import { loadTenantLease } from "@/lib/computer/lease";
 import { APPROVED_PORTAL_NOTE, vaultContext } from "@/lib/chat/accountant";
 import { agentTurnContext } from "@/lib/chat/agent-context";
 import { chatInstructions, chatSurface, outputBudget, type ChatAgentId } from "@/lib/chat/agents";
-import { billedToolUse, messageAsksImage, messageNeedsWeb } from "@/lib/chat/tools";
+import { billedToolUse } from "@/lib/chat/tools";
+import { XaiApiError } from "@/lib/xai/live";
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
@@ -123,16 +124,16 @@ async function* streamModel(input: {
   const prepared = prepareModelTurn(history, vault);
   const surface = chatSurface(input.agent);
   const pace = outputBudget(input.agent, replyPace(latest));
-  const webSearch = surface.webSearch && messageNeedsWeb(latest);
+  const webSearch = surface.webSearch;
   let imageRoom = 0;
-  if (surface.images && messageAsksImage(latest)) {
+  if (surface.images) {
     const usedImages = await usedThisMonth(input.organizationId, "IMAGES");
     imageRoom = Math.max(0, limitFor("MARKETING", "IMAGES") - usedImages);
   }
   const imageNote =
-    surface.images && messageAsksImage(latest) && imageRoom === 0
+    surface.images && imageRoom === 0
       ? "El cupo de imágenes de este mes está usado. No generes una imagen; dilo en una frase."
-      : "";
+      : "Si piden una imagen, genérala con la herramienta. No la describas como si ya existiera si no la generaste.";
   const extra = [business, prepared.vaultNote, imageNote, input.extra].filter(Boolean).join("\n\n");
   let webSearchCalls = 0;
   const generated: { fileName: string; mimeType: "image/png" | "image/jpeg"; bytes: Uint8Array }[] = [];
@@ -223,11 +224,12 @@ async function* streamModel(input: {
   } catch (error) {
     if (missingTable(error)) throw error;
     if (streamWasStopped(input.signal) || isAbortError(error)) return;
-    logEvent("chat.ia", { organizationId: input.organizationId });
+    const detail = error instanceof XaiApiError ? error.message : "";
+    logEvent("chat.ia", { organizationId: input.organizationId, status: error instanceof XaiApiError ? error.status : 0 });
     if (!raw.trim()) {
-      const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
+      const fail = await saveAssistantMessage(input.threadId, detail || FAIL_TEXT);
       yield { type: "message", message: fail };
-      yield { type: "error", code: "ia" };
+      yield detail ? { type: "error", code: "ia", detail } : { type: "error", code: "ia" };
       return;
     }
     cut = "failure";

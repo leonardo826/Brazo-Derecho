@@ -22,13 +22,16 @@ export function messageAsksImage(text: string) {
   return IMAGE_ASK.test(text);
 }
 
-/** x_search queda apagado: se cobra por post y por perfil, y una búsqueda puede traer muchos. */
-export function toolsForAgent(agent: ChatAgentId, text: string, imageRoom: number): ServerTool[] {
+/**
+ * El agente decide cuándo llamar. El interruptor del agente las deja disponibles.
+ * x_search sigue apagado: se cobra por post y por perfil.
+ */
+export function toolsForAgent(agent: ChatAgentId, imageRoom: number): ServerTool[] {
   const surface = chatSurface(agent);
   const tools: ServerTool[] = [];
-  if (surface.webSearch && messageNeedsWeb(text)) tools.push({ type: "web_search" });
+  if (surface.webSearch) tools.push({ type: "web_search" });
   if (surface.xSearch) tools.push({ type: "x_search" });
-  if (surface.images && messageAsksImage(text) && imageRoom > 0) tools.push({ type: "image_generation" });
+  if (surface.images && imageRoom > 0) tools.push({ type: "image_generation" });
   return tools;
 }
 

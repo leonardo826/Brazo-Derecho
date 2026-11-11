@@ -27,7 +27,7 @@ export type ChatClientEvent =
   | { type: "replace"; message: PublicMessage }
   | { type: "usage"; consults: number }
   | { type: "done" }
-  | { type: "error"; code: string };
+  | { type: "error"; code: string; detail?: string };
 
 export const ACTION_HELP =
   "Si apruebas, dejo el borrador. Declarar o pagar no corre sin esta confirmación. Las claves se usan desde la Bóveda, sin mostrarlas.";

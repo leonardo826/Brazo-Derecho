@@ -438,7 +438,7 @@ export function AgentChat({
     if (event.type === "replace") remember(event.message);
     if (event.type === "usage") setConsults(event.consults);
     if (event.type === "error") {
-      setNotice(CHAT_ERROR[event.code] ?? CHAT_ERROR.ia);
+      setNotice(event.detail || CHAT_ERROR[event.code] || CHAT_ERROR.ia);
       clearLive();
       setStatus("");
     }
