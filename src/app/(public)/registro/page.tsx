@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { registerAction } from "@/app/actions/auth";
 import { CsrfField } from "@/components/csrf-field";
+import { SpanishForm } from "@/components/spanish-form";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 import { resolveSession } from "@/lib/session";
@@ -29,7 +30,7 @@ export default async function RegisterPage({
           para confirmar el correo; puedes usar el panel antes de abrirlo.
         </p>
         <Flash error={firstParam(params.error)} />
-        <form action={registerAction} className="stack">
+        <SpanishForm action={registerAction} className="stack">
           <CsrfField />
           <label>
             Tu nombre
@@ -77,7 +78,7 @@ export default async function RegisterPage({
           <button className="button" type="submit">
             Crear empresa
           </button>
-        </form>
+        </SpanishForm>
         <p className="muted">
           ¿Ya tienes cuenta? <Link href="/ingresar">Ingresa aquí</Link>
         </p>

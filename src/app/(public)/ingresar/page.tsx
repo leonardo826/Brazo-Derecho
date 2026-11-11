@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
 import { CsrfField } from "@/components/csrf-field";
+import { SpanishForm } from "@/components/spanish-form";
 import { Flash } from "@/components/flash";
 import { firstParam } from "@/lib/search";
 import { resolveSession } from "@/lib/session";
@@ -30,7 +31,7 @@ export default async function LoginPage({
           Ya tengo una cuenta: entrar con Google
         </a>
         <p className="muted">O ingresa con tu correo y contraseña:</p>
-        <form action={loginAction} className="stack">
+        <SpanishForm action={loginAction} className="stack">
           <CsrfField />
           <input type="hidden" name="siguiente" value={siguiente} />
           <label>
@@ -47,7 +48,7 @@ export default async function LoginPage({
           <button className="button" type="submit">
             Entrar al panel
           </button>
-        </form>
+        </SpanishForm>
         <p className="muted">
           ¿Todavía no tienes empresa? <Link href="/registro">Crear cuenta</Link>
         </p>
