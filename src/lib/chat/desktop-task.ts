@@ -1,3 +1,5 @@
+import { computerFeatureEnabled } from "@/lib/computer/flag";
+
 const TRIP = /\b(vuelos?|pasajes?|viajes?|trayectos?)\b/i;
 const DELEGATE = /\b(computador|navegador|sitio web|p[aá]gina web)\b/i;
 const TAX_PORTAL = /\b(sii|previred|tesorer[ií]a|servicio de impuestos internos)\b/i;
@@ -172,6 +174,7 @@ export async function executeDesktopRequest(input: {
   fetchImpl?: typeof fetch;
   log?: (fields: DesktopLog) => void;
 }): Promise<{ kind: "chat" } | { kind: "confirm" } | { kind: "reply"; text: string }> {
+  if (!computerFeatureEnabled()) return { kind: "chat" };
   const started = performance.now();
   const key = `${input.userId}\n${input.organizationId}\n${input.conversationId}`;
   const plan = planDesktopTask(input.text, key);

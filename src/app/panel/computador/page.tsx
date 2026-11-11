@@ -1,6 +1,8 @@
+import { notFound } from "next/navigation";
 import { decideComputerAction, enqueueComputerAction, mintComputerViewAction } from "@/app/actions/computer";
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
+import { computerFeatureEnabled } from "@/lib/computer/flag";
 import { localNovncUrl, novncStillValid, safeNovncHref, tokenMatches } from "@/lib/computer/novnc";
 import { missingVaultTable } from "@/lib/credentials/http";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
@@ -31,6 +33,7 @@ export default async function ComputerPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  if (!computerFeatureEnabled()) notFound();
   const session = await requireSession();
   const params = await searchParams;
   const token = firstParam(params.token);
