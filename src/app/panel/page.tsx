@@ -25,10 +25,12 @@ export default async function PanelHome({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [subscriptions, usage] = await Promise.all([
+  const [subscriptions, usage, organization] = await Promise.all([
     prisma.subscription.findMany({ where: { organizationId: session.organizationId } }),
     usageSnapshot(session.organizationId),
+    prisma.organization.findUnique({ where: { id: session.organizationId }, select: { isQa: true } }),
   ]);
+  const qa = organization?.isQa === true;
   const byAgent = new Map(subscriptions.map((item) => [item.agent, item]));
 
   return (
@@ -43,7 +45,7 @@ export default async function PanelHome({
         </div>
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
-      {AGENT_ORDER.every((agentId) => !isSubscriptionOpen(byAgent.get(agentId) ?? null)) ? (
+      {!qa && AGENT_ORDER.every((agentId) => !isSubscriptionOpen(byAgent.get(agentId) ?? null)) ? (
         <EmptyState title="Todavía no tienes un agente en prueba">
           <p>En tres pasos dejas uno listo. La prueba dura {TRIAL_DAYS} días y cada agente se activa por separado.</p>
           <p>
@@ -65,7 +67,7 @@ export default async function PanelHome({
               <p className="muted">
                 {formatClp(iabotChargeClp())} al mes, IVA incluido · {agent.limitLabel}
               </p>
-              <SubscribeActions agent={agentId} back="/panel" subscription={subscription} />
+              <SubscribeActions agent={agentId} back="/panel" subscription={subscription} qa={qa} />
               {metrics.map(([metric, limit]) => (
                 <UsageBar key={metric} used={usage.totals[metric]} limit={limit} label={metric === "RESPONSES" ? "Respuestas" : metric === "QUOTES" ? "Cotizaciones" : metric === "TEXTS" ? "Textos" : "Imágenes"} />
               ))}

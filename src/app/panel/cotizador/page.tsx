@@ -33,7 +33,7 @@ export default async function QuotesPage({
 }) {
   const session = await requireSession();
   const params = await searchParams;
-  const [{ subscription, open }, prices, quotes, usage] = await Promise.all([
+  const [{ subscription, open, qa }, prices, quotes, usage] = await Promise.all([
     agentIsOpen(session.organizationId, "QUOTES"),
     prisma.priceItem.findMany({
       where: { organizationId: session.organizationId },
@@ -57,7 +57,7 @@ export default async function QuotesPage({
           <h1>Cotizador</h1>
           <p className="muted">Los precios salen solo de esta lista. La cotización no se envía sola.</p>
         </div>
-        <SubscribeActions agent="QUOTES" back="/panel/cotizador" subscription={subscription} />
+        <SubscribeActions agent="QUOTES" back="/panel/cotizador" subscription={subscription} qa={qa} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
       {firstParam(params.guia) === "1" ? (
