@@ -1,9 +1,6 @@
 import type { AgentId, MetricId } from "@/lib/catalog";
 import { instructionsFor } from "@/lib/catalog";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
-import { missingTable } from "@/lib/chat/store";
-import { logEvent } from "@/lib/log";
-import { prisma } from "@/lib/prisma";
 
 export type ChatAgentId = Exclude<AgentId, "QUOTES">;
 
@@ -121,23 +118,4 @@ export function whatsappContext(input: { name: string; rut: string | null; knowl
       ? "No hay fichas. No inventes datos del negocio."
       : input.knowledge.map((item) => `- ${item.title}: ${item.body}`).join("\n");
   return [`Empresa: ${input.name || "sin nombre"}.`, `RUT: ${input.rut?.trim() || "no informado"}.`, "Fichas que sí puedes usar:", fichas].join("\n");
-}
-
-export async function agentTurnContext(agent: ChatAgentId, organizationId: string) {
-  try {
-    if (agent === "MARKETING") {
-      const profile = await prisma.brandProfile.findUnique({ where: { organizationId } });
-      return marketingContext(profile);
-    }
-    if (agent === "WHATSAPP") {
-      const [organization, knowledge] = await Promise.all([
-        prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true, rut: true } }),
-        prisma.knowledgeItem.findMany({ where: { organizationId }, orderBy: { title: "asc" }, select: { title: true, body: true } }),
-      ]);
-      return whatsappContext({ name: organization?.name ?? "", rut: organization?.rut ?? null, knowledge });
-    }
-  } catch (error) {
-    if (!missingTable(error)) logEvent("chat.contexto", { organizationId, agent });
-  }
-  return "";
 }
