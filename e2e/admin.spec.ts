@@ -3,6 +3,9 @@ import { clickHydrated, ensureAdmin } from "./helpers";
 
 test("administración lista empresas y suspende", async ({ page }) => {
   await ensureAdmin(page);
+  const computador = await page.goto("/panel/computador");
+  expect(computador?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "No está esta página" })).toBeVisible();
   await page.goto("/panel/admin");
   await expect(page.getByRole("heading", { name: "Empresas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Costo por empresa" })).toBeVisible();

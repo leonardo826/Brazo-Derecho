@@ -48,11 +48,13 @@ function showError(field: Field, text: string) {
   note.className = "field-error";
   note.dataset.fieldError = "";
   note.setAttribute("role", "alert");
+  note.setAttribute("aria-label", text);
   note.textContent = text;
   const described = field.getAttribute("aria-describedby");
   field.setAttribute("aria-describedby", described ? `${described} ${errorId}` : errorId);
   field.setAttribute("aria-invalid", "true");
-  field.insertAdjacentElement("afterend", note);
+  const anchor = field.closest("label") ?? field;
+  anchor.insertAdjacentElement("afterend", note);
 }
 
 export function SpanishForm(props: ComponentProps<"form">) {
