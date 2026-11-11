@@ -41,7 +41,10 @@ describe("salud y pago de prueba", () => {
   test("GET /api/health revisa la base", async () => {
     const response = await GET();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, servicio: "brazo-derecho", base: "ok" });
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, servicio: "brazo-derecho", base: "ok" });
+    expect(body.commit).toMatch(/^[0-9a-f]{7}$|^desconocido$/);
+    expect(JSON.stringify(body)).not.toMatch(/KEY|SECRET|TOKEN|password|ghp_/);
   });
 
   test("el pago de prueba deja el agente activo y no toca otra empresa", async () => {
