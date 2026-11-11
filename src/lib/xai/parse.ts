@@ -1,3 +1,4 @@
+import { readToolReport } from "@/lib/chat/tools";
 import { EMPTY_USAGE, type TokenUsage } from "@/lib/pricing";
 import type { XaiResponse, XaiStreamEvent } from "@/lib/xai/types";
 
@@ -5,6 +6,7 @@ export type ResponsesUsage = {
   input_tokens?: number;
   output_tokens?: number;
   input_tokens_details?: { cached_tokens?: number };
+  server_side_tool_usage?: { web_search_calls?: number; x_search_calls?: number };
 };
 
 export type ResponsesBody = {
@@ -13,6 +15,7 @@ export type ResponsesBody = {
   output_text?: string;
   output?: Array<{
     type?: string;
+    result?: string;
     content?: Array<{ type?: string; text?: string }>;
   }>;
   usage?: ResponsesUsage;
@@ -54,11 +57,15 @@ export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
     return { type: "delta", text: event.delta };
   }
   const itemType = event.item?.type ?? "";
-  if (type.includes("web_search") || itemType === "web_search_call" || itemType.includes("web_search")) {
-    return { type: "status", text: "Buscando la norma vigente…" };
+  if (type.includes("image_generation") || itemType === "image_generation_call") {
+    return { type: "status", text: "Preparando la imagen…" };
+  }
+  if (type.includes("web_search") || itemType === "web_search_call" || itemType.includes("web_search") || itemType === "x_search_call") {
+    return { type: "status", text: "Buscando en la web…" };
   }
   if (type === "response.completed" || type === "response.incomplete") {
     const body = event.response ?? (raw as ResponsesBody);
+    const tools = readToolReport(body);
     return {
       type: "done",
       response: {
@@ -68,6 +75,9 @@ export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
         usage: readTokenUsage(body.usage),
         mocked: false,
         incomplete: type === "response.incomplete",
+        webSearchCalls: tools.webSearchCalls,
+        xSearchCalls: tools.xSearchCalls,
+        images: tools.images,
       },
     };
   }

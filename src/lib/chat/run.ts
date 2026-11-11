@@ -5,6 +5,7 @@ import { loadTenantLease } from "@/lib/computer/lease";
 import { APPROVED_PORTAL_NOTE, vaultContext } from "@/lib/chat/accountant";
 import { agentTurnContext } from "@/lib/chat/agent-context";
 import { chatInstructions, chatSurface, outputBudget, type ChatAgentId } from "@/lib/chat/agents";
+import { billedToolUse, messageAsksImage, messageNeedsWeb } from "@/lib/chat/tools";
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
@@ -26,7 +27,7 @@ import {
   saveUserMessage,
   toPublic,
 } from "@/lib/chat/store";
-import { modelFor } from "@/lib/catalog";
+import { limitFor, modelFor } from "@/lib/catalog";
 import { logEvent } from "@/lib/log";
 import { recordCompletedTask, recordModelCall, releaseDailyTask, reserveDailyTask } from "@/lib/meter-store";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS, type TokenUsage } from "@/lib/pricing";
@@ -120,8 +121,21 @@ async function* streamModel(input: {
   const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
   const business = await agentTurnContext(input.agent, input.organizationId);
   const prepared = prepareModelTurn(history, vault);
-  const extra = [business, prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
+  const surface = chatSurface(input.agent);
   const pace = outputBudget(input.agent, replyPace(latest));
+  const webSearch = surface.webSearch && messageNeedsWeb(latest);
+  let imageRoom = 0;
+  if (surface.images && messageAsksImage(latest)) {
+    const usedImages = await usedThisMonth(input.organizationId, "IMAGES");
+    imageRoom = Math.max(0, limitFor("MARKETING", "IMAGES") - usedImages);
+  }
+  const imageNote =
+    surface.images && messageAsksImage(latest) && imageRoom === 0
+      ? "El cupo de imágenes de este mes está usado. No generes una imagen; dilo en una frase."
+      : "";
+  const extra = [business, prepared.vaultNote, imageNote, input.extra].filter(Boolean).join("\n\n");
+  let webSearchCalls = 0;
+  const generated: { fileName: string; mimeType: "image/png" | "image/jpeg"; bytes: Uint8Array }[] = [];
   const client = createXaiClient();
   let raw = "";
   let incomplete = false;
@@ -153,7 +167,8 @@ async function* streamModel(input: {
         usage: USAGE_PRESETS.text,
         businessName: input.organizationName,
         maxOutputTokens: pace.maxOutputTokens,
-        webSearch: pace.webSearch,
+        webSearch,
+        imageGeneration: imageRoom > 0,
         reasoningEffort: pace.reasoningEffort,
         signal: input.signal,
       })) {
@@ -172,6 +187,10 @@ async function* streamModel(input: {
         }
         if (event.type === "done") {
           incomplete = event.response.incomplete === true;
+          webSearchCalls += event.response.webSearchCalls ?? 0;
+          for (const image of event.response.images ?? []) {
+            if (generated.length < imageRoom) generated.push(image);
+          }
           const usage = event.response.usage ?? EMPTY_USAGE;
           const model = event.response.model.trim() || modelFor(input.agent);
           const responseId = event.response.id.trim().slice(0, 80) || "resp_sin_id";
@@ -233,16 +252,26 @@ async function* streamModel(input: {
   // CHAT ya guardó los tokens de cada tramo, también de un corte o de un tramo anterior a un fallo.
   // CONSULTS cuenta una consulta del mes solo si quedó texto útil. TASK solo si la respuesta terminó.
   const saved = await prisma.$transaction(async (tx) => {
-    const surface = chatSurface(input.agent);
+    const bill = billedToolUse(false, webSearchCalls, generated.length);
     const reserved = await reserveUsage(tx, {
       organizationId: input.organizationId,
       agent: input.agent,
       metric: surface.metric,
-      quantity: 1,
+      quantity: bill.reply + bill.searches,
       tokens: usage,
       model: last?.model ?? modelFor(input.agent),
     });
     if (!reserved.ok) return null;
+    let images = generated;
+    if (images.length > 0) {
+      const imageQuota = await reserveUsage(tx, {
+        organizationId: input.organizationId,
+        agent: "MARKETING",
+        metric: "IMAGES",
+        quantity: images.length,
+      });
+      if (!imageQuota.ok) images = [];
+    }
     if (!finished.truncated) {
       await recordCompletedTask(tx, {
         organizationId: input.organizationId,
@@ -256,6 +285,19 @@ async function* streamModel(input: {
         threadId: input.threadId,
         role: "ASSISTANT",
         body: split.text || (input.agent === "ACCOUNTING" ? "No reemplaza a un contador certificado." : "No alcancé a dejar la respuesta."),
+        ...(images.length > 0
+          ? {
+              attachments: {
+                create: images.map((file) => ({
+                  organizationId: input.organizationId,
+                  fileName: file.fileName,
+                  mimeType: file.mimeType,
+                  sizeBytes: file.bytes.byteLength,
+                  bytes: Buffer.from(file.bytes),
+                })),
+              },
+            }
+          : {}),
       },
       include: messageInclude,
     });

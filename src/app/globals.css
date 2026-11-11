@@ -853,6 +853,14 @@ mark.placeholder {
   border-radius: 10px;
   background: white;
 }
+.agent-generated { display: grid; gap: 0.4rem; margin-top: 0.45rem; }
+.agent-generated img {
+  width: min(100%, 28rem);
+  height: auto;
+  border-radius: 12px;
+  background: white;
+}
+.agent-generated .button { width: auto; justify-self: start; }
 .typing-status { margin: 0.2rem 0 0; font-style: italic; }
 .confirm-card {
   border: 1px solid var(--copper);

@@ -13,7 +13,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const file = await prisma.agentAttachment.findFirst({ where: attachmentScope(session.organizationId, id) });
     if (!file) return new Response("No encontrado", { status: 404 });
-    const inline = file.mimeType.startsWith("image/");
+    const download = new URL(request.url).searchParams.get("descarga") === "1";
+    const inline = file.mimeType.startsWith("image/") && !download;
     return new Response(Buffer.from(file.bytes), {
       headers: {
         "Content-Type": file.mimeType,

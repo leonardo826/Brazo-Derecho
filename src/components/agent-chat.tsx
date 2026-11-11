@@ -927,11 +927,14 @@ export function AgentChat({
                 file.id.startsWith("local-") ? (
                   <span key={file.id}>{file.fileName}</span>
                 ) : file.mimeType.startsWith("image/") ? (
-                  <a key={file.id} href={`/api/chat/adjuntos/${file.id}`} target="_blank" rel="noreferrer">
-                    {/* The thumbnail needs the session cookie; next/image does not send it. */}
+                  <figure className="agent-generated" key={file.id}>
+                    {/* The image needs the session cookie; next/image does not send it. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`/api/chat/adjuntos/${file.id}`} alt={file.fileName} />
-                  </a>
+                    <a className="button secondary small" href={`/api/chat/adjuntos/${file.id}?descarga=1`} download={file.fileName}>
+                      Descargar
+                    </a>
+                  </figure>
                 ) : (
                   <a key={file.id} href={`/api/chat/adjuntos/${file.id}`}>
                     {file.fileName}

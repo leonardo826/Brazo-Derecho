@@ -27,7 +27,7 @@ describe("límites de uso", () => {
     expect(limitFor("WHATSAPP", "RESPONSES")).toBe(1000);
     expect(limitFor("QUOTES", "QUOTES")).toBe(300);
     expect(limitFor("MARKETING", "TEXTS")).toBe(60);
-    expect(limitFor("MARKETING", "IMAGES")).toBe(30);
+    expect(limitFor("MARKETING", "IMAGES")).toBe(20);
   });
 
   test("los tokens quedan en el modelo de esa empresa y no se mezclan con otra", () => {

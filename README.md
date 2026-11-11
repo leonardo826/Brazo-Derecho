@@ -4,7 +4,7 @@ Beta multi-empresa para pymes en Chile. Tres agentes se activan por separado:
 
 - **Atención WhatsApp**: responde con la base de conocimiento y deriva a una persona si no está. No cobra, no promete descuentos, no da asesoría legal ni médica y no manda publicidad masiva. Tope: 1.000 respuestas al mes. Modelo habitual: `grok-4.3`.
 - **Cotizador**: arma cotizaciones solo con la lista de precios y deja un PDF para aprobar. No inventa precios, no envía la cotización y no emite boleta. Tope: 300 cotizaciones al mes. Modelo complejo: `grok-4.7`.
-- **Marketing**: prepara textos e imágenes en borrador. No publica, no compra avisos y no responde comentarios. Tope: 60 textos y 30 imágenes al mes. Modelo complejo: `grok-4.7`.
+- **Marketing**: prepara textos e imágenes en borrador. No publica, no compra avisos y no responde comentarios. Tope: 60 textos y 20 imágenes al mes. Modelo complejo: `grok-4.7`.
 
 Los precios son $39.990, $49.990 y $34.990 netos al mes, más IVA de 19% (el cobro en Flow queda en $47.588, $59.488 y $41.638). La prueba dura 14 días.
 
