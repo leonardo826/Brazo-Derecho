@@ -57,22 +57,72 @@ export function parseInline(input: string): MdInline[] {
   return nodes;
 }
 
-/** Un párrafo con varios « - » pasa a una lista, un ítem por línea. */
-export function normalizeLists(source: string) {
-  return source
-    .replace(/\r\n/g, "\n")
+function splitListLine(line: string) {
+  const lead = line.replace(/([.!?…:])[ \t]*[-–—•][ \t]+(?=\S)/g, "$1\n- ");
+  return lead
     .split("\n")
-    .map((line) => {
-      if (/^\s*```/.test(line)) return line;
-      const marks = line.match(/(?:^|\s)[-–—•]\s+\S/g);
-      if (!marks || marks.length < 2) return line;
-      return line.replace(/\s+[-–—•]\s+/g, "\n- ");
+    .map((part) => {
+      const marks = part.match(/(?:^|\s)[-–—•]\s+\S/g);
+      if (!marks || marks.length < 2) return part;
+      return part.replace(/\s+[-–—•]\s+/g, "\n- ");
     })
     .join("\n");
 }
 
+/** Separa « - » que sigue a una frase, y también varios ítems en la misma línea. */
+export function normalizeLists(source: string) {
+  let fence = false;
+  return source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => {
+      if (/^\s*```/.test(line)) {
+        fence = !fence;
+        return line;
+      }
+      if (fence) return line;
+      return splitListLine(line);
+    })
+    .join("\n");
+}
+
+const SECTION = /[ \t]+((?:Gancho|Cuerpo|Llamado a la acci[oó]n|Hashtags|Idea de imagen)\s*:)/gi;
+
+export function normalizeSections(source: string) {
+  return source.replace(SECTION, "\n\n$1");
+}
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function citationKind(label: string, url: string) {
+  const host = hostOf(url);
+  if (!host) return "";
+  const clean = label.trim().toLowerCase().replace(/^www\./, "");
+  if (/^\d{1,3}$/.test(clean)) return "number";
+  if (clean === host) return "host";
+  if (clean === host.split(".")[0]) return "brand";
+  return "";
+}
+
+/** Un enlace suelto con la marca o el dominio pasa a «(fuente)». */
+export function softenCitationLinks(source: string) {
+  return source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (full, label: string, url: string, offset: number, all: string) => {
+    const kind = citationKind(label, url);
+    if (!kind) return full;
+    const before = all.slice(Math.max(0, offset - 3), offset);
+    if (kind === "brand" && !/[.!?]\s*$/.test(before)) return full;
+    return `[(fuente)](${url})`;
+  });
+}
+
 export function parseMarkdown(source: string): MdBlock[] {
-  const lines = normalizeLists(normalizeCitations(source)).replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeSections(normalizeLists(softenCitationLinks(normalizeCitations(source)))).replace(/\r\n/g, "\n").split("\n");
   const blocks: MdBlock[] = [];
   let index = 0;
   while (index < lines.length) {

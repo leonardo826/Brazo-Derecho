@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import { composeAnswer, dropProgressNarration, isImagePayload } from "@/lib/chat/answer";
+import { composeAnswer, dropProgressNarration, isImagePayload, withSources } from "@/lib/chat/answer";
+import { normalizeSections } from "@/lib/chat/markdown";
 import { chatInstructions, chatSurface } from "@/lib/chat/agents";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { billedToolUse, messageAsksImage, messageNeedsWeb, readToolReport, toolsForAgent } from "@/lib/chat/tools";
@@ -99,6 +100,8 @@ describe("herramientas de la web", () => {
     expect(marketing).toMatch(/no uses el perfil guardado/);
     expect(marketing).toMatch(/sin logos de marcas ajenas/);
     expect(marketing).toMatch(/la imagen va adjunta/);
+    expect(marketing).toMatch(/idea de imagen/);
+    expect(marketing).toMatch(/línea en blanco/);
     expect(marketing).toMatch(/No escribas «supuse que/);
     const contador = accountantChatInstructions("Torre San Isidro");
     expect(contador).toMatch(/solo la ida/);
@@ -138,6 +141,33 @@ describe("herramientas de la web", () => {
     expect(answer).not.toMatch(/\n1 2$/);
     expect(answer).toContain("Fuentes:");
     expect(answer).toContain("[meteochile.gob.cl](https://www.meteochile.gob.cl/clima)");
+    const leaked = composeAnswer({
+      output_text: "Faltan llegadas. El jueves 12 hay un LATAM.",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "Faltan llegadas y si hay tarifa de ese jueves." }] },
+        { type: "web_search_call" },
+        { type: "message", content: [{ type: "output_text", text: "Sigo buscando la tarifa." }] },
+        { type: "message", content: [{ type: "output_text", text: "Faltan llegadas y si hay tarifa de ese jueves. El jueves 12, LATAM sale a las 09:24 y llega a las 10:32." }] },
+      ],
+    });
+    expect(leaked).not.toMatch(/Faltan/);
+    expect(leaked).not.toMatch(/Sigo buscando/);
+    expect(leaked).toContain("LATAM sale a las 09:24");
+    const cited = withSources(
+      "LATAM LA8: 09:24–10:32. [LATAM](https://www.latam.com/vuelo). Fuente: https://www.latam.com/otro",
+      ["https://latam.com/a", "https://www.latam.com/b", "https://www.skyairline.com/c"],
+    );
+    expect(cited).toContain("[(fuente)](https://www.latam.com/vuelo)");
+    expect(cited).not.toMatch(/\[LATAM\]/);
+    expect(cited).not.toMatch(/Fuente: https?:/);
+    const fuentes = cited.split("Fuentes:")[1] ?? "";
+    expect(fuentes.split("\n").filter((line) => line.includes("latam.com"))).toHaveLength(1);
+    expect(cited).toContain("skyairline.com");
+    const post = normalizeSections("Gancho: Mira. Cuerpo: El texto. Llamado a la acción: Escribe. Hashtags: #Concepción. Idea de imagen: Un taller.");
+    expect(post).toContain("\n\nCuerpo:");
+    expect(post).toContain("\n\nLlamado a la acción:");
+    expect(post).toContain("\n\nHashtags:");
+    expect(post).toContain("\n\nIdea de imagen:");
     const blob = "A".repeat(2_100);
     expect(isImagePayload(`data:image/png;base64,${blob}`)).toBe(true);
     expect(mapXaiStreamEvent({ type: "response.output_text.delta", delta: blob })?.type).toBe("status");
