@@ -190,7 +190,7 @@ function isActionId(value: string): value is SensitiveAction["id"] {
 }
 
 export function splitAction(text: string): { text: string; action: SensitiveAction | null } {
-  const visible = hideActionMarker(text);
+  const visible = hideActionMarker(text).trim();
   const marker = text.search(/ACCION_SENSIBLE\s*:/i);
   if (marker < 0) return { text: visible, action: null };
   const tail = text.slice(marker);

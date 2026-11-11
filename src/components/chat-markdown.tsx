@@ -5,6 +5,7 @@ function Inline({ nodes }: { nodes: MdInline[] }) {
     <>
       {nodes.map((node, index) => {
         const key = `${node.type}-${index}`;
+        if (node.type === "break") return <br key={key} />;
         if (node.type === "strong") return <strong key={key}>{node.text}</strong>;
         if (node.type === "em") return <em key={key}>{node.text}</em>;
         if (node.type === "code") return <code key={key}>{node.text}</code>;

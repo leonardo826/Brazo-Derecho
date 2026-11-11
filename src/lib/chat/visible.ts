@@ -1,6 +1,7 @@
 export function hideActionMarker(text: string) {
   const marker = text.search(/ACCION_SENSIBLE\s*:/i);
-  return (marker >= 0 ? text.slice(0, marker) : text).trim();
+  if (marker < 0) return text;
+  return text.slice(0, marker).replace(/[ \t]+$/, "");
 }
 
 export function plainSpeech(markdown: string) {

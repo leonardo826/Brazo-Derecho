@@ -98,6 +98,7 @@ describe("herramientas de la web", () => {
     const marketing = chatInstructions("MARKETING", "Torre San Isidro");
     expect(marketing).toMatch(/no uses el perfil guardado/);
     expect(marketing).toMatch(/sin logos de marcas ajenas/);
+    expect(marketing).toMatch(/la imagen va adjunta/);
     expect(marketing).toMatch(/No escribas «supuse que/);
     const contador = accountantChatInstructions("Torre San Isidro");
     expect(contador).toMatch(/solo la ida/);
