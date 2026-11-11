@@ -413,6 +413,15 @@ mark.placeholder {
 }
 
 .field-hint { font-weight: 450; color: var(--ink-soft); font-size: 0.92rem; }
+.field-error {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  background: var(--bad-bg);
+  color: #6f2414;
+  font-size: 1rem;
+  line-height: 1.4;
+}
 .sr-only {
   position: absolute;
   width: 1px;
