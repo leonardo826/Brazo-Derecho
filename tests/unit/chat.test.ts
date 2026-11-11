@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { attachmentScope, prepareUpload, safeFileName } from "@/lib/chat/files";
-import { normalizeLists, parseMarkdown, safeHref } from "@/lib/chat/markdown";
+import { normalizeLists, parseMarkdown, safeHref, softenCitationLinks } from "@/lib/chat/markdown";
 import { ACTION_HELP, type PublicMessage } from "@/lib/chat/public";
 import { sensitiveRequest, splitAction, vaultActionFor, wantsPortalAccess } from "@/lib/chat/sensitive";
 import { replaceOptimisticUser } from "@/lib/chat/thread";
@@ -139,11 +139,32 @@ describe("chat continuo", () => {
     const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
     expect(html).toContain('href="https://www.sii.cl/normativa"');
     expect(html).toContain('href="https://www.sii.cl/ppm"');
-    expect(html).toContain("(fuente)</a>");
+    expect(html).toContain(">sii.cl</a>");
+    expect(html).not.toContain("(fuente)");
     expect(html).not.toContain(">1</a>");
     expect(html).not.toContain(">2</a>");
     expect(html).not.toContain("[[1]]");
     expect(html).not.toContain("[[2]]");
+    const exact = [
+      "según lo publicado en [tecna-zinc.cl](https://www.tecna-zinc.cl/ficha)",
+      "- LATAM LA8: 09:24–10:32. [LATAM](https://www.latamairlines.com/cl/es)",
+      "Fuentes:",
+      "- [tecna-zinc.cl](https://tecna-zinc.cl/)",
+      "- [weather.metoffice.gov.uk](https://weather.metoffice.gov.uk/forecast)",
+      "- [google.com](https://www.google.com/search)",
+    ].join("\n");
+    expect(softenCitationLinks(exact)).toContain("- LATAM LA8: 09:24–10:32. [(fuente)](https://www.latamairlines.com/cl/es)");
+    expect(softenCitationLinks(exact)).toContain("según lo publicado en [tecna-zinc.cl](https://www.tecna-zinc.cl/ficha)");
+    const shown = renderToStaticMarkup(createElement(ChatMarkdown, { text: exact })).replace(/<[^>]+>/g, "");
+    expect(shown).toContain("según lo publicado en tecna-zinc.cl");
+    expect(shown).not.toContain("según lo publicado en (fuente)");
+    expect(shown).toContain("LATAM LA8: 09:24–10:32. (fuente)");
+    expect(shown).not.toContain("LATAM LA8: 09:24–10:32. LATAM");
+    expect(shown).toContain("tecna-zinc.cl");
+    expect(shown).toContain("weather.metoffice.gov.uk");
+    expect(shown).toContain("google.com");
+    expect(shown).not.toContain("Fuentes: - (fuente)");
+    expect(shown).not.toContain("- (fuente) - (fuente)");
     const hostile = renderToStaticMarkup(
       createElement(ChatMarkdown, { text: "ver [[1]](javascript:alert(1))" }),
     );

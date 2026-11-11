@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { computerPanelEnabled } from "@/lib/computer/flag";
-import { panelComputerHref } from "@/components/panel-nav";
+import { panelComputerHref } from "@/lib/computer/nav";
 import { issueNovncToken, novncStillValid, tokenMatches } from "@/lib/computer/novnc";
 import { decideSensitiveTask, enqueueComputerTask, type ComputerStore, type ComputerTaskRecord } from "@/lib/computer/orchestrator";
 import { cliWillCallFly, flyCallsAllowed, flyRequests, planProvision, provisionClient } from "@/lib/computer/provision";
@@ -183,15 +183,16 @@ describe("piloto del computador", () => {
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "development", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "True" })).toBe(false);
-    expect(panelComputerHref(false)).toBeNull();
-    expect(panelComputerHref(computerPanelEnabled({ NODE_ENV: "production" }))).toBeNull();
-    expect(panelComputerHref(true)).toBe("/panel/computador");
+    expect(panelComputerHref({ NODE_ENV: "production" })).toBeNull();
+    expect(panelComputerHref({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "true", COMPUTER_PANEL: "true" })).toBe(
+      "/panel/computador",
+    );
     const nav = readFileSync("src/components/panel-nav.tsx", "utf8");
-    const layout = readFileSync("src/app/panel/layout.tsx", "utf8");
+    const shell = readFileSync("src/components/panel-shell.tsx", "utf8");
+    expect(nav).not.toContain("/panel/computador");
     expect(nav).not.toMatch(/<Link[^>\n]*computador/);
+    expect(shell).not.toContain("/panel/computador");
     expect(nav).toContain("{computerHref ?");
-    expect(layout).toContain("computerPanelEnabled()");
-    expect(layout).not.toContain("/panel/computador");
   });
 
   test("Fly queda en dry-run salvo confirmación explícita y el plan no lleva secretos", async () => {

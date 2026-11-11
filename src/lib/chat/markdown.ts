@@ -100,25 +100,42 @@ function hostOf(url: string) {
   }
 }
 
-function citationKind(label: string, url: string) {
-  const host = hostOf(url);
-  if (!host) return "";
-  const clean = label.trim().toLowerCase().replace(/^www\./, "");
-  if (/^\d{1,3}$/.test(clean)) return "number";
-  if (clean === host) return "host";
-  if (clean === host.split(".")[0]) return "brand";
-  return "";
+function bareToken(label: string) {
+  const clean = label.trim();
+  if (!clean || clean.length > 48 || /\s/.test(clean) || clean === "(fuente)") return "";
+  return clean;
 }
 
-/** Un enlace suelto con la marca o el dominio pasa a «(fuente)». */
+/**
+ * Solo el enlace final de un ítem («- LATAM … 10:32. [LATAM](url)») pasa a «(fuente)».
+ * La lista Fuentes y el texto corrido conservan el dominio.
+ */
 export function softenCitationLinks(source: string) {
-  return source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (full, label: string, url: string, offset: number, all: string) => {
-    const kind = citationKind(label, url);
-    if (!kind) return full;
-    const before = all.slice(Math.max(0, offset - 3), offset);
-    if (kind === "brand" && !/[.!?]\s*$/.test(before)) return full;
-    return `[(fuente)](${url})`;
-  });
+  let inFuentes = false;
+  return source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => {
+      if (/^\s*fuentes:\s*$/i.test(line)) {
+        inFuentes = true;
+        return line;
+      }
+      if (inFuentes) {
+        if (!line.trim() || /^\s*-\s+/.test(line)) return line;
+        inFuentes = false;
+      }
+      if (!/^\s*[-*]\s+/.test(line)) {
+        return line.replace(/\[(\d{1,3})\]\((https?:\/\/[^)\s]+)\)/g, (full, _number: string, url: string) => {
+          const host = hostOf(url);
+          return host ? `[${host}](${url})` : full;
+        });
+      }
+      return line.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/, (full, label: string, url: string) => {
+        if (!bareToken(label)) return full;
+        return `[(fuente)](${url})`;
+      });
+    })
+    .join("\n");
 }
 
 export function parseMarkdown(source: string): MdBlock[] {

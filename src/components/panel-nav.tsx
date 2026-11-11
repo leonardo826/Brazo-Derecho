@@ -16,11 +16,13 @@ const LINKS = [
   { href: "/panel/cuenta", label: "Cuenta" },
 ];
 
-export function panelComputerHref(showComputer: boolean) {
-  return showComputer ? "/panel/computador" : null;
-}
-
-export function PanelNav({ showAdmin = false, showComputer = false }: { showAdmin?: boolean; showComputer?: boolean }) {
+export function PanelNav({
+  showAdmin = false,
+  computerHref = null,
+}: {
+  showAdmin?: boolean;
+  computerHref?: string | null;
+}) {
   const pathname = usePathname();
   const tourHref = useDemoTourHref();
   const navRef = useRef<HTMLElement>(null);
@@ -49,8 +51,7 @@ export function PanelNav({ showAdmin = false, showComputer = false }: { showAdmi
     ...LINKS,
     ...(showAdmin ? [{ href: "/panel/admin", label: "Administración" }] : []),
   ];
-  const computerHref = panelComputerHref(showComputer);
-  const computerActive = computerHref !== null && pathname.startsWith(computerHref);
+  const computerActive = Boolean(computerHref) && pathname.startsWith(computerHref ?? "");
   return (
     <nav className="panel-nav" aria-label="Panel" ref={navRef}>
       {links.map((link) => {
