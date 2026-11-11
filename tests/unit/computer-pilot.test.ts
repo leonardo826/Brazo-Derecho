@@ -176,8 +176,11 @@ describe("piloto del computador", () => {
 
   test("el panel del computador no aparece en producción si el flag está apagado", () => {
     expect(computerPanelEnabled({ NODE_ENV: "production" })).toBe(false);
-    expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true" })).toBe(true);
-    expect(computerPanelEnabled({ NODE_ENV: "development" })).toBe(true);
+    expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true" })).toBe(false);
+    expect(computerPanelEnabled({ NODE_ENV: "development" })).toBe(false);
+    expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
+    expect(computerPanelEnabled({ NODE_ENV: "development", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
+    expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "True" })).toBe(false);
   });
 
   test("Fly queda en dry-run salvo confirmación explícita y el plan no lleva secretos", async () => {

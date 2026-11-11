@@ -1,3 +1,4 @@
+import { computerFeatureEnabled, computerUnavailable } from "@/lib/computer/flag";
 import { enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { prismaComputerStore } from "@/lib/computer/store";
 import { missingVaultTable, vaultStatus } from "@/lib/credentials/http";
@@ -9,6 +10,7 @@ import { resolveSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  if (!computerFeatureEnabled()) return computerUnavailable();
   const session = await resolveSession();
   if (!session) return Response.json({ ok: false, error: "sesion" }, { status: 401 });
   if (!consumeRateLimit(`computer-api:${session.organizationId}`, 20, 60_000).ok) {

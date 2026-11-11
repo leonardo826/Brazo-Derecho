@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { endpointAllowed, LOCAL_HARNESS } from "@/lib/computer/lease";
 import { decryptSecret, encryptSecret, readMasterKey } from "@/lib/credentials/crypto";
@@ -38,7 +38,8 @@ describe("frontera del origen del computador", () => {
     );
   });
 
-  test("no hay un POST para que la empresa se proclame dueña", () => {
-    expect(existsSync("src/app/api/computer/lease/route.ts")).toBe(false);
+  test("la ruta pública no proclama la máquina ni sale a la red", () => {
+    const source = readFileSync("src/app/api/computer/lease/route.ts", "utf8");
+    expect(source).not.toMatch(/enrollComputerLease|pinnedRequest|fetch\(/);
   });
 });

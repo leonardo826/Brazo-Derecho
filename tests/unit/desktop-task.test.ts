@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { AGENT_CATALOG } from "@/lib/catalog";
 import {
@@ -38,13 +38,28 @@ function run(text: string, extra: Partial<Parameters<typeof executeDesktopReques
   });
 }
 
+beforeEach(() => {
+  process.env.COMPUTER_FEATURE_ENABLED = "true";
+});
+
 afterEach(() => {
   resetDesktopIntent();
   delete process.env.COMPUTER_AGENT_URL;
   delete process.env.COMPUTER_AGENT_TOKEN;
+  delete process.env.COMPUTER_FEATURE_ENABLED;
 });
 
 describe("contrato del computador en el chat", () => {
+  test("sin el interruptor el viaje sigue al chat y no llama al computador", async () => {
+    delete process.env.COMPUTER_FEATURE_ENABLED;
+    const loadLease = vi.fn(async () => ready());
+    const fetchImpl = vi.fn();
+    const result = await run("Cotiza vuelos CCP SCL", { loadLease, fetchImpl: fetchImpl as typeof fetch });
+    expect(result).toEqual({ kind: "chat" });
+    expect(loadLease).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test("la especialidad no prohíbe la herramienta y un viaje pide la fecha", async () => {
     const instructions = `${AGENT_CATALOG.ACCOUNTING.instructions}\n${accountantChatInstructions("QA")}`;
     expect(instructions).not.toMatch(/no operas un computador/i);

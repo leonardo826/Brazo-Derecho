@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { computerFeatureEnabled } from "@/lib/computer/flag";
 import { decideSensitiveTask, enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { issueNovncToken } from "@/lib/computer/novnc";
 import { prismaComputerStore } from "@/lib/computer/store";
@@ -14,6 +15,7 @@ import { requireSession } from "@/lib/session";
 const BACK = "/panel/computador";
 
 export async function enqueueComputerAction(formData: FormData) {
+  if (!computerFeatureEnabled()) redirect("/panel");
   await guardMutation(formData, BACK);
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, BACK);
@@ -59,6 +61,7 @@ export async function enqueueComputerAction(formData: FormData) {
 }
 
 export async function mintComputerViewAction(formData: FormData) {
+  if (!computerFeatureEnabled()) redirect("/panel");
   await guardMutation(formData, BACK);
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, BACK);
@@ -73,6 +76,7 @@ export async function mintComputerViewAction(formData: FormData) {
 }
 
 export async function decideComputerAction(formData: FormData) {
+  if (!computerFeatureEnabled()) redirect("/panel");
   await guardMutation(formData, BACK);
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, BACK);
