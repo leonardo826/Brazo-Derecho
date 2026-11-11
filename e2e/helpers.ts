@@ -46,7 +46,7 @@ export async function logout(page: Page) {
 export async function sendAgentChat(page: Page, text: string) {
   await waitForHydration(page);
   await page.getByRole("textbox", { name: "Mensaje" }).fill(text);
-  await clickHydrated(page, page.getByRole("button", { name: "Enviar" }), async () => {
+  await clickHydrated(page, page.getByRole("button", { name: "Enviar", exact: true }), async () => {
     await expect(page.getByRole("log", { name: "Mensajes" })).toContainText("Respuesta de prueba para", { timeout: 8_000 });
   });
 }

@@ -35,11 +35,20 @@ export function toPublic(message: StoredMessage): PublicMessage {
 }
 
 export async function ensureThread(organizationId: string, agent: ChatAgentId = "ACCOUNTING") {
-  return prisma.agentThread.upsert({
-    where: { organizationId_agent: { organizationId, agent } },
-    create: { organizationId, agent },
-    update: {},
-  });
+  try {
+    return await prisma.agentThread.upsert({
+      where: { organizationId_agent: { organizationId, agent } },
+      create: { organizationId, agent },
+      update: {},
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return prisma.agentThread.findUniqueOrThrow({
+        where: { organizationId_agent: { organizationId, agent } },
+      });
+    }
+    throw error;
+  }
 }
 
 async function importLegacy(threadId: string, organizationId: string) {
