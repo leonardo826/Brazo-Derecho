@@ -1,4 +1,5 @@
 import { requireApiSession } from "@/lib/api-session";
+import { chatSurface, isChatAgent, type ChatAgentId } from "@/lib/chat/agents";
 import { MAX_FILES, prepareUpload, type PreparedFile } from "@/lib/chat/files";
 import { sseResponse } from "@/lib/chat/sse";
 import { streamChatTurn } from "@/lib/chat/run";
@@ -12,10 +13,12 @@ import { consumeRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function readTurn(request: Request): Promise<{ text: string; files: PreparedFile[]; portal: PortalId | null } | Response> {
+async function readTurn(
+  request: Request,
+): Promise<{ text: string; files: PreparedFile[]; portal: PortalId | null; agent: ChatAgentId } | Response> {
   const contentType = request.headers.get("content-type") ?? "";
   let text = "";
-  let agent = "ACCOUNTING";
+  let agent: ChatAgentId = "ACCOUNTING";
   let portal: PortalId | null = null;
   const files: PreparedFile[] = [];
   if (contentType.includes("application/json")) {
@@ -26,7 +29,9 @@ async function readTurn(request: Request): Promise<{ text: string; files: Prepar
       return Response.json({ error: "datos" }, { status: 400 });
     }
     text = typeof body.texto === "string" ? body.texto.trim() : "";
-    agent = typeof body.agente === "string" ? body.agente : "ACCOUNTING";
+    const requested = typeof body.agente === "string" ? body.agente : "ACCOUNTING";
+    if (!isChatAgent(requested)) return Response.json({ error: "datos" }, { status: 400 });
+    agent = requested;
     portal = parseVaultPortalParam(body.portal);
   } else {
     let form: FormData;
@@ -36,7 +41,9 @@ async function readTurn(request: Request): Promise<{ text: string; files: Prepar
       return Response.json({ error: "datos" }, { status: 400 });
     }
     text = String(form.get("texto") ?? "").trim();
-    agent = String(form.get("agente") ?? "ACCOUNTING");
+    const requested = String(form.get("agente") ?? "ACCOUNTING");
+    if (!isChatAgent(requested)) return Response.json({ error: "datos" }, { status: 400 });
+    agent = requested;
     portal = parseVaultPortalParam(form.get("portal"));
     for (const item of form.getAll("archivo")) {
       if (!(item instanceof File) || item.size === 0) continue;
@@ -46,16 +53,17 @@ async function readTurn(request: Request): Promise<{ text: string; files: Prepar
       files.push(prepared);
     }
   }
-  if (agent !== "ACCOUNTING") return Response.json({ error: "datos" }, { status: 400 });
   if (text.length > 4000 || (!text && files.length === 0)) return Response.json({ error: "datos" }, { status: 400 });
-  return { text, files, portal };
+  return { text, files, portal, agent };
 }
 
 export async function GET(request: Request) {
   const session = await requireApiSession(request);
   if (session instanceof Response) return session;
   try {
-    const messages = await loadAgentThread(session.organizationId);
+    const requested = new URL(request.url).searchParams.get("agente") ?? "ACCOUNTING";
+    if (!isChatAgent(requested)) return Response.json({ error: "datos" }, { status: 400 });
+    const messages = await loadAgentThread(session.organizationId, requested);
     return Response.json({ messages });
   } catch (error) {
     if (missingTable(error)) return Response.json({ error: "migracion" }, { status: 503 });
@@ -72,13 +80,14 @@ export async function POST(request: Request) {
   const parsed = await readTurn(request);
   if (parsed instanceof Response) return parsed;
   const sensitive = sensitiveRequest(parsed.text);
+  const surface = chatSurface(parsed.agent);
   const [access, room] = await Promise.all([
-    agentIsOpen(session.organizationId, "ACCOUNTING"),
+    agentIsOpen(session.organizationId, parsed.agent),
     sensitive
       ? Promise.resolve({ ok: true as const })
       : planRoom({
           organizationId: session.organizationId,
-          checks: [{ agent: "ACCOUNTING", metric: "CONSULTS", quantity: 1 }],
+          checks: [{ agent: parsed.agent, metric: surface.metric, quantity: 1 }],
         }),
   ]);
   if (!access.open) {
@@ -94,6 +103,7 @@ export async function POST(request: Request) {
         text: parsed.text,
         files: parsed.files,
         portal: parsed.portal,
+        agent: parsed.agent,
         signal,
       }),
     request.signal,

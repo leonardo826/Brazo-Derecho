@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickHydrated, waitForHydration } from "./helpers";
+import { clickHydrated, sendAgentChat, waitForHydration } from "./helpers";
 
 async function signup(page: Page) {
   const email = `pago-${Date.now()}@ejemplo.cl`;
@@ -53,15 +53,7 @@ test("registro, agente, pago de prueba, chat y panel", async ({ page }) => {
   await clickHydrated(page, page.getByRole("button", { name: "Guardar ficha" }), async () => {
     await expect(page.getByText("Información guardada")).toBeVisible({ timeout: 3_000 });
   });
-  await page.getByLabel("Quién escribe").fill("Cliente de prueba");
-  await clickHydrated(page, page.getByRole("button", { name: "Abrir hilo" }), async () => {
-    await expect(page.getByRole("link", { name: "Cliente de prueba" }).first()).toBeVisible({ timeout: 3_000 });
-  });
-  await page.getByLabel("Mensaje del cliente").fill("¿A qué hora abren el sábado?");
-  await clickHydrated(page, page.getByRole("button", { name: "Pedir respuesta" }), async () => {
-    await expect(page.locator(".thread")).toContainText("asistente virtual", { timeout: 3_000 });
-  });
-  await expect(page.locator(".thread")).toContainText("9:00");
+  await sendAgentChat(page, "¿A qué hora abren el sábado?");
 
   await page.goto("/panel");
   await expect(whatsappCard(page).getByText(/Activa hasta/)).toBeVisible();

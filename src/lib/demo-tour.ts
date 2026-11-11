@@ -27,7 +27,7 @@ export const DEMO_TOUR_STEPS: readonly DemoTourStep[] = [
     href: "/panel/whatsapp",
     kicker: "Paso 3 de 5",
     title: "Atiende como en el mesón",
-    body: "Escribe una ficha, abre un hilo y pregunta como el cliente. La respuesta queda en esta pantalla: no llega a un celular.",
+    body: "Pregunta como el cliente. La respuesta queda en esta pantalla: no llega a un celular.",
   },
   {
     href: "/panel/cotizador",

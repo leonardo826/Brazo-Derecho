@@ -1,10 +1,13 @@
 import { generatePostsAction, saveBrandAction } from "@/app/actions/marketing";
+import { AgentChat } from "@/components/agent-chat";
 import { CsrfField } from "@/components/csrf-field";
 import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
 import { UsageBar } from "@/components/usage-bar";
 import { agentIsOpen } from "@/lib/agent-access";
+import { chatSurface } from "@/lib/chat/agents";
+import { loadAgentThread, missingTable } from "@/lib/chat/store";
 import { limitFor, modelFor } from "@/lib/catalog";
 import { formatWhen } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -12,6 +15,7 @@ import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 import { TRIAL_DAYS } from "@/lib/subscription";
 import { usageSnapshot } from "@/lib/usage-store";
+import { xaiUsesNetwork } from "@/lib/xai/client";
 
 export default async function MarketingPage({
   searchParams,
@@ -32,6 +36,15 @@ export default async function MarketingPage({
   ]);
   const textLimit = limitFor("MARKETING", "TEXTS");
   const imageLimit = limitFor("MARKETING", "IMAGES");
+  const surface = chatSurface("MARKETING");
+  let migration = false;
+  let messages: Awaited<ReturnType<typeof loadAgentThread>> = [];
+  try {
+    messages = await loadAgentThread(session.organizationId, "MARKETING");
+  } catch (error) {
+    if (!missingTable(error)) throw error;
+    migration = true;
+  }
 
   return (
     <>
@@ -53,6 +66,30 @@ export default async function MarketingPage({
         <UsageBar used={usage.totals.TEXTS} limit={textLimit} label="Textos de este mes" />
         <UsageBar used={usage.totals.IMAGES} limit={imageLimit} label="Imágenes de este mes" />
       </div>
+      {migration ? (
+        <p className="banner error" role="alert">
+          Falta la migración del chat. En local corre <code>npx prisma migrate deploy</code>.
+        </p>
+      ) : (
+        <div className="agent-desk">
+          <AgentChat
+            agent="MARKETING"
+            open={open}
+            messages={messages}
+            used={usage.totals.TEXTS}
+            limit={textLimit}
+            voice={xaiUsesNetwork() ? "xai" : "navegador"}
+            suggestions={surface.suggestions}
+            emptyIntro={surface.emptyIntro}
+            placeholder={surface.placeholder}
+            ariaLabel={surface.ariaLabel}
+            limitNote={surface.limitNote}
+            draftUserId={session.userId}
+            draftOrganizationId={session.organizationId}
+            draftConversationId={surface.conversationId}
+          />
+        </div>
+      )}
       <div className="grid-2" style={{ marginTop: "1rem" }}>
         <section className="panel-card stack">
           <h2>Perfil de marca</h2>

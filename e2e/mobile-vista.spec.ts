@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { clickHydrated, ensureAdmin, waitForHydration } from "./helpers";
+import { clickHydrated, ensureAdmin, sendAgentChat, waitForHydration } from "./helpers";
 
 const outDir = path.join(process.cwd(), "artifacts", "mobile");
 const widths = [360, 390, 414] as const;
@@ -100,22 +100,7 @@ test("la beta cabe en 360, 390 y 414 px y deja capturas", async ({ page }) => {
   await clickHydrated(page, page.getByRole("button", { name: "Guardar ficha" }), async () => {
     await expect(page.getByText("Información guardada")).toBeVisible({ timeout: 3_000 });
   });
-  await page.getByLabel("Quién escribe").fill("Cliente del mesón");
-  await clickHydrated(page, page.getByRole("button", { name: "Abrir hilo" }), async () => {
-    await expect(page.getByRole("link", { name: "Cliente del mesón" }).first()).toBeVisible({ timeout: 3_000 });
-  });
-  await waitForHydration(page);
-  // El valor y el envío van en el mismo turno: si no, el formulario se vuelve a pintar y el texto se pierde.
-  await page.getByLabel("Mensaje del cliente").evaluate((el) => {
-    const textarea = el as HTMLTextAreaElement;
-    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-    setValue?.call(textarea, "¿A qué hora abren el sábado?");
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    textarea.dispatchEvent(new Event("change", { bubbles: true }));
-    if (!textarea.form) throw new Error("El mensaje no está en un formulario");
-    textarea.form.requestSubmit();
-  });
-  await expect(page.getByRole("log", { name: "Mensajes del hilo" })).toContainText("9:00", { timeout: 20_000 });
+  await sendAgentChat(page, "¿A qué hora abren el sábado?");
   await expectFits(page);
   await shot(page, "08-chat");
 

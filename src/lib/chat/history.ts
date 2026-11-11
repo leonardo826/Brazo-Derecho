@@ -1,10 +1,10 @@
 export const MODEL_HISTORY_LIMIT = 24;
 export const THREAD_VIEW_LIMIT = 200;
 
-export function historyWhere(threadId: string, organizationId: string) {
+export function historyWhere(threadId: string, organizationId: string, agent: "ACCOUNTING" | "MARKETING" | "WHATSAPP" = "ACCOUNTING") {
   return {
     threadId,
-    thread: { organizationId, agent: "ACCOUNTING" as const },
+    thread: { organizationId, agent },
   };
 }
 
