@@ -788,6 +788,8 @@ mark.placeholder {
   padding: 0.2rem 0.15rem 0.6rem;
   -webkit-overflow-scrolling: touch;
 }
+.agent-desk { display: flex; flex-direction: column; min-height: 28rem; margin-top: 1rem; }
+.agent-desk .agent-log { min-height: 16rem; }
 .agent-empty { margin: 0.4rem 0; display: grid; gap: 0.6rem; }
 .suggestion-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
 .suggestion {

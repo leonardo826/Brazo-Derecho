@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickHydrated, waitForHydration } from "./helpers";
+import { clickHydrated, sendAgentChat, waitForHydration } from "./helpers";
 
 async function signup(page: Page, input: { email: string; organization: string; name: string }) {
   await page.goto("/registro");
@@ -34,15 +34,7 @@ test("registro, prueba y conversación con el agente", async ({ page }) => {
     await expect(page.getByText("Información guardada")).toBeVisible({ timeout: 3_000 });
   });
 
-  await page.getByLabel("Quién escribe").fill("Cliente de prueba");
-  await clickHydrated(page, page.getByRole("button", { name: "Abrir hilo" }), async () => {
-    await expect(page.getByRole("link", { name: "Cliente de prueba" }).first()).toBeVisible({ timeout: 3_000 });
-  });
-
-  await page.getByLabel("Mensaje del cliente").fill("¿A qué hora abren el sábado?");
-  await clickHydrated(page, page.getByRole("button", { name: "Pedir respuesta" }), async () => {
-    await expect(page.locator(".thread")).toContainText("asistente virtual", { timeout: 3_000 });
-  });
-  await expect(page.locator(".thread")).toContainText("asistente virtual");
-  await expect(page.locator(".thread")).toContainText("9:00");
+  await expect(page.getByRole("button", { name: "Un cliente pregunta el horario del sábado" })).toBeVisible();
+  await sendAgentChat(page, "¿A qué hora abren el sábado?");
+  await expect(page.getByRole("log", { name: "Mensajes" })).toContainText("¿A qué hora abren el sábado?");
 });

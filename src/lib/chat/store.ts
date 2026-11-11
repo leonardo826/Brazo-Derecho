@@ -1,3 +1,4 @@
+import type { ChatAgentId } from "@/lib/chat/agents";
 import type { PublicMessage } from "@/lib/chat/public";
 import { imageDataUrl, textExcerpt, type PreparedFile } from "@/lib/chat/files";
 import { chronological, historyWhere, MODEL_HISTORY_LIMIT, NEWEST_FIRST, THREAD_VIEW_LIMIT } from "@/lib/chat/history";
@@ -33,12 +34,21 @@ export function toPublic(message: StoredMessage): PublicMessage {
   };
 }
 
-export async function ensureThread(organizationId: string) {
-  return prisma.agentThread.upsert({
-    where: { organizationId_agent: { organizationId, agent: "ACCOUNTING" } },
-    create: { organizationId, agent: "ACCOUNTING" },
-    update: {},
-  });
+export async function ensureThread(organizationId: string, agent: ChatAgentId = "ACCOUNTING") {
+  try {
+    return await prisma.agentThread.upsert({
+      where: { organizationId_agent: { organizationId, agent } },
+      create: { organizationId, agent },
+      update: {},
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return prisma.agentThread.findUniqueOrThrow({
+        where: { organizationId_agent: { organizationId, agent } },
+      });
+    }
+    throw error;
+  }
 }
 
 async function importLegacy(threadId: string, organizationId: string) {
@@ -80,9 +90,9 @@ async function importLegacy(threadId: string, organizationId: string) {
   }
 }
 
-export async function loadAgentThread(organizationId: string) {
-  const thread = await ensureThread(organizationId);
-  await importLegacy(thread.id, organizationId);
+export async function loadAgentThread(organizationId: string, agent: ChatAgentId = "ACCOUNTING") {
+  const thread = await ensureThread(organizationId, agent);
+  if (agent === "ACCOUNTING") await importLegacy(thread.id, organizationId);
   const messages = await prisma.agentMessage.findMany({
     where: { threadId: thread.id, thread: { organizationId } },
     orderBy: NEWEST_FIRST,
@@ -92,8 +102,13 @@ export async function loadAgentThread(organizationId: string) {
   return chronological(messages).map(toPublic);
 }
 
-export async function saveUserMessage(input: { organizationId: string; body: string; files: PreparedFile[] }) {
-  const thread = await ensureThread(input.organizationId);
+export async function saveUserMessage(input: {
+  organizationId: string;
+  body: string;
+  files: PreparedFile[];
+  agent?: ChatAgentId;
+}) {
+  const thread = await ensureThread(input.organizationId, input.agent ?? "ACCOUNTING");
   const message = await prisma.agentMessage.create({
     data: {
       threadId: thread.id,
@@ -122,12 +137,18 @@ export async function saveAssistantMessage(threadId: string, body: string) {
   return toPublic(message);
 }
 
-export async function saveCountedAssistantMessage(organizationId: string, threadId: string, body: string) {
+export async function saveCountedAssistantMessage(
+  organizationId: string,
+  threadId: string,
+  body: string,
+  agent: ChatAgentId = "ACCOUNTING",
+) {
+  const metric = agent === "MARKETING" ? "TEXTS" : agent === "WHATSAPP" ? "RESPONSES" : "CONSULTS";
   const saved = await prisma.$transaction(async (tx) => {
     const reserved = await reserveUsage(tx, {
       organizationId,
-      agent: "ACCOUNTING",
-      metric: "CONSULTS",
+      agent,
+      metric,
       quantity: 1,
     });
     if (!reserved.ok) return null;
@@ -176,10 +197,10 @@ export async function filesForModel(messageId: string, organizationId: string): 
   });
 }
 
-export async function loadHistory(threadId: string, organizationId: string) {
+export async function loadHistory(threadId: string, organizationId: string, agent: ChatAgentId = "ACCOUNTING") {
   const rows = chronological(
     await prisma.agentMessage.findMany({
-      where: historyWhere(threadId, organizationId),
+      where: historyWhere(threadId, organizationId, agent),
       orderBy: NEWEST_FIRST,
       take: MODEL_HISTORY_LIMIT,
       include: { attachments: { select: { fileName: true, mimeType: true } } },

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
+import { chatSurface, type ChatAgentId } from "@/lib/chat/agents";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { isAbortError } from "@/lib/chat/abort";
 import { listenInBrowser } from "@/lib/chat/browser-speech";
@@ -24,11 +25,7 @@ import { formatWhen } from "@/lib/format";
 
 type VoiceMode = "xai" | "navegador";
 
-export const EMPTY_SUGGESTIONS = [
-  "Resume qué es el IVA en dos frases, sin consultar portales",
-  "Explícame bien el F29",
-  "Quiero guardar un acceso del SII en el formulario seguro",
-] as const;
+export const EMPTY_SUGGESTIONS = chatSurface("ACCOUNTING").suggestions;
 
 function selectionInside(log: HTMLElement | null) {
   const selection = window.getSelection();
@@ -181,6 +178,12 @@ export function AgentChat({
   used,
   limit,
   voice,
+  agent = "ACCOUNTING",
+  suggestions = EMPTY_SUGGESTIONS,
+  emptyIntro = chatSurface("ACCOUNTING").emptyIntro,
+  placeholder = chatSurface("ACCOUNTING").placeholder,
+  ariaLabel = chatSurface("ACCOUNTING").ariaLabel,
+  limitNote = chatSurface("ACCOUNTING").limitNote,
   draftUserId = "",
   draftOrganizationId = "",
   draftConversationId = "",
@@ -190,6 +193,12 @@ export function AgentChat({
   used: number;
   limit: number;
   voice: VoiceMode;
+  agent?: ChatAgentId;
+  suggestions?: readonly string[];
+  emptyIntro?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  limitNote?: string;
   draftUserId?: string;
   draftOrganizationId?: string;
   draftConversationId?: string;
@@ -492,7 +501,7 @@ export function AgentChat({
     setStatus(followup ? "Sigo con el siguiente…" : "Preparando respuesta…");
     clearLive();
     const form = new FormData();
-    form.set("agente", "ACCOUNTING");
+    form.set("agente", agent);
     form.set("texto", draft.text);
     if (draft.portal) form.set("portal", draft.portal);
     for (const item of draft.files) form.append("archivo", item.file);
@@ -915,7 +924,7 @@ export function AgentChat({
   }
 
   return (
-    <section className="agent-chat" aria-label="Conversación con el contador">
+    <section className="agent-chat" aria-label={ariaLabel}>
       <div className="agent-chat-tools">
         <label className="check">
           <input
@@ -943,10 +952,10 @@ export function AgentChat({
       >
         {items.length === 0 && !shownLive ? (
           <div className="agent-empty">
-            <p>Puedo ayudarte con el IVA, el F29 o un acceso. El hilo queda en tu empresa.</p>
+            <p>{emptyIntro}</p>
             {composer.length === 0 && files.length === 0 ? (
               <div className="suggestion-row">
-                {EMPTY_SUGGESTIONS.map((text) => (
+                {suggestions.map((text) => (
                   <button key={text} className="suggestion" type="button" disabled={!open} onClick={() => applySuggestion(text)}>
                     {text}
                   </button>
@@ -995,7 +1004,7 @@ export function AgentChat({
         </p>
       ) : null}
       {!open ? <p className="muted">Activa la prueba para conversar. El hilo anterior sigue aquí.</p> : null}
-      {over ? <p className="muted">Llegaste al cupo de consultas de este mes. Puedes revisar el hilo.</p> : null}
+      {over ? <p className="muted">{limitNote}</p> : null}
       <form className="agent-composer" onSubmit={onSubmit}>
         {files.length > 0 ? (
           <ul className="file-chips">
@@ -1047,7 +1056,7 @@ export function AgentChat({
             value={composer}
             maxLength={4000}
             rows={1}
-            placeholder="Escribe al Contador…"
+            placeholder={placeholder}
             disabled={!open}
             onChange={(event) => updateComposer(event.target.value)}
             onCompositionEnd={endComposition}

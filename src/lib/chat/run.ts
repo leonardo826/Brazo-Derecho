@@ -2,11 +2,9 @@ import { chunkGapMs, streamWasStopped, isAbortError, waitChunk } from "@/lib/cha
 import { executeDesktopRequest } from "@/lib/chat/desktop-task";
 import { CONTADOR_CONVERSATION_ID } from "@/lib/chat/composer-draft";
 import { loadTenantLease } from "@/lib/computer/lease";
-import {
-  accountantChatInstructions,
-  APPROVED_PORTAL_NOTE,
-  vaultContext,
-} from "@/lib/chat/accountant";
+import { APPROVED_PORTAL_NOTE, vaultContext } from "@/lib/chat/accountant";
+import { agentTurnContext } from "@/lib/chat/agent-context";
+import { chatInstructions, chatSurface, type ChatAgentId } from "@/lib/chat/agents";
 import type { ChatClientEvent } from "@/lib/chat/public";
 import type { PreparedFile } from "@/lib/chat/files";
 import { lastUserText, prepareModelTurn, shouldAttachVaultNote } from "@/lib/chat/model-turn";
@@ -51,10 +49,6 @@ function todayCl() {
   return new Intl.DateTimeFormat("es-CL", { dateStyle: "long", timeZone: "America/Santiago" }).format(new Date());
 }
 
-function chatInstructions(organizationName: string) {
-  return accountantChatInstructions(organizationName);
-}
-
 function asksVault(text: string) {
   return explicitVaultAsk(text) || clientAskedForLogin(text);
 }
@@ -93,6 +87,7 @@ async function* streamModel(input: {
   threadId: string;
   organizationId: string;
   organizationName: string;
+  agent: ChatAgentId;
   extra: string;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
@@ -107,7 +102,7 @@ async function* streamModel(input: {
   void slotPromise.catch(() => undefined);
   let history;
   try {
-    history = await loadHistory(input.threadId, input.organizationId);
+    history = await loadHistory(input.threadId, input.organizationId, input.agent);
   } catch (error) {
     const slot = await slotPromise;
     if (slot.ok) reservationId = slot.reservationId;
@@ -123,8 +118,9 @@ async function* streamModel(input: {
   if (streamWasStopped(input.signal)) return;
   const latest = lastUserText(history);
   const vault = shouldAttachVaultNote(latest) ? await vaultPrompt(input.organizationId, [latest]) : "";
+  const business = await agentTurnContext(input.agent, input.organizationId);
   const prepared = prepareModelTurn(history, vault);
-  const extra = [prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
+  const extra = [business, prepared.vaultNote, input.extra].filter(Boolean).join("\n\n");
   const pace = replyPace(latest);
   const client = createXaiClient();
   let raw = "";
@@ -151,8 +147,8 @@ async function* streamModel(input: {
       let roundText = "";
       incomplete = false;
       for await (const event of client.streamRespond({
-        model: modelFor("ACCOUNTING"),
-        instructions: [chatInstructions(input.organizationName), extra].filter(Boolean).join("\n\n"),
+        model: modelFor(input.agent),
+        instructions: [chatInstructions(input.agent, input.organizationName), extra].filter(Boolean).join("\n\n"),
         task: { type: "agent_chat", today: todayCl(), messages },
         usage: USAGE_PRESETS.text,
         businessName: input.organizationName,
@@ -177,7 +173,7 @@ async function* streamModel(input: {
         if (event.type === "done") {
           incomplete = event.response.incomplete === true;
           const usage = event.response.usage ?? EMPTY_USAGE;
-          const model = event.response.model.trim() || modelFor("ACCOUNTING");
+          const model = event.response.model.trim() || modelFor(input.agent);
           const responseId = event.response.id.trim().slice(0, 80) || "resp_sin_id";
           await recordModelCall({
             organizationId: input.organizationId,
@@ -233,19 +229,20 @@ async function* streamModel(input: {
   // CHAT ya guardó los tokens de cada tramo, también de un corte o de un tramo anterior a un fallo.
   // CONSULTS cuenta una consulta del mes solo si quedó texto útil. TASK solo si la respuesta terminó.
   const saved = await prisma.$transaction(async (tx) => {
+    const surface = chatSurface(input.agent);
     const reserved = await reserveUsage(tx, {
       organizationId: input.organizationId,
-      agent: "ACCOUNTING",
-      metric: "CONSULTS",
+      agent: input.agent,
+      metric: surface.metric,
       quantity: 1,
       tokens: usage,
-      model: last?.model ?? modelFor("ACCOUNTING"),
+      model: last?.model ?? modelFor(input.agent),
     });
     if (!reserved.ok) return null;
     if (!finished.truncated) {
       await recordCompletedTask(tx, {
         organizationId: input.organizationId,
-        model: last?.model ?? modelFor("ACCOUNTING"),
+        model: last?.model ?? modelFor(input.agent),
         synthetic: last?.mocked ?? !xaiUsesNetwork(),
         reservationId,
       });
@@ -254,7 +251,7 @@ async function* streamModel(input: {
       data: {
         threadId: input.threadId,
         role: "ASSISTANT",
-        body: split.text || "No reemplaza a un contador certificado.",
+        body: split.text || (input.agent === "ACCOUNTING" ? "No reemplaza a un contador certificado." : "No alcancé a dejar la respuesta."),
       },
       include: messageInclude,
     });
@@ -269,7 +266,7 @@ async function* streamModel(input: {
     const card = await saveConfirmation(input.threadId, split.action);
     yield { type: "message", message: card };
   }
-  yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
+  yield { type: "usage", consults: await usedThisMonth(input.organizationId, chatSurface(input.agent).metric) };
   yield { type: "done" };
   } finally {
     if (!keepSlot && reservationId) await releaseDailyTask(reservationId);
@@ -279,19 +276,20 @@ async function* streamModel(input: {
 async function* streamVaultForm(input: {
   threadId: string;
   organizationId: string;
+  agent: ChatAgentId;
   portal: PortalId | null;
   source: string;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
   if (streamWasStopped(input.signal)) return;
   const body = vaultFormMessage(input.portal, input.source);
-  const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body);
+  const saved = await saveCountedAssistantMessage(input.organizationId, input.threadId, body, input.agent);
   if (!saved) {
     yield { type: "error", code: "limite" };
     return;
   }
   yield { type: "message", message: saved };
-  yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
+  yield { type: "usage", consults: await usedThisMonth(input.organizationId, chatSurface(input.agent).metric) };
   yield { type: "done" };
 }
 
@@ -302,8 +300,10 @@ export async function* streamChatTurn(input: {
   text: string;
   files: PreparedFile[];
   portal?: PortalId | null;
+  agent?: ChatAgentId;
   signal?: AbortSignal;
 }): AsyncGenerator<ChatClientEvent> {
+  const agent = input.agent ?? "ACCOUNTING";
   const original = input.text;
   const drop = shouldDropUserText(original);
   const text = drop ? SAFE_CREDENTIAL_ENTRY : original;
@@ -312,6 +312,7 @@ export async function* streamChatTurn(input: {
   const saved = await saveUserMessage({
     organizationId: input.organizationId,
     body: text,
+    agent,
     // Intención de formulario, sin secreto: se responde el formulario y se conservan los archivos.
     files: carriesSuspectedSecret(original) ? [] : input.files,
   });
@@ -321,6 +322,7 @@ export async function* streamChatTurn(input: {
     yield* streamVaultForm({
       threadId: saved.threadId,
       organizationId: input.organizationId,
+      agent,
       portal,
       source: original,
       signal: input.signal,
@@ -334,7 +336,7 @@ export async function* streamChatTurn(input: {
     yield { type: "done" };
     return;
   }
-  const desktop = await executeDesktopRequest({
+  const desktop = agent === "ACCOUNTING" ? await executeDesktopRequest({
     organizationId: input.organizationId,
     userId: input.actorUserId,
     conversationId: CONTADOR_CONVERSATION_ID,
@@ -344,7 +346,7 @@ export async function* streamChatTurn(input: {
     reserve: () => reserveDailyTask(input.organizationId),
     release: (reservationId) => releaseDailyTask(reservationId),
     log: (fields) => logEvent("chat.computador", fields),
-  });
+  }) : { kind: "chat" as const };
   if (desktop.kind === "confirm") {
     const card = await saveConfirmation(saved.threadId, {
       id: "herramienta",
@@ -357,13 +359,13 @@ export async function* streamChatTurn(input: {
   }
   if (desktop.kind === "reply") {
     if (streamWasStopped(input.signal)) return;
-    const message = await saveCountedAssistantMessage(input.organizationId, saved.threadId, desktop.text);
+    const message = await saveCountedAssistantMessage(input.organizationId, saved.threadId, desktop.text, agent);
     if (!message) {
       yield { type: "error", code: "limite" };
       return;
     }
     yield { type: "message", message };
-    yield { type: "usage", consults: await usedThisMonth(input.organizationId, "CONSULTS") };
+    yield { type: "usage", consults: await usedThisMonth(input.organizationId, chatSurface(agent).metric) };
     yield { type: "done" };
     return;
   }
@@ -373,6 +375,7 @@ export async function* streamChatTurn(input: {
     threadId: saved.threadId,
     organizationId: input.organizationId,
     organizationName: input.organizationName,
+    agent,
     extra: "",
     signal: input.signal,
   });
@@ -390,8 +393,9 @@ export async function* streamDecision(input: {
     where: {
       id: input.messageId,
       kind: "CONFIRMATION",
-      thread: { organizationId: input.organizationId, agent: "ACCOUNTING" },
+      thread: { organizationId: input.organizationId, agent: { in: ["ACCOUNTING", "MARKETING", "WHATSAPP"] } },
     },
+    include: { thread: { select: { agent: true } } },
   });
   if (!current || current.confirmation !== "PENDING") {
     yield { type: "error", code: "confirmacion" };
@@ -422,11 +426,17 @@ export async function* streamDecision(input: {
   });
   if (files > 0) yield { type: "status", text: "Leyendo el archivo…" };
   if (streamWasStopped(input.signal)) return;
+  const agent = isDecisionAgent(current.thread.agent) ? current.thread.agent : "ACCOUNTING";
   yield* streamModel({
     threadId: current.threadId,
     organizationId: input.organizationId,
     organizationName: input.organizationName,
+    agent,
     extra: APPROVED_NOTE,
     signal: input.signal,
   });
+}
+
+function isDecisionAgent(agent: string): agent is ChatAgentId {
+  return agent === "ACCOUNTING" || agent === "MARKETING" || agent === "WHATSAPP";
 }

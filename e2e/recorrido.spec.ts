@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickHydrated, DEMO_PASSWORD, ensureAdmin, logout, waitForHydration } from "./helpers";
+import { clickHydrated, DEMO_PASSWORD, ensureAdmin, logout, sendAgentChat, waitForHydration } from "./helpers";
 
 async function mailLink(page: Page, email: string, subject: string) {
   const block = page.locator("details").filter({ hasText: email }).filter({ hasText: subject }).first();
@@ -69,20 +69,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await clickHydrated(page, page.getByRole("button", { name: "Guardar ficha" }), async () => {
     await expect(page.getByText("Información guardada")).toBeVisible({ timeout: 3_000 });
   });
-  await page.getByLabel("Quién escribe").fill("Cliente de prueba");
-  await clickHydrated(page, page.getByRole("button", { name: "Abrir hilo" }), async () => {
-    await expect(page.getByRole("link", { name: "Cliente de prueba" }).first()).toBeVisible({ timeout: 3_000 });
-  });
-  await page.getByLabel("Mensaje del cliente").fill("¿A qué hora abren el sábado?");
-  await waitForHydration(page);
-  await page.getByRole("button", { name: "Pedir respuesta" }).click();
-  try {
-    await expect(page.locator(".thread")).toContainText("9:00", { timeout: 8_000 });
-  } catch {
-    await page.reload();
-    await expect(page.locator(".thread")).toContainText("9:00");
-  }
-  await expect(page.locator(".thread")).toContainText("asistente virtual");
+  await expect(page.getByRole("button", { name: "Un cliente pregunta el horario del sábado" })).toBeVisible();
+  await sendAgentChat(page, "¿A qué hora abren el sábado?");
 
   await page.goto("/panel/cotizador");
   await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 7 días" }), async () => {
@@ -112,6 +100,8 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await clickHydrated(page, page.getByRole("button", { name: "Guardar perfil" }), async () => {
     await expect(page.getByText("Perfil de marca guardado")).toBeVisible({ timeout: 3_000 });
   });
+  await expect(page.getByRole("button", { name: "Propón 3 ideas de post para esta semana" })).toBeVisible();
+  await sendAgentChat(page, "Escribe un post de prueba, sin publicarlo");
   await page.getByLabel("Cuántos borradores").fill("1");
   await clickHydrated(page, page.getByRole("button", { name: "Preparar borradores" }), async () => {
     await expect(page.getByText("Borradores listos")).toBeVisible({ timeout: 3_000 });
@@ -122,7 +112,7 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await expect(page.getByRole("heading", { name: /Uso de / })).toBeVisible();
   await expect(page.getByRole("meter", { name: "Respuestas" })).toHaveAttribute("aria-valuenow", "1");
   await expect(page.getByRole("meter", { name: "Cotizaciones" })).toHaveAttribute("aria-valuenow", "1");
-  await expect(page.getByRole("meter", { name: "Textos" })).toHaveAttribute("aria-valuenow", "1");
+  await expect(page.getByRole("meter", { name: "Textos" })).toHaveAttribute("aria-valuenow", "2");
   await expect(page.getByRole("meter", { name: "Imágenes" })).toHaveAttribute("aria-valuenow", "1");
 
   await page.goto("/panel/cuenta");
