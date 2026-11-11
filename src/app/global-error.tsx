@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { clientErrorBody } from "@/lib/client-error";
+import { CLIENT_FAILURE_BODY, CLIENT_FAILURE_TITLE, clientErrorBody } from "@/lib/client-error";
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -20,8 +20,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <main className="auth-screen">
           <div className="narrow card stack">
             <p className="eyebrow">Error</p>
-            <h1>Algo falló</h1>
-            <p>No pudimos completar la acción. Si acabas de instalar la beta, revisa que Postgres esté corriendo.</p>
+            <h1>{CLIENT_FAILURE_TITLE}</h1>
+            <p>{CLIENT_FAILURE_BODY}</p>
             <button className="button" type="button" onClick={() => reset()}>
               Reintentar
             </button>

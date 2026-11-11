@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { composeAnswer, dropProgressNarration, isImagePayload } from "@/lib/chat/answer";
 import { chatInstructions, chatSurface } from "@/lib/chat/agents";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
 import { billedToolUse, messageAsksImage, messageNeedsWeb, readToolReport, toolsForAgent } from "@/lib/chat/tools";
@@ -102,5 +103,42 @@ describe("herramientas de la web", () => {
     expect(contador).toMatch(/solo la ida/);
     expect(contador).toMatch(/búsqueda web/);
     expect(chatInstructions("ACCOUNTING", "Torre San Isidro")).toMatch(/solo va si la respuesta es contable/);
+    const whatsapp = chatInstructions("WHATSAPP", "Torre San Isidro");
+    expect(whatsapp).toMatch(/clima/);
+    expect(whatsapp).toMatch(/No inventes precios ni stock/);
+    expect(whatsapp).not.toMatch(/Usa solo el nombre/);
+    expect(contador).toMatch(/hora de llegada/);
+  });
+
+  test("el avance de la herramienta no queda en la respuesta y las citas son fuentes", () => {
+    const glued = "El vuelo es el 12 de noviembre de 2026.Necesito horarios concretos.Reviso las tablas de ese día.Confirmo.LATAM sale a las 08:10 y llega a las 09:25.";
+    expect(dropProgressNarration(glued)).toBe("El vuelo es el 12 de noviembre de 2026. LATAM sale a las 08:10 y llega a las 09:25.");
+    const answer = composeAnswer({
+      output_text: "Necesito el clima.Mañana hay 18 grados. 1 2",
+      citations: ["https://www.meteochile.gob.cl/clima"],
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "Necesito el clima de mañana." }] },
+        { type: "web_search_call" },
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "Reviso el pronóstico. Mañana en Concepción hay 18 grados [[1]](https://www.meteochile.gob.cl/clima).\n1 2",
+            },
+          ],
+        },
+      ],
+    });
+    expect(answer).toContain("Mañana en Concepción hay 18 grados");
+    expect(answer).not.toMatch(/Necesito/);
+    expect(answer).not.toMatch(/Reviso/);
+    expect(answer).not.toMatch(/\[\[1\]\]/);
+    expect(answer).not.toMatch(/\n1 2$/);
+    expect(answer).toContain("Fuentes:");
+    expect(answer).toContain("[meteochile.gob.cl](https://www.meteochile.gob.cl/clima)");
+    const blob = "A".repeat(2_100);
+    expect(isImagePayload(`data:image/png;base64,${blob}`)).toBe(true);
+    expect(mapXaiStreamEvent({ type: "response.output_text.delta", delta: blob })?.type).toBe("status");
   });
 });

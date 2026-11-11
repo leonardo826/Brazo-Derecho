@@ -1,3 +1,6 @@
+export const CLIENT_FAILURE_TITLE = "Algo falló";
+export const CLIENT_FAILURE_BODY = "Algo falló. Intenta de nuevo en unos segundos.";
+
 export function clientErrorBody(name: string, message: string) {
   const cleanName = name.replace(/\s+/g, " ").trim().slice(0, 80);
   const cleanMessage = message.replace(/\s+/g, " ").trim().slice(0, 300);

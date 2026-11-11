@@ -195,6 +195,7 @@ export class LiveXaiClient implements XaiClient {
     for await (const raw of readSseData(response.body)) {
       const mapped = mapXaiStreamEvent(raw);
       if (!mapped) continue;
+      if (mapped.type === "status" && mapped.dropDraft) accumulated = "";
       if (mapped.type === "delta") accumulated += mapped.text;
       if (mapped.type === "done") {
         finished = mapped.response.outputText

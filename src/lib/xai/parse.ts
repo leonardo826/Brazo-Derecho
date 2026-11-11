@@ -1,3 +1,4 @@
+import { composeAnswer, isImagePayload, type AnswerBody } from "@/lib/chat/answer";
 import { readToolReport } from "@/lib/chat/tools";
 import { EMPTY_USAGE, type TokenUsage } from "@/lib/pricing";
 import type { XaiResponse, XaiStreamEvent } from "@/lib/xai/types";
@@ -9,14 +10,13 @@ export type ResponsesUsage = {
   server_side_tool_usage?: { web_search_calls?: number; x_search_calls?: number };
 };
 
-export type ResponsesBody = {
+export type ResponsesBody = AnswerBody & {
   id?: string;
   model?: string;
-  output_text?: string;
   output?: Array<{
     type?: string;
     result?: string;
-    content?: Array<{ type?: string; text?: string }>;
+    content?: Array<{ type?: string; text?: string; annotations?: { type?: string; url?: string }[] }>;
   }>;
   usage?: ResponsesUsage;
   error?: { message?: string };
@@ -34,14 +34,7 @@ export function readTokenUsage(usage: ResponsesUsage | undefined): TokenUsage {
 }
 
 export function readOutputText(body: ResponsesBody) {
-  if (typeof body.output_text === "string" && body.output_text.trim()) return body.output_text.trim();
-  const chunks: string[] = [];
-  for (const item of body.output ?? []) {
-    for (const part of item.content ?? []) {
-      if (part.type === "output_text" && part.text?.trim()) chunks.push(part.text.trim());
-    }
-  }
-  return chunks.join("\n").trim();
+  return composeAnswer(body);
 }
 
 export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
@@ -54,14 +47,15 @@ export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
   };
   const type = event.type ?? "";
   if (type === "response.output_text.delta" && typeof event.delta === "string" && event.delta) {
+    if (isImagePayload(event.delta)) return { type: "status", text: "Preparando la imagen…", dropDraft: true };
     return { type: "delta", text: event.delta };
   }
   const itemType = event.item?.type ?? "";
   if (type.includes("image_generation") || itemType === "image_generation_call") {
-    return { type: "status", text: "Preparando la imagen…" };
+    return { type: "status", text: "Preparando la imagen…", dropDraft: true };
   }
   if (type.includes("web_search") || itemType === "web_search_call" || itemType.includes("web_search") || itemType === "x_search_call") {
-    return { type: "status", text: "Buscando en la web…" };
+    return { type: "status", text: "Buscando en la web…", dropDraft: true };
   }
   if (type === "response.completed" || type === "response.incomplete") {
     const body = event.response ?? (raw as ResponsesBody);

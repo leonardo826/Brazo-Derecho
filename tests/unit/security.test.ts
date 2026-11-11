@@ -3,13 +3,21 @@ import { sameOrigin, tokensMatch, validCsrfToken } from "@/lib/csrf-token";
 import { consumeRateLimit, resetRateLimits } from "@/lib/rate-limit";
 import { contentSecurityPolicy, securityHeaders } from "@/lib/security-headers";
 import { POST as reportClientError } from "@/app/api/observabilidad/route";
-import { clientErrorBody } from "@/lib/client-error";
+import { CLIENT_FAILURE_BODY, clientErrorBody } from "@/lib/client-error";
 import { captureException, parseSentryDsn, sentryEvent } from "@/lib/sentry";
 
 afterEach(() => {
   resetRateLimits();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("error visible", () => {
+  test("el fallo de la pantalla no menciona la base ni la instalación", () => {
+    expect(CLIENT_FAILURE_BODY).toBe("Algo falló. Intenta de nuevo en unos segundos.");
+    expect(CLIENT_FAILURE_BODY.toLowerCase()).not.toContain("postgres");
+    expect(CLIENT_FAILURE_BODY.toLowerCase()).not.toContain("beta");
+  });
 });
 
 describe("origen y CSRF", () => {

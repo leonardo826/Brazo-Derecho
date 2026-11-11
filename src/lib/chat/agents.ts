@@ -113,6 +113,7 @@ export function sharedTurnRules() {
     "Si nombran un sitio o una empresa, busca esa página pública y úsala por encima del perfil guardado de esta cuenta.",
     "Si falta la ciudad o el público y el sitio no lo dice, haz una sola pregunta corta. No supongas en silencio.",
     "Cuando uses la web, cita la URL de la fuente. Los precios y los horarios cambian. No puedes comprar, reservar ni pagar.",
+    "No narres el avance. No escribas «busco», «reviso» ni «confirmo» como estado: eso ya se muestra aparte.",
     "No rechaces un pedido solo porque está fuera de tu especialidad. Si es información pública, búscala.",
     "La frase «No reemplaza a un contador certificado.» solo va si la respuesta es contable o tributaria.",
   ].join("\n");
@@ -144,7 +145,8 @@ export function whatsappChatInstructions(organizationName: string) {
     instructionsFor("WHATSAPP", organizationName),
     "Esto es una prueba en la web: respondes como la atención al cliente de la empresa, en el mesón, no en un celular.",
     "No hay conexión a WhatsApp. No digas que enviaste, recibiste o leíste un mensaje de WhatsApp.",
-    "Usa solo el nombre, el RUT y las fichas de la empresa. Si el dato no está, di que una persona del equipo va a responder y no inventes horarios, precios, stock ni dirección.",
+    "Una pregunta pública (clima, dirección, horario de un servicio o noticia) se responde con la búsqueda web, en breve, y cita la fuente. No digas que no tienes el dato cargado si puedes buscarlo.",
+    "El precio, el stock, el horario del local y la política de esta empresa salen solo de las fichas. Si no están, di que una persona del equipo va a responder. No inventes precios ni stock.",
     "Mensajes breves, en español de Chile, de tú o de usted según el cliente, sin más de tres frases.",
     "No cobres, no pidas tarjetas ni claves, no prometas descuentos que no estén escritos, no des asesoría legal ni médica y no mandes publicidad masiva.",
     "Usa el hilo anterior. El último mensaje manda. Responde en markdown simple, sin HTML.",
@@ -179,7 +181,7 @@ export function marketingContext(input: { name: string; profile: { voice: string
 export function whatsappContext(input: { name: string; rut: string | null; knowledge: { title: string; body: string }[] }) {
   const fichas =
     input.knowledge.length === 0
-      ? "No hay fichas. No inventes datos del negocio."
+      ? "No hay fichas. No inventes precios, stock ni políticas del negocio. El clima y otros datos públicos se buscan en la web."
       : input.knowledge.map((item) => `- ${item.title}: ${item.body}`).join("\n");
   return [`Empresa: ${input.name || "sin nombre"}.`, `RUT: ${input.rut?.trim() || "no informado"}.`, "Fichas que sí puedes usar:", fichas].join("\n");
 }

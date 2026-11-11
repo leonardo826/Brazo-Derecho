@@ -23,6 +23,8 @@ export type ChatClientEvent =
   | { type: "status"; text: string }
   | { type: "user"; message: PublicMessage }
   | { type: "delta"; text: string }
+  | { type: "draft_clear" }
+  | { type: "draft_replace"; text: string }
   | { type: "message"; message: PublicMessage }
   | { type: "replace"; message: PublicMessage }
   | { type: "usage"; consults: number }
