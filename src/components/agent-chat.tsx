@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useCsrfToken } from "@/components/csrf-field";
 import { chatSurface, type ChatAgentId } from "@/lib/chat/agents";
@@ -284,24 +284,26 @@ export function AgentChat({
     };
   }, []);
 
-  useEffect(() => {
+  const placeLogAboveComposer = useCallback(() => {
     const log = logRef.current;
     const shell = shellRef.current;
     if (!log || !shell) return;
-    const bar = shell.querySelector(".composer-bar");
-    const barHeight = bar instanceof HTMLElement ? bar.offsetHeight : shell.offsetHeight;
     const shellTop = shell.getBoundingClientRect().top;
     const covers = shellTop < log.getBoundingClientRect().bottom - 4;
-    log.style.paddingBottom = covers ? `calc(${barHeight}px + env(safe-area-inset-bottom))` : "";
+    log.style.paddingBottom = covers ? `${shell.offsetHeight + 12}px` : "";
     if (!stickToEnd.current) return;
     log.scrollTop = log.scrollHeight;
     const last = log.lastElementChild;
     if (!(last instanceof HTMLElement)) return;
-    const overlap = last.getBoundingClientRect().bottom - shellTop + 8;
+    const overlap = last.getBoundingClientRect().bottom - shell.getBoundingClientRect().top + 12;
     if (overlap <= 0) return;
     if (log.scrollHeight > log.clientHeight + 2) log.scrollTop += overlap;
     else if (typeof window.scrollBy === "function") window.scrollBy(0, overlap);
-  }, [items, live, status, pending]);
+  }, []);
+
+  useEffect(() => {
+    placeLogAboveComposer();
+  }, [items, live, status, pending, placeLogAboveComposer]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -311,7 +313,7 @@ export function AgentChat({
       const bar = shell.querySelector(".composer-bar");
       if (!log || !(bar instanceof HTMLElement)) return;
       const covers = shell.getBoundingClientRect().top < log.getBoundingClientRect().bottom - 4;
-      log.style.paddingBottom = covers ? `calc(${bar.offsetHeight}px + env(safe-area-inset-bottom))` : "";
+      log.style.paddingBottom = covers ? `${shell.offsetHeight + 12}px` : "";
     });
     observer.observe(shell);
     return () => observer.disconnect();
@@ -926,25 +928,32 @@ export function AgentChat({
       );
     }
     const stoppedOnly = message.body.trim() === STOPPED_NOTE;
+    const images = message.attachments.filter((file) => !file.id.startsWith("local-") && file.mimeType.startsWith("image/"));
+    const otherFiles = message.attachments.filter((file) => file.id.startsWith("local-") || !file.mimeType.startsWith("image/"));
     return (
       <div className={`agent-row ${message.role === "USER" ? "user" : "assistant"}`} key={message.id}>
         <article className={`agent-bubble ${message.role === "USER" ? "user" : "assistant"}`} data-message-id={message.id}>
           <p className="who">{message.role === "USER" ? "Tú" : "Agente"}</p>
-          {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
-          {message.attachments.length > 0 ? (
+          {images.length > 0 ? (
             <div className="agent-files">
-              {message.attachments.map((file) =>
+              {images.map((file) => (
+                <figure className="agent-generated" key={file.id}>
+                  {/* The image needs the session cookie; next/image does not send it. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/chat/adjuntos/${file.id}`} alt={file.fileName} onLoad={() => placeLogAboveComposer()} />
+                  <a className="button secondary small" href={`/api/chat/adjuntos/${file.id}?descarga=1`} download={file.fileName}>
+                    Descargar
+                  </a>
+                </figure>
+              ))}
+            </div>
+          ) : null}
+          {message.role === "ASSISTANT" ? <ChatMarkdown text={message.body} /> : <p className="plain-msg">{message.body}</p>}
+          {otherFiles.length > 0 ? (
+            <div className="agent-files">
+              {otherFiles.map((file) =>
                 file.id.startsWith("local-") ? (
                   <span key={file.id}>{file.fileName}</span>
-                ) : file.mimeType.startsWith("image/") ? (
-                  <figure className="agent-generated" key={file.id}>
-                    {/* The image needs the session cookie; next/image does not send it. */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`/api/chat/adjuntos/${file.id}`} alt={file.fileName} />
-                    <a className="button secondary small" href={`/api/chat/adjuntos/${file.id}?descarga=1`} download={file.fileName}>
-                      Descargar
-                    </a>
-                  </figure>
                 ) : (
                   <a key={file.id} href={`/api/chat/adjuntos/${file.id}`}>
                     {file.fileName}

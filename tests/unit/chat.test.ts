@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { attachmentScope, prepareUpload, safeFileName } from "@/lib/chat/files";
-import { parseMarkdown, safeHref } from "@/lib/chat/markdown";
+import { normalizeLists, parseMarkdown, safeHref } from "@/lib/chat/markdown";
 import { ACTION_HELP, type PublicMessage } from "@/lib/chat/public";
 import { sensitiveRequest, splitAction, vaultActionFor, wantsPortalAccess } from "@/lib/chat/sensitive";
 import { replaceOptimisticUser } from "@/lib/chat/thread";
@@ -89,6 +89,20 @@ describe("chat continuo", () => {
     expect(split.text).toBe("Borrador listo.");
     expect(split.action).toMatchObject({ id: "pagar", title: "Pagar cotizaciones" });
     expect(hideActionMarker("Hola ACCION_SENSIBLE: pagar")).toBe("Hola");
+  });
+
+  test("los deltas conservan el espacio y una lista en línea se parte", () => {
+    const deltas = ["El jueves", " ", "12", " de noviembre", " de", " ", "2026"];
+    const live = deltas.reduce((text, delta) => hideActionMarker(text + delta), "");
+    expect(live).toBe("El jueves 12 de noviembre de 2026");
+    const flat = "Opciones: - LATAM sale 08:10 y llega 09:25 - SKY sale 09:40 y llega 10:55.";
+    expect(normalizeLists(flat)).toBe("Opciones:\n- LATAM sale 08:10 y llega 09:25\n- SKY sale 09:40 y llega 10:55.");
+    const blocks = parseMarkdown(flat);
+    const list = blocks.find((block) => block.type === "list");
+    expect(list && list.type === "list" && list.items).toHaveLength(2);
+    const broken = parseMarkdown("publican ahí.\nBorrador para revisar");
+    expect(broken[0]?.type).toBe("paragraph");
+    expect(broken[0]?.type === "paragraph" && broken[0].children.some((node) => node.type === "break")).toBe(true);
   });
 
   test("un envío deja una sola burbuja de usuario al llegar el mensaje guardado", () => {

@@ -1,5 +1,6 @@
 export type MdInline =
   | { type: "text"; text: string }
+  | { type: "break" }
   | { type: "strong"; text: string }
   | { type: "em"; text: string }
   | { type: "code"; text: string }
@@ -56,8 +57,22 @@ export function parseInline(input: string): MdInline[] {
   return nodes;
 }
 
+/** Un párrafo con varios « - » pasa a una lista, un ítem por línea. */
+export function normalizeLists(source: string) {
+  return source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => {
+      if (/^\s*```/.test(line)) return line;
+      const marks = line.match(/(?:^|\s)[-–—•]\s+\S/g);
+      if (!marks || marks.length < 2) return line;
+      return line.replace(/\s+[-–—•]\s+/g, "\n- ");
+    })
+    .join("\n");
+}
+
 export function parseMarkdown(source: string): MdBlock[] {
-  const lines = normalizeCitations(source).replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeLists(normalizeCitations(source)).replace(/\r\n/g, "\n").split("\n");
   const blocks: MdBlock[] = [];
   let index = 0;
   while (index < lines.length) {
@@ -112,7 +127,12 @@ export function parseMarkdown(source: string): MdBlock[] {
       paragraph.push(lines[index] ?? "");
       index += 1;
     }
-    blocks.push({ type: "paragraph", children: parseInline(paragraph.join(" ")) });
+    const children: MdInline[] = [];
+    paragraph.forEach((part, partIndex) => {
+      if (partIndex > 0) children.push({ type: "break" });
+      children.push(...parseInline(part));
+    });
+    blocks.push({ type: "paragraph", children });
   }
   return blocks;
 }

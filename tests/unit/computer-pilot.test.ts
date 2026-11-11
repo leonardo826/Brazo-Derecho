@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { computerPanelEnabled } from "@/lib/computer/flag";
+import { panelComputerHref } from "@/components/panel-nav";
 import { issueNovncToken, novncStillValid, tokenMatches } from "@/lib/computer/novnc";
 import { decideSensitiveTask, enqueueComputerTask, type ComputerStore, type ComputerTaskRecord } from "@/lib/computer/orchestrator";
 import { cliWillCallFly, flyCallsAllowed, flyRequests, planProvision, provisionClient } from "@/lib/computer/provision";
@@ -181,6 +182,9 @@ describe("piloto del computador", () => {
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "development", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "True" })).toBe(false);
+    expect(panelComputerHref(false)).toBeNull();
+    expect(panelComputerHref(computerPanelEnabled({ NODE_ENV: "production" }))).toBeNull();
+    expect(panelComputerHref(true)).toBe("/panel/computador");
   });
 
   test("Fly queda en dry-run salvo confirmación explícita y el plan no lleva secretos", async () => {

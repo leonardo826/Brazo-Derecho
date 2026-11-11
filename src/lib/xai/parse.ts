@@ -51,11 +51,12 @@ export function mapXaiStreamEvent(raw: unknown): XaiStreamEvent | null {
     return { type: "delta", text: event.delta };
   }
   const itemType = event.item?.type ?? "";
+  const toolStart = type === "response.output_item.added" || type.endsWith(".added");
   if (type.includes("image_generation") || itemType === "image_generation_call") {
-    return { type: "status", text: "Preparando la imagen…", dropDraft: true };
+    return { type: "status", text: "Preparando la imagen…", dropDraft: toolStart };
   }
   if (type.includes("web_search") || itemType === "web_search_call" || itemType.includes("web_search") || itemType === "x_search_call") {
-    return { type: "status", text: "Buscando en la web…", dropDraft: true };
+    return { type: "status", text: "Buscando en la web…", dropDraft: toolStart };
   }
   if (type === "response.completed" || type === "response.incomplete") {
     const body = event.response ?? (raw as ResponsesBody);
