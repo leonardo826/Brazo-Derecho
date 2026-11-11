@@ -454,11 +454,19 @@ mark.placeholder {
   .panel-side { position: static; height: auto; overflow: visible; padding-bottom: 0.8rem; }
   .panel-nav {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.35rem;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
     padding: 0.25rem 0 0.45rem;
   }
-  .panel-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 0.35rem 0.65rem; }
+  .panel-nav a { flex: 0 0 auto; min-height: 44px; display: inline-flex; align-items: center; padding: 0.35rem 0.65rem; white-space: nowrap; }
   .side-foot { margin-top: 0; }
   .page-head { flex-direction: column; align-items: stretch; }
   .page-head .button, .page-head .button-link { width: 100%; }

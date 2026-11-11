@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, test, vi } from "vitest";
+import { UsageBar } from "@/components/usage-bar";
 import { authenticate } from "@/lib/login";
 import { companyMeter, recordMeter } from "@/lib/meter-store";
 import { startMercadoPagoSubscription } from "@/lib/mercadopago/checkout";
@@ -6,7 +9,7 @@ import { activateMockPlan } from "@/lib/flow/mock-checkout";
 import { startFlowSubscription } from "@/lib/flow/checkout";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
-import { QA_ACCESS_MS, QA_ORG_NAME, QA_ORG_SLUG, QA_USER_NAME, QaSinCobroError } from "@/lib/qa-account";
+import { QA_ACCESS_MS, QA_ORG_NAME, QA_ORG_SLUG, QA_USER_NAME, QaSinCobroError, recordsBillingUsage } from "@/lib/qa-account";
 import { reserveUsage, usageSnapshot } from "@/lib/usage-store";
 
 const QA_EMAIL = "qa.interno@test.local";
@@ -216,5 +219,42 @@ describe("cuenta QA", () => {
     ).rejects.toBeInstanceOf(QaSinCobroError);
     expect(await activateMockPlan(qa.organizationId, "ACCOUNTING", now)).toEqual({ ok: false });
     expect(await prisma.subscription.count({ where: { organizationId: qa.organizationId } })).toBe(0);
+  });
+
+  test("la empresa de prueba no suma uso a propósito; una normal sí y la barra del panel lo muestra", async () => {
+    expect(recordsBillingUsage(true)).toBe(false);
+    const normal = await makeOrg("cliente-panel", false);
+    const now = new Date("2026-11-15T15:00:00.000Z");
+    await prisma.$transaction(async (tx) => {
+      const reserved = await reserveUsage(tx, {
+        organizationId: normal.organizationId,
+        agent: "ACCOUNTING",
+        metric: "CONSULTS",
+        quantity: 1,
+        tokens: { inputTokens: 120, cachedTokens: 10, outputTokens: 30 },
+        model: "grok-4.7",
+        now,
+      });
+      expect(reserved.ok).toBe(true);
+    });
+    await recordMeter({
+      organizationId: normal.organizationId,
+      kind: "TASK",
+      model: "grok-4.7",
+      tokens: { inputTokens: 120, cachedTokens: 10, outputTokens: 30 },
+      now,
+    });
+    const snapshot = await usageSnapshot(normal.organizationId, now);
+    const meter = await companyMeter(normal.organizationId, now);
+    expect(snapshot.totals.CONSULTS).toBe(1);
+    expect(snapshot.byModel["grok-4.7"].inputTokens).toBe(120);
+    expect(snapshot.byModel["grok-4.7"].outputTokens).toBe(30);
+    expect(meter.tasks).toBe(1);
+    expect(meter.tokens.inputTokens).toBe(120);
+    expect(meter.tokens.outputTokens).toBe(30);
+    const html = renderToStaticMarkup(createElement(UsageBar, { label: "Consultas", used: snapshot.totals.CONSULTS, limit: 200 }));
+    expect(html).toContain("1");
+    expect(html).toContain("200");
+    expect(html).not.toContain("0 / 200");
   });
 });
