@@ -67,27 +67,86 @@ function domainKey(url: string) {
   return hostnameLabel(url).toLowerCase();
 }
 
-function addSource(urls: string[], seen: Set<string>, raw: string) {
-  const href = safeHref(raw.trim());
-  if (!href) return;
-  const domain = domainKey(href);
-  if (!domain || seen.has(domain)) return;
-  seen.add(domain);
-  urls.push(href);
+const SOCIAL = /^(?:x\.com|twitter\.com|mobile\.twitter\.com|t\.co|facebook\.com|instagram\.com|tiktok\.com|linkedin\.com)$/;
+const AIRLINE = /(?:^|\.)(?:latamairlines|latam|skyairline|jetsmart|avianca|copaair|voegol|aerolineas)\./;
+const AIRPORT = /aeropuerto|dgac|nuevopudahuel/;
+
+function isGovernment(host: string) {
+  return host.endsWith(".gob.cl") || host.includes(".gob.") || host.endsWith(".gov.uk") || host.endsWith(".gov") || host.includes(".gov.");
 }
 
-function collectUrls(body: AnswerBody) {
-  const urls: string[] = [];
+function isAggregator(host: string) {
+  return host === "google.com" || host === "kiwi.com" || /(?:^|\.)(?:kayak|skyscanner|momondo|expedia|despegar|edreams|cheapflights|tripadvisor|wikipedia|reddit|google)\./.test(`${host}.`);
+}
+
+function sourceRank(url: string, text: string) {
+  const host = domainKey(url);
+  if (!host) return -1;
+  if (SOCIAL.test(host) || isAggregator(host)) return 0;
+  if (isGovernment(host)) return 3;
+  if (AIRLINE.test(`${host}.`) || AIRPORT.test(host)) return 2;
+  if (text.toLowerCase().includes(host)) return 2;
+  return 1;
+}
+
+function extractUrls(text: string) {
+  const found: string[] = [];
+  for (const match of text.matchAll(/https?:\/\/[^\s)>\]]+/gi)) found.push(match[0].replace(/[.,;:]+$/, ""));
+  return found;
+}
+
+/** Solo lo citado en el texto. Oficial primero. Sin redes ni agregadores si hay una fuente oficial. */
+export function citedSources(text: string, candidates: string[], limit: number, forced: string[] = []) {
+  const pool: string[] = [];
   const seen = new Set<string>();
-  for (const url of body.citations ?? []) addSource(urls, seen, url);
-  for (const item of body.output ?? []) {
+  const lower = text.toLowerCase();
+  function consider(raw: string, force: boolean) {
+    const href = safeHref(raw.trim());
+    if (!href) return;
+    const domain = domainKey(href);
+    if (!domain || seen.has(domain)) return;
+    const named = lower.includes(domain) || extractUrls(text).some((url) => domainKey(url) === domain);
+    if (!force && !named) return;
+    seen.add(domain);
+    pool.push(href);
+  }
+  for (const url of forced) consider(url, true);
+  for (const url of extractUrls(text)) consider(url, true);
+  for (const url of candidates) consider(url, false);
+  const ranked = pool.map((url) => ({ url, rank: sourceRank(url, text) })).filter((item) => item.rank >= 0);
+  const official = ranked.some((item) => item.rank >= 2);
+  const kept = (official ? ranked.filter((item) => item.rank >= 1) : ranked).sort((a, b) => b.rank - a.rank);
+  return kept.slice(0, Math.max(0, limit)).map((item) => item.url);
+}
+
+export function capFuentes(text: string, limit: number) {
+  const match = text.match(/\n+Fuentes:\n([\s\S]*)$/);
+  if (!match || match.index === undefined) return text;
+  const lines = match[1].split("\n").map((line) => line.trim()).filter((line) => line.startsWith("- "));
+  if (lines.length <= limit) return text;
+  return `${text.slice(0, match.index).trim()}\n\nFuentes:\n${lines.slice(0, limit).join("\n")}`;
+}
+
+export function sourceLimitFor(agent: string) {
+  return agent === "WHATSAPP" ? 2 : 3;
+}
+
+function annotationUrls(items: OutputItem[]) {
+  const urls: string[] = [];
+  let lastTool = -1;
+  items.forEach((item, index) => {
+    if (item.type && TOOL_ITEM.has(item.type)) lastTool = index;
+  });
+  const segment = lastTool >= 0 ? items.slice(lastTool + 1) : items;
+  for (const item of segment) {
+    if (isToolItem(item)) continue;
     for (const part of item.content ?? []) {
       for (const note of part.annotations ?? []) {
-        if (note.url) addSource(urls, seen, note.url);
+        if (note.url) urls.push(note.url);
       }
     }
   }
-  return { urls, seen };
+  return urls;
 }
 
 function isToolItem(item: OutputItem) {
@@ -121,23 +180,11 @@ function finalSegment(items: OutputItem[]) {
   return answers.length > 0 ? itemText(answers[answers.length - 1] ?? { content: [] }) : "";
 }
 
-export function withSources(text: string, urls: string[]) {
-  const seen = new Set<string>();
-  const sources: string[] = [];
-  for (const url of urls) addSource(sources, seen, url);
-  let body = text.replace(/\[\[(\d+)\]\]\((https?:\/\/[^)\s]+)\)/g, (_match, _n, url: string) => {
-    addSource(sources, seen, url);
-    return "";
-  });
+export function withSources(text: string, urls: string[] = [], limit = 3, forced: string[] = []) {
+  const sources = citedSources(text, urls, limit, forced);
+  let body = text.replace(/\[\[(\d+)\]\]\((https?:\/\/[^)\s]+)\)/g, "");
   body = softenCitationLinks(body);
-  body = body.replace(/\[(\d+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, _n, url: string) => {
-    addSource(sources, seen, url);
-    return "";
-  });
-  body = body.replace(/\[\(fuente\)\]\((https?:\/\/[^)\s]+)\)/g, (full, url: string) => {
-    addSource(sources, seen, url);
-    return full;
-  });
+  body = body.replace(/\[(\d+)\]\((https?:\/\/[^)\s]+)\)/g, "");
   body = body
     .replace(/\n+Fuentes:\n[\s\S]*$/i, "")
     .replace(/(?:^|\n)[ \t]*Fuentes?:\s*(?:https?:\/\/\S+|\[[^\]]+\]\([^)]+\))[ \t]*/gi, "\n")
@@ -162,9 +209,8 @@ export function withSources(text: string, urls: string[]) {
  */
 export function composeAnswer(body: AnswerBody) {
   const items = body.output ?? [];
-  const { urls } = collectUrls(body);
   const segment = finalSegment(items);
   const fallback = (body.output_text ?? "").trim() || messageText(items);
   const text = stripEmbeddedImages(dropProgressNarration(segment || fallback));
-  return withSources(text, urls);
+  return withSources(text, body.citations ?? [], 3, annotationUrls(items));
 }

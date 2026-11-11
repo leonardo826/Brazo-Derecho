@@ -5,6 +5,7 @@ import { loadTenantLease } from "@/lib/computer/lease";
 import { APPROVED_PORTAL_NOTE, vaultContext } from "@/lib/chat/accountant";
 import { agentTurnContext } from "@/lib/chat/agent-context";
 import { chatInstructions, chatSurface, outputBudget, type ChatAgentId } from "@/lib/chat/agents";
+import { capFuentes, sourceLimitFor } from "@/lib/chat/answer";
 import { billedToolUse } from "@/lib/chat/tools";
 import { XaiApiError } from "@/lib/xai/live";
 import type { ChatClientEvent } from "@/lib/chat/public";
@@ -219,7 +220,7 @@ async function* streamModel(input: {
             outputTokens: usage.outputTokens,
             mocked: event.response.mocked,
           });
-          const clean = event.response.outputText.trim();
+          const clean = capFuentes(event.response.outputText.trim(), sourceLimitFor(input.agent));
           if (clean && clean !== roundText.trim()) {
             raw = raw.slice(0, Math.max(0, raw.length - roundText.length)) + clean;
             roundText = clean;
@@ -248,6 +249,7 @@ async function* streamModel(input: {
     input.agent === "MARKETING" && drafted.truncated && drafted.note === LIMIT_NOTE
       ? { ...drafted, text: closeDeliverable(drafted.text), note: "" }
       : drafted;
+  finished.text = capFuentes(finished.text, sourceLimitFor(input.agent));
   if (!finished.text.trim()) {
     const fail = await saveAssistantMessage(input.threadId, FAIL_TEXT);
     yield { type: "message", message: fail };

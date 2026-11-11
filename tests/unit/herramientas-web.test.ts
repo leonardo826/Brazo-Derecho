@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { composeAnswer, dropProgressNarration, isImagePayload, withSources } from "@/lib/chat/answer";
+import { capFuentes, composeAnswer, dropProgressNarration, isImagePayload, sourceLimitFor, withSources } from "@/lib/chat/answer";
 import { normalizeSections } from "@/lib/chat/markdown";
 import { chatInstructions, chatSurface } from "@/lib/chat/agents";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
@@ -162,9 +162,27 @@ describe("herramientas de la web", () => {
     expect(cited).not.toMatch(/Fuente: https?:/);
     const fuentes = cited.split("Fuentes:")[1] ?? "";
     expect(fuentes).toContain("[tecna-zinc.cl](");
-    expect(fuentes).toContain("[weather.metoffice.gov.uk](");
-    expect(fuentes).toContain("[google.com](");
+    expect(fuentes).toContain("[latamairlines.com](");
+    expect(fuentes).not.toContain("weather.metoffice.gov.uk");
+    expect(fuentes).not.toContain("google.com");
     expect(fuentes).not.toContain("(fuente)");
+    const noisy = withSources(
+      "Según tecna-zinc.cl y [LATAM](https://www.latamairlines.com/cl). También [x](https://x.com/tecna) y [kayak](https://www.kayak.com/flights).",
+      ["https://www.tecna-zinc.cl/ficha", "https://weather.metoffice.gov.uk/forecast", "https://www.google.com/search"],
+    );
+    const lista = noisy.split("Fuentes:")[1] ?? "";
+    expect(lista).toContain("[tecna-zinc.cl](");
+    expect(lista).toContain("[latamairlines.com](");
+    expect(lista).not.toContain("weather.metoffice.gov.uk");
+    expect(lista).not.toContain("x.com");
+    expect(lista).not.toContain("kayak.com");
+    expect(lista).not.toContain("google.com");
+    const many = withSources(
+      "[a](https://www.latamairlines.com/a) [b](https://www.skyairline.com/b) [c](https://www.jetsmart.com/c) [d](https://meteochile.gob.cl/d) [e](https://dgac.gob.cl/e)",
+    );
+    expect(many.split("Fuentes:")[1]?.split("\n").filter((line) => line.trim().startsWith("- "))).toHaveLength(3);
+    expect(sourceLimitFor("WHATSAPP")).toBe(2);
+    expect(capFuentes(many, 2).split("Fuentes:")[1]?.split("\n").filter((line) => line.trim().startsWith("- "))).toHaveLength(2);
     const post = normalizeSections("Gancho: Mira. Cuerpo: El texto. Llamado a la acción: Escribe. Hashtags: #Concepción. Idea de imagen: Un taller.");
     expect(post).toContain("\n\nCuerpo:");
     expect(post).toContain("\n\nLlamado a la acción:");
