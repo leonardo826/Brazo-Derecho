@@ -97,6 +97,10 @@ describe("chat continuo", () => {
     expect(live).toBe("El jueves 12 de noviembre de 2026");
     const flat = "Opciones: - LATAM sale 08:10 y llega 09:25 - SKY sale 09:40 y llega 10:55.";
     expect(normalizeLists(flat)).toBe("Opciones:\n- LATAM sale 08:10 y llega 09:25\n- SKY sale 09:40 y llega 10:55.");
+    const stuck = "Revisa el cupo: puede estar justo. - LATAM LA206 sale 08:10 y llega 09:25.";
+    expect(normalizeLists(stuck)).toBe("Revisa el cupo: puede estar justo.\n- LATAM LA206 sale 08:10 y llega 09:25.");
+    expect(parseMarkdown(stuck).some((block) => block.type === "list")).toBe(true);
+    expect(normalizeLists("El tramo Santiago - Concepción sale temprano.")).toBe("El tramo Santiago - Concepción sale temprano.");
     const blocks = parseMarkdown(flat);
     const list = blocks.find((block) => block.type === "list");
     expect(list && list.type === "list" && list.items).toHaveLength(2);
@@ -135,8 +139,9 @@ describe("chat continuo", () => {
     const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
     expect(html).toContain('href="https://www.sii.cl/normativa"');
     expect(html).toContain('href="https://www.sii.cl/ppm"');
-    expect(html).toContain(">1</a>");
-    expect(html).toContain(">2</a>");
+    expect(html).toContain("(fuente)</a>");
+    expect(html).not.toContain(">1</a>");
+    expect(html).not.toContain(">2</a>");
     expect(html).not.toContain("[[1]]");
     expect(html).not.toContain("[[2]]");
     const hostile = renderToStaticMarkup(

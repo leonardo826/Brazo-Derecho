@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { computerPanelEnabled } from "@/lib/computer/flag";
 import { panelComputerHref } from "@/components/panel-nav";
 import { issueNovncToken, novncStillValid, tokenMatches } from "@/lib/computer/novnc";
@@ -185,6 +186,12 @@ describe("piloto del computador", () => {
     expect(panelComputerHref(false)).toBeNull();
     expect(panelComputerHref(computerPanelEnabled({ NODE_ENV: "production" }))).toBeNull();
     expect(panelComputerHref(true)).toBe("/panel/computador");
+    const nav = readFileSync("src/components/panel-nav.tsx", "utf8");
+    const layout = readFileSync("src/app/panel/layout.tsx", "utf8");
+    expect(nav).not.toMatch(/<Link[^>\n]*computador/);
+    expect(nav).toContain("{computerHref ?");
+    expect(layout).toContain("computerPanelEnabled()");
+    expect(layout).not.toContain("/panel/computador");
   });
 
   test("Fly queda en dry-run salvo confirmación explícita y el plan no lleva secretos", async () => {

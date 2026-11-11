@@ -1,4 +1,4 @@
-import { safeHref } from "@/lib/chat/markdown";
+import { safeHref, softenCitationLinks } from "@/lib/chat/markdown";
 
 const TOOL_ITEM = new Set([
   "web_search_call",
@@ -38,9 +38,10 @@ export function stripEmbeddedImages(text: string) {
 
 function isProgress(sentence: string) {
   const clean = sentence.trim();
-  if (!clean || clean.length > 90) return false;
+  if (!clean || clean.length > 140) return false;
   if (/\d{1,2}:\d{2}/.test(clean) || /https?:\/\//i.test(clean)) return false;
   if (/^confirmo[.…]?$/i.test(clean)) return true;
+  if (/^(?:faltan?|a[uú]n no|todav[ií]a no)\b/i.test(clean) && !/\d/.test(clean)) return true;
   return PROGRESS.test(clean);
 }
 
@@ -62,10 +63,16 @@ function hostnameLabel(url: string) {
   }
 }
 
+function domainKey(url: string) {
+  return hostnameLabel(url).toLowerCase();
+}
+
 function addSource(urls: string[], seen: Set<string>, raw: string) {
   const href = safeHref(raw.trim());
-  if (!href || seen.has(href)) return;
-  seen.add(href);
+  if (!href) return;
+  const domain = domainKey(href);
+  if (!domain || seen.has(domain)) return;
+  seen.add(domain);
   urls.push(href);
 }
 
@@ -83,44 +90,58 @@ function collectUrls(body: AnswerBody) {
   return { urls, seen };
 }
 
-function messageText(items: OutputItem[]) {
+function isToolItem(item: OutputItem) {
+  return Boolean(item.type && (TOOL_ITEM.has(item.type) || item.type === "reasoning"));
+}
+
+function itemText(item: OutputItem) {
   const chunks: string[] = [];
-  for (const item of items) {
-    if (item.type && TOOL_ITEM.has(item.type)) continue;
-    for (const part of item.content ?? []) {
-      if ((part.type === "output_text" || part.type === "text") && part.text?.trim()) chunks.push(part.text.trim());
-    }
+  for (const part of item.content ?? []) {
+    if ((part.type === "output_text" || part.type === "text" || !part.type) && part.text?.trim()) chunks.push(part.text.trim());
   }
-  return chunks.join("\n\n").trim();
+  return chunks.join("\n").trim();
+}
+
+function messageText(items: OutputItem[]) {
+  return items
+    .filter((item) => !isToolItem(item))
+    .map(itemText)
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
+function finalSegment(items: OutputItem[]) {
+  let lastTool = -1;
+  items.forEach((item, index) => {
+    if (item.type && TOOL_ITEM.has(item.type)) lastTool = index;
+  });
+  if (lastTool < 0) return "";
+  const answers = items.slice(lastTool + 1).filter((item) => !isToolItem(item) && itemText(item));
+  return answers.length > 0 ? itemText(answers[answers.length - 1] ?? { content: [] }) : "";
 }
 
 export function withSources(text: string, urls: string[]) {
   const seen = new Set<string>();
   const sources: string[] = [];
-  for (const url of urls) {
-    const href = safeHref(url);
-    if (!href || seen.has(href)) continue;
-    seen.add(href);
-    sources.push(href);
-  }
-  let body = text;
-  body = body.replace(/\[\[(\d+)\]\]\((https?:\/\/[^)\s]+)\)/g, (_match, _n, url: string) => {
-    const href = safeHref(url);
-    if (href && !seen.has(href)) {
-      seen.add(href);
-      sources.push(href);
-    }
+  for (const url of urls) addSource(sources, seen, url);
+  let body = text.replace(/\[\[(\d+)\]\]\((https?:\/\/[^)\s]+)\)/g, (_match, _n, url: string) => {
+    addSource(sources, seen, url);
     return "";
   });
+  body = softenCitationLinks(body);
   body = body.replace(/\[(\d+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, _n, url: string) => {
-    const href = safeHref(url);
-    if (href && !seen.has(href)) {
-      seen.add(href);
-      sources.push(href);
-    }
+    addSource(sources, seen, url);
     return "";
+  });
+  body = body.replace(/\[\(fuente\)\]\((https?:\/\/[^)\s]+)\)/g, (full, url: string) => {
+    addSource(sources, seen, url);
+    return full;
   });
   body = body
+    .replace(/\n+Fuentes:\n[\s\S]*$/i, "")
+    .replace(/(?:^|\n)[ \t]*Fuentes?:\s*(?:https?:\/\/\S+|\[[^\]]+\]\([^)]+\))[ \t]*/gi, "\n")
+    .replace(/[ \t]+Fuentes?:\s*https?:\/\/\S+/gi, "")
     .replace(/\n+[ \t]*(?:(?:\[\[)?\d{1,2}(?:\]\])?[ \t]*)+$/g, (line) => {
       const numbers = line.match(/\d{1,2}/g) ?? [];
       return numbers.length >= 2 && numbers.every((value) => Number(value) <= 30) ? "" : line;
@@ -132,7 +153,6 @@ export function withSources(text: string, urls: string[]) {
     .trim();
   if (sources.length === 0) return body;
   const list = sources.map((url) => `- [${hostnameLabel(url)}](${url})`).join("\n");
-  if (/\nFuentes:\n/.test(body)) return body;
   return `${body}\n\nFuentes:\n${list}`;
 }
 
@@ -142,13 +162,9 @@ export function withSources(text: string, urls: string[]) {
  */
 export function composeAnswer(body: AnswerBody) {
   const items = body.output ?? [];
-  let lastTool = -1;
-  items.forEach((item, index) => {
-    if (item.type && TOOL_ITEM.has(item.type)) lastTool = index;
-  });
   const { urls } = collectUrls(body);
-  const afterTools = lastTool >= 0 ? messageText(items.slice(lastTool + 1)) : "";
+  const segment = finalSegment(items);
   const fallback = (body.output_text ?? "").trim() || messageText(items);
-  const text = stripEmbeddedImages(dropProgressNarration(afterTools || fallback));
+  const text = stripEmbeddedImages(dropProgressNarration(segment || fallback));
   return withSources(text, urls);
 }
