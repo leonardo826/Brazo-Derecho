@@ -19,8 +19,8 @@ test("registro vacío y con correo inválido muestra el aviso en español", asyn
   await expect(page.getByRole("alert").filter({ hasText: "Escribe un correo válido." })).toBeVisible();
   await expect(page.getByText(/Please include an @/)).toHaveCount(0);
 
-  await page.getByLabel("Correo").fill("ana@tuempresa.cl");
-  await page.getByLabel("Contraseña").fill("corta");
+  await page.getByRole("textbox", { name: "Correo", exact: true }).fill("ana@tuempresa.cl");
+  await page.getByRole("textbox", { name: "Contraseña", exact: true }).fill("corta");
   await page.getByRole("button", { name: "Crear empresa" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Usa al menos 8 caracteres." })).toBeVisible();
 });
