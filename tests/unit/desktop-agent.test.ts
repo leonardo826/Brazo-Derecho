@@ -3,7 +3,8 @@ import { parseAction, parseHttpUrl, xdotoolArgs, type DesktopAction } from "../.
 import { pagesFromList, pngFromCdpResult, ensureWhatsappTab } from "../../agent-runtime/src/cdp";
 import type { Desktop } from "../../agent-runtime/src/desktop";
 import { pickWorkWindow } from "../../agent-runtime/src/desktop";
-import { handleAgent, resetAgentTasks } from "../../agent-runtime/src/http";
+import { handleAgent, nonceStillSeen, rememberSeenNonce, resetAgentTasks } from "../../agent-runtime/src/http";
+import { readAgentHttp } from "../../agent-runtime/src/request";
 import { signRequest } from "@/lib/computer/request-sign";
 import { mockUrlForGoal } from "../../agent-runtime/src/mock";
 import { runComputerTask } from "../../agent-runtime/src/loop";
@@ -461,5 +462,25 @@ describe("agente de computador en simulador", () => {
     });
     expect(denied.status).toBe(403);
     expect(rig.actions).toHaveLength(0);
+  });
+
+  test("el servidor entrega el cuerpo crudo y una época vacía no abre la tarea", async () => {
+    resetAgentTasks();
+    const rig = fakeDesktop();
+    const payload = { machineId: MACHINE_ID, epoch: 1, goal: "Abre https://example.com" };
+    const raw = Buffer.from(JSON.stringify(payload));
+    const signed = signRequest({ token: AGENT_TOKEN, method: "POST", path: "/task", body: raw.toString("utf8"), host: DOMAIN });
+    const request = readAgentHttp("POST", "/task", raw, signed);
+    expect(request.rawBody).toBe(raw.toString("utf8"));
+    const response = await handleAgent(request, { env: agentEnv({ XAI_MODE: "mock" }), desktop: rig.desktop });
+    expect(response.status).toBe(200);
+    const blocked = await handleAgent(
+      { ...request, rawBody: raw.toString("utf8"), headers: signRequest({ token: AGENT_TOKEN, method: "POST", path: "/task", body: raw.toString("utf8"), host: DOMAIN }) },
+      { env: agentEnv({ XAI_MODE: "mock", LEASE_EPOCH: "" }), desktop: rig.desktop },
+    );
+    expect(blocked.status).toBe(409);
+    rememberSeenNonce("nonce-viejo-00000001", 1_000);
+    expect(nonceStillSeen("nonce-viejo-00000001", 1_010)).toBe(true);
+    expect(nonceStillSeen("nonce-viejo-00000001", 1_121)).toBe(false);
   });
 });
