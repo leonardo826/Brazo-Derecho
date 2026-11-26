@@ -1,3 +1,4 @@
+import { machineAgentKind } from "../src/lib/computer/agent-kind";
 import { LOCAL_HARNESS, enrollComputerLease, revokeComputerLease } from "../src/lib/computer/lease";
 import { signRequest } from "../src/lib/computer/request-sign";
 import { callMachine } from "../src/lib/computer/transport";
@@ -104,12 +105,19 @@ async function main() {
     if (!current) return fail("rechazado");
     const path = command === "harness-status" ? "/status" : command === "harness-cancel" ? "/task/cancel" : "/task";
     const method = command === "harness-status" ? "GET" : "POST";
-    const body =
-      command === "harness-dispatch"
-        ? JSON.stringify({ goal: flag("--goal") || "estado", machineId: current.row.machineId, epoch: current.row.leaseEpoch })
-        : command === "harness-cancel"
-          ? JSON.stringify({ machineId: current.row.machineId, epoch: current.row.leaseEpoch })
-          : "";
+    let body = "";
+    if (command === "harness-dispatch") {
+      const agentKind = machineAgentKind(flag("--agent") || "ACCOUNTING");
+      if (!agentKind) return fail("datos");
+      body = JSON.stringify({
+        goal: flag("--goal") || "estado",
+        machineId: current.row.machineId,
+        epoch: current.row.leaseEpoch,
+        agentKind,
+      });
+    } else if (command === "harness-cancel") {
+      body = JSON.stringify({ machineId: current.row.machineId, epoch: current.row.leaseEpoch });
+    }
     const host = new URL(current.row.agentEndpoint).hostname;
     const response = await callMachine({
       origin: current.row.agentEndpoint,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { accountantChatInstructions } from "@/lib/chat/accountant";
+import { signRequest } from "@/lib/computer/request-sign";
 import { AGENT_CATALOG } from "@/lib/catalog";
 import {
   DESKTOP_COPY,
@@ -31,6 +32,7 @@ function run(text: string, extra: Partial<Parameters<typeof executeDesktopReques
     organizationId: ORG,
     userId: USER,
     conversationId: THREAD,
+    agentKind: "ACCOUNTING",
     text,
     loadLease: async () => ({ state: "ausente" }),
     reserve: async () => ({ ok: true, reservationId: "reserva" }),
@@ -94,6 +96,7 @@ describe("contrato del computador en el chat", () => {
       organizationId: "org-b",
       userId: USER,
       conversationId: THREAD,
+      agentKind: "ACCOUNTING",
       text: "12 de diciembre, solo ida",
       loadLease: async () => ready(),
       fetchImpl: (async () => {
@@ -145,7 +148,7 @@ describe("contrato del computador en el chat", () => {
     });
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.NOT_REAL });
     const sent = JSON.parse(bodies[0]) as Record<string, unknown>;
-    expect(Object.keys(sent).sort()).toEqual(["epoch", "goal", "machineId", "taskId"]);
+    expect(Object.keys(sent).sort()).toEqual(["agentKind", "epoch", "goal", "machineId", "taskId"]);
     expect(JSON.stringify(sent)).not.toContain(SECRET);
   });
 
@@ -292,5 +295,64 @@ describe("contrato del computador en el chat", () => {
     });
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.TRANSPORT });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test("dos agentes de la misma empresa firman agentKind distinto", async () => {
+    const seen: { body: string; headers: Record<string, string> }[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const headers = init?.headers;
+      const flat: Record<string, string> = {};
+      if (headers && !Array.isArray(headers) && !(headers instanceof Headers)) {
+        for (const [key, value] of Object.entries(headers)) flat[key.toLowerCase()] = String(value);
+      }
+      seen.push({ body: String(init?.body ?? ""), headers: flat });
+      return new Response(
+        JSON.stringify({
+          status: "DONE",
+          xaiMode: "live",
+          result: "Título en example.com",
+          steps: [{ kind: "action", action: { type: "goto", url: "https://example.com/" } }],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const loadLease = async () => ready();
+    await run("Usa el computador y abre https://example.com", { agentKind: "ACCOUNTING", loadLease, fetchImpl });
+    resetDesktopIntent();
+    await run("Usa el computador y abre https://example.com", { agentKind: "MARKETING", loadLease, fetchImpl });
+    const kinds = seen.map((item) => (JSON.parse(item.body) as { agentKind: string }).agentKind);
+    expect(kinds).toEqual(["ACCOUNTING", "MARKETING"]);
+    expect(seen[0].body).not.toBe(seen[1].body);
+    expect(seen[0].headers["x-iabot-signature"]).not.toBe(seen[1].headers["x-iabot-signature"]);
+    for (const item of seen) {
+      const again = signRequest({
+        token: "lease-de-esa-maquina",
+        method: "POST",
+        path: "/task",
+        body: item.body,
+        host: "example.com",
+        timestamp: item.headers["x-iabot-timestamp"],
+        nonce: item.headers["x-iabot-nonce"],
+      });
+      expect(item.headers["x-iabot-signature"]).toBe(again["x-iabot-signature"]);
+    }
+    const swapped = signRequest({
+      token: "lease-de-esa-maquina",
+      method: "POST",
+      path: "/task",
+      body: seen[0].body.replace("ACCOUNTING", "WHATSAPP"),
+      host: "example.com",
+      timestamp: seen[0].headers["x-iabot-timestamp"],
+      nonce: seen[0].headers["x-iabot-nonce"],
+    });
+    expect(swapped["x-iabot-signature"]).not.toBe(seen[0].headers["x-iabot-signature"]);
+    const blocked = await run("Usa el computador y abre https://example.com", {
+      agentKind: "QUOTES" as "ACCOUNTING",
+      loadLease,
+      fetchImpl: (async () => {
+        throw new Error("no debía llamar");
+      }) as typeof fetch,
+    });
+    expect(blocked).toEqual({ kind: "reply", text: DESKTOP_COPY.FAILED });
   });
 });

@@ -11,6 +11,7 @@ import { PLAN_LIMIT_WHATSAPP } from "@/lib/plan-copy";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const CLOSED = "Ahora no podemos atender por este canal. Si es urgente, escríbele directo al local.";
 const LIMITED = PLAN_LIMIT_WHATSAPP;

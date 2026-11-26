@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { decideComputerAction, enqueueComputerAction, mintComputerViewAction } from "@/app/actions/computer";
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
+import { MACHINE_AGENT_KINDS } from "@/lib/computer/agent-kind";
 import { computerFeatureEnabled } from "@/lib/computer/flag";
 import { localNovncUrl, novncStillValid, safeNovncHref, tokenMatches } from "@/lib/computer/novnc";
 import { missingVaultTable } from "@/lib/credentials/http";
@@ -13,6 +14,8 @@ import { firstParam } from "@/lib/search";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+const AGENT_LABEL = { ACCOUNTING: "Contador", MARKETING: "Marketing", WHATSAPP: "WhatsApp" } as const;
 
 const TASK_LABEL: Record<string, string> = {
   QUEUED: "En cola",
@@ -118,6 +121,16 @@ export default async function ComputerPage({
         </p>
         <form action={enqueueComputerAction} className="stack">
           <CsrfField />
+          <label>
+            Agente
+            <select name="agentKind" defaultValue="ACCOUNTING" required>
+              {MACHINE_AGENT_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {AGENT_LABEL[kind]}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Objetivo
             <input name="goal" maxLength={2000} placeholder="Abre https://example.com y dime qué dice" required />

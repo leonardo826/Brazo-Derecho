@@ -4,7 +4,18 @@ import { computerPanelEnabled } from "@/lib/computer/flag";
 import { panelComputerHref } from "@/lib/computer/nav";
 import { issueNovncToken, novncStillValid, tokenMatches } from "@/lib/computer/novnc";
 import { decideSensitiveTask, enqueueComputerTask, type ComputerStore, type ComputerTaskRecord } from "@/lib/computer/orchestrator";
+import { signRequest } from "@/lib/computer/request-sign";
+import type { ComputerLease } from "@/lib/chat/desktop-task";
 import { cliWillCallFly, flyCallsAllowed, flyRequests, planProvision, provisionClient } from "@/lib/computer/provision";
+
+const lease: ComputerLease = {
+  organizationId: "cliente1",
+  machineId: "machine-1",
+  baseUrl: "https://example.com",
+  pin: "93.184.216.34",
+  epoch: 4,
+  token: "lease-de-esa-maquina",
+};
 
 function memoryStore() {
   const tasks: ComputerTaskRecord[] = [];
@@ -32,28 +43,33 @@ function memoryStore() {
 }
 
 describe("piloto del computador", () => {
-  test("sin URL no llama al agente y una acción sensible no sale", async () => {
+  test("sin arriendo no llama y un token global no se usa", async () => {
+    process.env.COMPUTER_AGENT_URL = "http://global.example";
+    process.env.COMPUTER_AGENT_TOKEN = "token-global";
     const fetchMock = vi.fn(() => {
       throw new Error("no debía haber red");
     });
     const store = memoryStore();
     const queued = await enqueueComputerTask(
-      { clientId: "cliente1", goal: "Abre https://example.com", fetchImpl: fetchMock as typeof fetch },
+      { clientId: "cliente1", goal: "Abre https://example.com", agentKind: "ACCOUNTING", fetchImpl: fetchMock as typeof fetch },
       { store },
     );
     expect(queued.ok).toBe(true);
     if (!queued.ok) return;
     expect(queued.calledAgent).toBe(false);
-    expect(queued.task.status).toBe("QUEUED");
+    expect(queued.task.status).toBe("FAILED");
+    expect(queued.task.result).toMatch(/token global/);
 
     const pending = await enqueueComputerTask(
-      { clientId: "cliente1", goal: "Paga la cuenta del proveedor", agentUrl: "http://127.0.0.1:8787", fetchImpl: fetchMock as typeof fetch },
+      { clientId: "cliente1", goal: "Paga la cuenta del proveedor", agentKind: "ACCOUNTING", lease, fetchImpl: fetchMock as typeof fetch },
       { store },
     );
     expect(pending.ok).toBe(true);
     if (!pending.ok) return;
     expect(pending.task.status).toBe("PENDING_APPROVAL");
     expect(fetchMock).not.toHaveBeenCalled();
+    delete process.env.COMPUTER_AGENT_URL;
+    delete process.env.COMPUTER_AGENT_TOKEN;
 
     const approved = await decideSensitiveTask(store, { clientId: "cliente1", taskId: pending.task.id, decision: "APPROVED" });
     expect(approved.ok).toBe(true);
@@ -69,7 +85,8 @@ describe("piloto del computador", () => {
       {
         clientId: "cliente1",
         goal: "Revisa el F29 en el SII",
-        agentUrl: "http://agente.internal:8787/",
+        agentKind: "ACCOUNTING",
+        lease,
         fetchImpl: fetchMock as typeof fetch,
         agentPayload: {
           credentials: [{ id: "cred12345678", label: "Clave SII", portal: "SII", usernameHint: "9988" }],
@@ -88,7 +105,8 @@ describe("piloto del computador", () => {
       {
         clientId: "cliente1",
         goal: "Presenta el F29 de octubre",
-        agentUrl: "http://agente.internal:8787/",
+        agentKind: "ACCOUNTING",
+        lease,
         fetchImpl: fetchMock as typeof fetch,
       },
       { store: memoryStore() },
@@ -108,7 +126,8 @@ describe("piloto del computador", () => {
       {
         clientId: "cliente1",
         goal: "Presenta la declaración de renta en el SII",
-        agentUrl: "http://agente.internal:8787/",
+        agentKind: "ACCOUNTING",
+        lease,
         fetchImpl: fetchMock as typeof fetch,
       },
       { store: memoryStore() },
@@ -127,7 +146,8 @@ describe("piloto del computador", () => {
       {
         clientId: "cliente1",
         goal: "Entra al SII con mi clave",
-        agentUrl: "http://agente.internal:8787/",
+        agentKind: "ACCOUNTING",
+        lease,
         fetchImpl: fetchMock as typeof fetch,
         agentPayload: {
           credentials: [{ id: "cred12345678", label: "SII", portal: "SII", usernameHint: "9988" }],
@@ -149,10 +169,11 @@ describe("piloto del computador", () => {
     expect(JSON.stringify(result)).not.toContain("grant-de-prueba-que-no-es-la-clave");
   });
 
-  test("con URL encola y llama a /task", async () => {
+  test("el arriendo firma agentKind, la máquina y la época, y el token global no viaja", async () => {
+    process.env.COMPUTER_AGENT_TOKEN = "token-global";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "DONE", result: "Example cargó." }), { status: 200 }));
     const result = await enqueueComputerTask(
-      { clientId: "cliente1", goal: "Abre https://example.com", agentUrl: "http://agente.internal:8787/", fetchImpl: fetchMock as typeof fetch },
+      { clientId: "cliente1", goal: "Abre https://example.com", agentKind: "MARKETING", lease, fetchImpl: fetchMock as typeof fetch },
       { store: memoryStore() },
     );
     expect(result.ok).toBe(true);
@@ -161,8 +182,31 @@ describe("piloto del computador", () => {
     expect(result.task.status).toBe("DONE");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("http://agente.internal:8787/task");
-    expect(JSON.parse(String(init.body))).toEqual({ goal: "Abre https://example.com" });
+    expect(url).toBe("https://example.com/task");
+    const body = JSON.parse(String(init.body)) as { goal: string; agentKind: string; machineId: string; epoch: number };
+    expect(body).toMatchObject({ goal: "Abre https://example.com", agentKind: "MARKETING", machineId: "machine-1", epoch: 4 });
+    const headers = init.headers as Record<string, string>;
+    expect(JSON.stringify(headers)).not.toContain("token-global");
+    expect(headers["x-iabot-signature"]).toBe(
+      signRequest({
+        token: lease.token,
+        method: "POST",
+        path: "/task",
+        body: String(init.body),
+        host: "example.com",
+        timestamp: headers["x-iabot-timestamp"],
+        nonce: headers["x-iabot-nonce"],
+      })["x-iabot-signature"],
+    );
+    const action = readFileSync("src/app/actions/computer.ts", "utf8");
+    const route = readFileSync("src/app/api/computer/task/route.ts", "utf8");
+    const page = readFileSync("src/app/panel/computador/page.tsx", "utf8");
+    expect(action).not.toContain("COMPUTER_AGENT_TOKEN");
+    expect(action).not.toContain("COMPUTER_AGENT_URL");
+    expect(route).not.toContain("COMPUTER_AGENT_TOKEN");
+    expect(route).not.toContain("COMPUTER_AGENT_URL");
+    expect(page).toContain('name="agentKind"');
+    delete process.env.COMPUTER_AGENT_TOKEN;
   });
 
   test("el token de noVNC dura 10 minutos y no se guarda en claro", () => {

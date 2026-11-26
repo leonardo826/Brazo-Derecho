@@ -1,4 +1,5 @@
 import { formatClp } from "@/lib/format";
+import { heuristicMemoryJson } from "@/lib/memory/heuristic";
 import type { XaiClient, XaiRequest, XaiResponse, XaiTask } from "@/lib/xai/types";
 
 let sequence = 0;
@@ -39,6 +40,8 @@ export function renderMockTask(task: XaiTask) {
       const files = names.length ? ` Revisé el nombre del archivo: ${names.join(", ")}.` : "";
       return `Ejemplo simulado. No verifica una norma ni una fecha. Respuesta de prueba para: ${question}${files}`;
     }
+    case "memory_extract":
+      return heuristicMemoryJson(task.turn);
     default: {
       const never: never = task;
       return never;

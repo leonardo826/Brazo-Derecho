@@ -1,4 +1,5 @@
 import { AgentChat } from "@/components/agent-chat";
+import { AgentMemory } from "@/components/agent-memory";
 import { Flash } from "@/components/flash";
 import { SubscribeActions } from "@/components/trial-button";
 import { agentIsOpen } from "@/lib/agent-access";
@@ -72,6 +73,7 @@ export default async function ContadorPage({
         )}
       </header>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      <AgentMemory organizationId={session.organizationId} agent="ACCOUNTING" />
       {migration ? (
         <p className="banner error" role="alert">
           Falta la migración del chat. En local corre <code>npx prisma migrate deploy</code>.

@@ -12,7 +12,7 @@ El chat y el arriendo no eligen proveedor. Un escritorio especializado entra si 
 
 ## Lo que el proveedor debe ofrecer
 
-HTTPS alcanzable desde la app. Cada request va firmada con HMAC del token (método, ruta, cuerpo, timestamp, nonce y host). El token no viaja. `POST /handshake` incluye el host en la prueba y el agente lo compara con `MACHINE_AGENT_DOMAIN`. `POST /task`, `POST /task/cancel` y `POST /action` exigen la época. `/action` solo corre si esa tarea sigue viva. Sin firma, 401. Con otra máquina, 403. Época distinta o vacía, 409. El alta exige la prueba y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen.
+HTTPS alcanzable desde la app. Cada request va firmada con HMAC del token (método, ruta, cuerpo, timestamp, nonce y host). El cuerpo de `POST /task` incluye `agentKind`. El token no viaja. `POST /handshake` incluye el host en la prueba y el agente lo compara con `MACHINE_AGENT_DOMAIN`. `POST /task`, `POST /task/cancel` y `POST /action` exigen la época. `/action` solo corre si esa tarea sigue viva. Sin firma, 401. Con otra máquina, 403. Época distinta o vacía, 409. Un `agentKind` fuera de Contador, Marketing y WhatsApp, 400. El alta exige la prueba y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen. La máquina es de la empresa: los tres agentes comparten ese computador y cada uno abre su propio perfil.
 
 ## Encendido
 

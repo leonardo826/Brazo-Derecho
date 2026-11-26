@@ -2,6 +2,8 @@ import { Prisma } from "@/generated/prisma/client";
 import { withAssistantDisclosure } from "@/lib/agents/whatsapp";
 import { decideWhatsappReply } from "@/lib/agents/whatsapp";
 import { instructionsFor, modelFor } from "@/lib/catalog";
+import { scheduleAfterResponse } from "@/lib/memory/schedule";
+import { memoryPrompt, rememberTurn } from "@/lib/memory/service";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
 import { agentIsOpen } from "@/lib/agent-access";
@@ -42,6 +44,15 @@ export async function runWhatsappTurn(input: {
     where: { conversationId: input.conversationId, role: "AGENT", createdAt: { gte: since } },
   });
 
+  const memory = await memoryPrompt({
+    organizationId: input.organizationId,
+    agent: "WHATSAPP",
+    query: input.question,
+  });
+  const instructions = memory
+    ? `${instructionsFor("WHATSAPP", input.organizationName)}\n\n${memory}`
+    : instructionsFor("WHATSAPP", input.organizationName);
+
   let response;
   let text = "";
   let reservationId: string | null = null;
@@ -59,7 +70,7 @@ export async function runWhatsappTurn(input: {
       call: () =>
         createXaiClient().respond({
           model: modelFor("WHATSAPP"),
-          instructions: instructionsFor("WHATSAPP", input.organizationName),
+          instructions,
           task,
           usage: USAGE_PRESETS.whatsapp,
           businessName: input.organizationName,
@@ -123,6 +134,17 @@ export async function runWhatsappTurn(input: {
       return { ok: false as const, reason: "limite" as const };
     }
     slotOpen = false;
+    const assistantText = text;
+    scheduleAfterResponse(() =>
+      rememberTurn({
+        organizationId: input.organizationId,
+        agent: "WHATSAPP",
+        audience: "customer",
+        sourceConversationId: input.conversationId,
+        userText: "",
+        assistantText,
+      }),
+    );
   } catch (error) {
     await releaseSlot();
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

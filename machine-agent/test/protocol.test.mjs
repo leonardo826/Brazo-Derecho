@@ -53,7 +53,7 @@ test("sin época o con la época equivocada no hay acción", async () => {
   const gate = new Promise((resolve) => {
     release = resolve;
   });
-  const openBody = { goal: "Abre https://example.com", machineId, taskId, epoch: 1 };
+  const openBody = { goal: "Abre https://example.com", machineId, taskId, epoch: 1, agentKind: "ACCOUNTING" };
   const openSigned = signed("POST", "/task", openBody);
   const pending = handleMachine(
     { method: "POST", path: "/task", body: openBody, rawBody: openSigned.raw, headers: openSigned.headers },
@@ -112,7 +112,7 @@ test("el apretón exige firma y el token anterior sigue valiendo en la transici�
   assert.equal(proof.status, undefined);
 
   const previous = "lease-token-anterior";
-  const oldBody = { goal: "Abre https://example.com", machineId, taskId: "task-machine-04", epoch: 1 };
+  const oldBody = { goal: "Abre https://example.com", machineId, taskId: "task-machine-04", epoch: 1, agentKind: "ACCOUNTING" };
   const oldWire = signed("POST", "/task", oldBody, previous);
   const accepted = await handleMachine(
     { method: "POST", path: "/task", body: oldBody, rawBody: oldWire.raw, headers: oldWire.headers },
@@ -149,7 +149,7 @@ test("cerrar chromium espera a que no haya una tarea", async () => {
     release = resolve;
   });
   const taskId = "task-close-0001";
-  const openBody = { goal: "Abre https://example.com", machineId, taskId, epoch: 1 };
+  const openBody = { goal: "Abre https://example.com", machineId, taskId, epoch: 1, agentKind: "ACCOUNTING" };
   const openSigned = signed("POST", "/task", openBody);
   const pending = handleMachine(
     { method: "POST", path: "/task", body: openBody, rawBody: openSigned.raw, headers: openSigned.headers },

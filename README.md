@@ -21,7 +21,7 @@ Con Docker, la base:
 docker compose up -d
 ```
 
-Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía está en `infra/desktop/README.md`.
+Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía local está en `infra/desktop/README.md`. Los tres VPS de Santiago son tres clientes de prueba (org A, org B y org C). Cada cliente tiene un computador compartido por Contador, Marketing y WhatsApp, con un perfil de navegador por agente. No es una organización por bot. El alta está en `docs/enroll-plan.md`.
 
 Sin Docker, crea la base y el usuario `brazo` / `brazo` sobre la base `brazo_derecho`.
 
@@ -55,10 +55,12 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `XAI_MODE` | `mock` obliga al simulador aunque exista clave. | Con clave, llama a xAI. |
 | `XAI_MODEL_ROUTINE` | Modelo de tareas habituales. `grok-4.3` o `grok-4.7`. | `grok-4.3`. |
 | `XAI_MODEL_COMPLEX` | Modelo de cotizaciones y marketing. `grok-4.3` o `grok-4.7`. | `grok-4.7`. |
+| `MEMORY_FEATURE_ENABLED` | `true` enciende leer e inyectar la memoria. Tras cada respuesta de un miembro, el modelo habitual anota datos durables y el turno siguiente los recibe como referencia, no como órdenes. WhatsApp no aprende del cliente final. No guarda claves, contraseñas, tarjetas, llaves ni instrucciones. | Apagada. No se guarda ni se inyecta. Si quedaron datos, el panel igual deja borrarlos. |
+| `MEMORY_HASH_KEY` | HMAC de cada hecho, base64 de 32 bytes. Vacío deriva la llave de `CREDENTIALS_MASTER_KEY`. Al borrar se vacían el texto y la conversación de origen; el HMAC queda para no volver a guardar ese dato. | Sin esta ni la llave de la bóveda, no se guardan hechos nuevos. |
 | `XAI_COMPUTER_MODEL` | Modelo del computador del agente. `grok-4.3` o `grok-4.7`. | `grok-4.3`. Con `XAI_MODE=mock` o sin `XAI_API_KEY` no llama a xAI. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En local se muestra. En producción queda oculto. |
-| `COMPUTER_AGENT_URL` | URL del agente del escritorio (`POST /task`). | La tarea queda en cola y no hay red. |
-| `CRON_SECRET` | Secreto del apagado por inactividad. GitHub Actions llama `GET /api/cron/computer-idle` con `Authorization: Bearer`. En el repo es un secret. La base es `vars.APP_URL` y, si no está, `https://brazo-derecho.vercel.app`. | El workflow termina sin llamar. No hay cron de Vercel. |
+| `COMPUTER_AGENT_URL` | Ya no elige el computador. El chat y el panel usan el arriendo de la empresa, firmado con el token de esa máquina. | Sin arriendo, la tarea no sale y no se usa un token global. |
+| `CRON_SECRET` | Secreto del apagado por inactividad. GitHub Actions llama `GET /api/cron/computer-idle` con `Authorization: Bearer`. En el repo es un secret. La base es `vars.APP_URL` y, si no está, `https://brazo-derecho.vercel.app`. | El workflow falla y no llama. No hay cron de Vercel. |
 | `FLY_API_TOKEN` | Token de Fly para el piloto. Solo por entorno. | El script de alta no llama a Fly. |
 | `FLY_DRY_RUN` | Tiene que ser exactamente `false`, con token y `--confirmo-gasto`, para crear máquina. | Dry-run: imprime el plan y no cobra. |
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
@@ -108,6 +110,7 @@ La primera vez que entras al panel aparece el recorrido **Prueba la demo**: cinc
 - Sesión propia: correo y contraseña, hash con bcrypt, JWT en una cookie `httpOnly`. Al registrarse hay que aceptar términos y aviso de privacidad; se guarda la fecha. Las novedades comerciales son opcionales.
 - Al entrar al panel se vuelve a comprobar que la persona pertenece a esa empresa.
 - xAI: `POST /v1/responses`. Sin clave, el simulador redacta a partir de la ficha, la lista o el perfil. Un rechazo de atención (descuento, cobro, asesoría, publicidad masiva) no llama al modelo.
+- Memoria (`MEMORY_FEATURE_ENABLED=true`): después de la respuesta de un miembro, el modelo habitual extrae datos durables y el turno siguiente los recibe en un bloque de referencia, con tope de tokens. WhatsApp no aprende del cliente final. No se guardan claves, contraseñas, tarjetas, llaves ni órdenes al modelo. La extracción corre después de la respuesta. Hay como máximo 4 extracciones por empresa cada 10 minutos: el conteo en memoria es de este proceso y el de la tabla `MemoryExtraction` vale entre instancias. En el panel, «Lo que el agente recuerda» lista los datos. Borrar vacía el texto y la conversación de origen, y deja el HMAC para no reaprender ese dato, aunque la memoria esté apagada.
 - Flow: planes mensuales `brazo-whatsapp`, `brazo-cotizador` y `brazo-marketing`, con 14 días de prueba la primera vez. El webhook `POST /api/flow/confirmacion` recibe el `token`, consulta el estado firmado y deja el agente activo o lo detiene. Sin claves, «Activar plan» abre `/panel/pago`, marcado como pago de prueba: confirmar deja el plan activo y cancelar deja la prueba como estaba.
 - Mercado Pago: segundo medio, en `/panel/pago` y `/panel/empezar`, con Flow marcado por defecto. Sin `MERCADOPAGO_ACCESS_TOKEN` usa el mismo pago de prueba. Con token, crea una preapproval y redirige a `init_point`. En modo prueba (el token empieza con `TEST-`), si `MERCADOPAGO_TEST_PAYER_EMAIL` está definido, ese correo reemplaza al de la sesión en `payer_email`. En producción no se usa. El webhook `POST /api/mercadopago/webhook` valida `x-signature` y consulta el estado en la API.
 - WhatsApp: `GET/POST /api/whatsapp`. El mensaje se enruta por `phone_number_id` a la empresa vinculada. Salud: `GET /api/health` revisa la base. El chequeo de uptime, con opciones gratis, está en `docs/MONITOREO.md`.
@@ -141,7 +144,7 @@ Acciones del servidor  -- filtran por empresa de la sesión
 6. Revisa `GET /api/health`. Responde `{ "ok": true, "base": "ok" }` cuando la base contesta. Las opciones gratis de uptime están en `docs/MONITOREO.md`.
 7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número y, si hace falta, suspéndela. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
 8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN`, `SENTRY_DSN` o `RESEND_API_KEY` el panel sigue en modo simulado y no sale ningún aviso externo. Los correos de la demo se leen en Administración.
-9. El apagado de computadores quietos no usa el cron de Vercel. `.github/workflows/computer-idle.yml` corre cada 5 minutos y también a mano. Llama a `GET /api/cron/computer-idle` con el secret `CRON_SECRET`. La URL sale de `vars.APP_URL` (para pasar después a `ia-bot.cl`); si esa variable no está, usa `https://brazo-derecho.vercel.app`. Sin el secret, el workflow no llama. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
+9. El apagado de computadores quietos no usa el cron de Vercel. `.github/workflows/computer-idle.yml` corre cada 5 minutos y también a mano. Llama a `GET /api/cron/computer-idle` con el secret `CRON_SECRET`. La URL sale de `vars.APP_URL` (para pasar después a `ia-bot.cl`); si esa variable no está, usa `https://brazo-derecho.vercel.app`. Sin el secret, el workflow falla. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
 
 ## Scripts
 

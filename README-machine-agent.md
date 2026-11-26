@@ -14,6 +14,10 @@ Cada request lleva `x-iabot-timestamp`, `x-iabot-nonce`, `x-iabot-host` y `x-iab
 
 Durante una rotación el VPS acepta `AGENT_RUNTIME_TOKEN` y `AGENT_RUNTIME_TOKEN_PREVIOUS`.
 
+`POST /task` lleva `agentKind` dentro del cuerpo firmado: `ACCOUNTING` (Contador), `MARKETING` o `WHATSAPP`. Otro valor, o un texto con `/` o `..`, responde 400 y no abre Chromium. La firma cubre ese campo porque cubre el hash del cuerpo. Cambiar el agente invalida la firma.
+
+Cada agente tiene su perfil en `/var/lib/iabot/profiles/<agentKind>`. `/var/lib/iabot` y `/var/lib/iabot/profiles` quedan de `root:iabot`, modo `0750`. Solo el directorio del agente es de `iabot`, modo `0700`. Las cookies quedan ahí. Contador, Marketing y WhatsApp de la misma empresa no comparten perfil. No hay una sesión de navegador única para la máquina: cada tarea abre el perfil de su agente y lo cierra al terminar. El mismo perfil corre de a una tarea. Si hay cinco esperando, la siguiente recibe 429. Si una espera más de 60 segundos, recibe 503. Los tres agentes pueden ir en paralelo.
+
 ## 1. Instalar en un Ubuntu 24.04 nuevo
 
 El nombre DNS, por ejemplo `vm.ejemplo.cl`, apunta a la IPv4 del VPS. Como root:
@@ -52,11 +56,13 @@ openssl rand -base64 32 > /root/iabot-token-new
 
 El certificado lo pide el instalador, no `certbot --nginx`. Primero deja nginx solo en el puerto 80 con `/.well-known/acme-challenge/`, pide el certificado por webroot y después habilita el 443 apuntando a `/etc/letsencrypt/live/<dominio>/`. Esos archivos son enlaces que Certbot renueva; un hook en `/etc/letsencrypt/renewal-hooks/deploy/iabot-nginx` recarga nginx. Si el certificado ya está en esa ruta, el instalador lo reutiliza y no pide otro.
 
-En los tres VPS ya instalados los certificados están en:
+En los tres VPS de Santiago ya instalados los certificados están en:
 
-- `/etc/letsencrypt/live/64-176-27-253.sslip.io/`
-- `/etc/letsencrypt/live/64-176-26-74.sslip.io/`
-- `/etc/letsencrypt/live/64-176-28-67.sslip.io/`
+- `/etc/letsencrypt/live/64-176-27-253.sslip.io/` — cliente de prueba org A
+- `/etc/letsencrypt/live/64-176-26-74.sslip.io/` — cliente de prueba org B
+- `/etc/letsencrypt/live/64-176-28-67.sslip.io/` — cliente de prueba org C
+
+Cada VPS es el computador de un cliente. En esa máquina conviven Contador, Marketing y WhatsApp, cada uno con su perfil. No es una organización por bot. El detalle está en `docs/enroll-plan.md`.
 
 `MACHINE_AGENT_DOMAIN` tiene que ser exactamente ese nombre.
 

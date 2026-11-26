@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { machineAgentKind, type MachineAgentKind } from "@/lib/computer/agent-kind";
 import { computerFeatureEnabled } from "@/lib/computer/flag";
 import { COMPUTER_WARMING_MESSAGE } from "@/lib/computer/power-copy";
 import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
@@ -199,6 +200,7 @@ export async function executeDesktopRequest(input: {
   organizationId: string;
   userId: string;
   conversationId: string;
+  agentKind: MachineAgentKind;
   text: string;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -231,6 +233,7 @@ export async function executeDesktopRequest(input: {
   if (plan.kind === "chat") return finish("chat", false);
   if (plan.kind === "ask") return finish("ask", false, plan.text);
   if (plan.kind === "confirm") return finish("confirm", false);
+  if (!machineAgentKind(input.agentKind)) return finish("datos", false, FAILED);
   if (input.signal?.aborted) return finish("cancel", false, CANCELLED);
 
   const looked = await readLease(input.loadLease, input.organizationId);
@@ -306,7 +309,13 @@ export async function executeDesktopRequest(input: {
     taskOpen = await holdTask(input);
     if (!taskOpen) return finish("encendiendo", false, COMPUTER_WARMING_MESSAGE);
     timer = setTimeout(() => stop("timeout"), input.timeoutMs ?? 20_000);
-    const taskBody = JSON.stringify({ goal, machineId: lease.machineId, taskId, epoch: lease.epoch });
+    const taskBody = JSON.stringify({
+      goal,
+      machineId: lease.machineId,
+      taskId,
+      epoch: lease.epoch,
+      agentKind: input.agentKind,
+    });
     const response = await callMachine({
       origin: lease.baseUrl,
       pin: lease.pin,

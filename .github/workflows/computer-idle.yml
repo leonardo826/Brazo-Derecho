@@ -20,7 +20,7 @@ jobs:
         run: |
           if [ -z "${CRON_SECRET}" ]; then
             echo "Falta CRON_SECRET. No llamo al cron."
-            exit 0
+            exit 1
           fi
           base="${APP_URL:-https://brazo-derecho.vercel.app}"
           base="${base%/}"
