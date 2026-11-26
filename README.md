@@ -57,7 +57,7 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `XAI_MODEL_COMPLEX` | Modelo de cotizaciones y marketing. `grok-4.3` o `grok-4.7`. | `grok-4.7`. |
 | `XAI_COMPUTER_MODEL` | Modelo del computador del agente. `grok-4.3` o `grok-4.7`. | `grok-4.3`. Con `XAI_MODE=mock` o sin `XAI_API_KEY` no llama a xAI. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En local se muestra. En producción queda oculto. |
-| `COMPUTER_AGENT_URL` | URL del agente del escritorio (`POST /task`). | La tarea queda en cola y no hay red. |
+| `COMPUTER_AGENT_URL` | Ya no elige el computador. El chat y el panel usan el arriendo de la empresa, firmado con el token de esa máquina. | Sin arriendo, la tarea no sale y no se usa un token global. |
 | `FLY_API_TOKEN` | Token de Fly para el piloto. Solo por entorno. | El script de alta no llama a Fly. |
 | `FLY_DRY_RUN` | Tiene que ser exactamente `false`, con token y `--confirmo-gasto`, para crear máquina. | Dry-run: imprime el plan y no cobra. |
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |

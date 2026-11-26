@@ -4,7 +4,7 @@ Una empresa tiene un computador. El arriendo sigue siendo una fila por `organiza
 
 `/var/lib/iabot/profiles/<agentKind>`
 
-`agentKind` solo puede ser `ACCOUNTING`, `MARKETING` o `WHATSAPP`. El directorio queda de `iabot`, modo `0700`. Las cookies y los inicios de sesión de un agente no están en el perfil de otro. No hay una sesión de navegador única para toda la máquina.
+`agentKind` solo puede ser `ACCOUNTING`, `MARKETING` o `WHATSAPP`. `/var/lib/iabot` y `profiles` son de `root:iabot` en modo `0750`. El directorio de cada agente es de `iabot`, modo `0700`. El instalador los crea. Un enlace en esa ruta no abre Chromium. Las cookies y los inicios de sesión de un agente no están en el perfil de otro. No hay una sesión de navegador única para toda la máquina.
 
 La petición `POST /task` lleva `agentKind` en el cuerpo. Ese cuerpo entra en la firma HMAC. La máquina no abre Chromium si el valor no está en la lista.
 

@@ -14,7 +14,7 @@ Durante una rotación el VPS acepta `AGENT_RUNTIME_TOKEN` y `AGENT_RUNTIME_TOKEN
 
 `POST /task` lleva `agentKind` dentro del cuerpo firmado: `ACCOUNTING` (Contador), `MARKETING` o `WHATSAPP`. Otro valor, o un texto con `/` o `..`, responde 400 y no abre Chromium. La firma cubre ese campo porque cubre el hash del cuerpo. Cambiar el agente invalida la firma.
 
-Cada agente tiene su perfil en `/var/lib/iabot/profiles/<agentKind>`, modo `0700`, dueño `iabot`. Las cookies quedan en ese directorio. Contador, Marketing y WhatsApp de la misma empresa no comparten perfil. No hay una sesión de navegador única para la máquina: cada tarea abre el perfil de su agente y lo cierra al terminar. El mismo perfil corre de a una tarea. Los tres agentes pueden ir en paralelo.
+Cada agente tiene su perfil en `/var/lib/iabot/profiles/<agentKind>`. `/var/lib/iabot` y `/var/lib/iabot/profiles` quedan de `root:iabot`, modo `0750`. Solo el directorio del agente es de `iabot`, modo `0700`. Las cookies quedan ahí. Contador, Marketing y WhatsApp de la misma empresa no comparten perfil. No hay una sesión de navegador única para la máquina: cada tarea abre el perfil de su agente y lo cierra al terminar. El mismo perfil corre de a una tarea. Si hay cinco esperando, la siguiente recibe 429. Si una espera más de 60 segundos, recibe 503. Los tres agentes pueden ir en paralelo.
 
 ## 1. Instalar en un Ubuntu 24.04 nuevo
 

@@ -226,7 +226,9 @@ export async function handleMachine(request, deps) {
         result: `${title} ${hostname}`.slice(0, 2000),
         steps: [{ kind: "action", action: { type: "goto", url } }],
       });
-    } catch {
+    } catch (error) {
+      const busy = error && typeof error === "object" ? Number(error.status) : 0;
+      if (busy === 429 || busy === 503) return json(busy, { ok: false, error: "ocupado" });
       const cancelled = controller.signal.aborted;
       return json(200, {
         ok: false,
