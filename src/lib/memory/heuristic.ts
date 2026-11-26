@@ -1,4 +1,4 @@
-import { containsBlockedSecret } from "@/lib/memory/filter";
+import { rejectMemoryFact } from "@/lib/memory/filter";
 import type { FactCandidate } from "@/lib/memory/facts";
 import { cleanFactText } from "@/lib/memory/facts";
 import { formatRut, isValidRut } from "@/lib/rut";
@@ -41,7 +41,7 @@ export function heuristicFacts(turn: string): FactCandidate[] {
   if (preference) facts.push({ text: `La preferencia es ${preference}.`, scope: "agente" });
   return facts
     .map((fact) => ({ ...fact, text: cleanFactText(fact.text) }))
-    .filter((fact) => fact.text.length >= 8 && !containsBlockedSecret(fact.text))
+    .filter((fact) => fact.text.length >= 8 && !rejectMemoryFact(fact.text))
     .slice(0, 6);
 }
 

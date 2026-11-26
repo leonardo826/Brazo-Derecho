@@ -3,6 +3,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { missingTable } from "@/lib/chat/store";
 import { formatWhen } from "@/lib/format";
 import { memoryFeatureEnabled } from "@/lib/memory/flag";
+import { memoryPanelVisible } from "@/lib/memory/policy";
 import { listMemoryForAgent, type MemoryListItem } from "@/lib/memory/service";
 import type { AgentKind } from "@/lib/prisma";
 
@@ -10,11 +11,13 @@ export function AgentMemoryPanel({
   agent,
   facts,
   expanded,
+  enabled = true,
   missing = false,
 }: {
   agent: AgentKind;
   facts: MemoryListItem[];
   expanded: boolean;
+  enabled?: boolean;
   missing?: boolean;
 }) {
   return (
@@ -24,16 +27,18 @@ export function AgentMemoryPanel({
         {facts.length > 0 ? ` (${facts.length})` : ""}
       </summary>
       <p className="muted">
-        Datos de tu empresa que este agente guarda para las próximas conversaciones. No guardamos claves, contraseñas,
-        números de tarjeta ni llaves. Si borras un dato, se elimina de verdad: el texto sale de la base y el agente deja
-        de usarlo. Puedes pedir lo mismo por la Ley 19.628 y la Ley 21.719.
+        {enabled
+          ? "Datos de tu empresa que este agente guarda para las próximas conversaciones. No guardamos claves, contraseñas, números de tarjeta ni llaves."
+          : "La memoria está apagada y no se anotan datos nuevos. Esto quedó de antes."}{" "}
+        Si borras un dato, se elimina de verdad: el texto sale de la base y el agente deja de usarlo. Puedes pedir lo
+        mismo por la Ley 19.628 y la Ley 21.719.
       </p>
       {missing ? (
         <p className="banner error" role="alert">
           Falta la migración de la memoria. En local corre <code>npx prisma migrate deploy</code>.
         </p>
       ) : null}
-      {!missing && facts.length === 0 ? (
+      {!missing && enabled && facts.length === 0 ? (
         <p>Todavía no hay datos guardados. El agente anota el nombre, el RUT, el rubro, los productos, las preferencias y el tono.</p>
       ) : null}
       {facts.length > 0 ? (
@@ -73,14 +78,26 @@ export function AgentMemoryPanel({
 }
 
 export async function AgentMemory({ organizationId, agent }: { organizationId: string; agent: AgentKind }) {
-  if (!memoryFeatureEnabled()) return null;
+  const enabled = memoryFeatureEnabled();
   let facts: MemoryListItem[] = [];
   let missing = false;
   try {
     facts = await listMemoryForAgent(organizationId, agent);
   } catch (error) {
-    if (!missingTable(error)) throw error;
+    if (!missingTable(error)) {
+      if (!enabled) return null;
+      throw error;
+    }
     missing = true;
   }
-  return <AgentMemoryPanel agent={agent} facts={facts} expanded={agent !== "ACCOUNTING"} missing={missing} />;
+  if (!memoryPanelVisible(enabled, facts.length, missing)) return null;
+  return (
+    <AgentMemoryPanel
+      agent={agent}
+      facts={facts}
+      expanded={agent !== "ACCOUNTING"}
+      enabled={enabled}
+      missing={missing}
+    />
+  );
 }

@@ -2,7 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { assertOwnOrganizationActive, guardMutation, withNotice } from "@/lib/guard";
-import { memoryFeatureEnabled } from "@/lib/memory/flag";
 import { eraseAgentMemory, eraseMemoryFact } from "@/lib/memory/service";
 import type { AgentKind } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
@@ -29,7 +28,7 @@ export async function forgetMemoryAction(formData: FormData) {
   const agent = parseAgent(formData.get("agente"));
   const back = backPath(agent);
   await guardMutation(formData, back);
-  if (!agent || !memoryFeatureEnabled()) redirect(withNotice(back, "error", "datos"));
+  if (!agent) redirect(withNotice(back, "error", "datos"));
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, back);
   const parsedId = recordIdSchema.safeParse(formData.get("id"));
@@ -42,7 +41,7 @@ export async function forgetAllMemoryAction(formData: FormData) {
   const agent = parseAgent(formData.get("agente"));
   const back = backPath(agent);
   await guardMutation(formData, back);
-  if (!agent || !memoryFeatureEnabled()) redirect(withNotice(back, "error", "datos"));
+  if (!agent) redirect(withNotice(back, "error", "datos"));
   const session = await requireSession();
   await assertOwnOrganizationActive(session.organizationId, back);
   await eraseAgentMemory(session.organizationId, agent);

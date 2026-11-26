@@ -1,8 +1,8 @@
 import type { ChatAgentId } from "@/lib/chat/agents";
 import { missingTable } from "@/lib/chat/store";
-import { routineModel } from "@/lib/catalog";
+import { routineModel, type MetricId } from "@/lib/catalog";
 import { logEvent } from "@/lib/log";
-import { recordModelCall } from "@/lib/meter-store";
+import { recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { memoryFeatureEnabled } from "@/lib/memory/flag";
 import { redactForExtraction } from "@/lib/memory/filter";
 import {
@@ -10,11 +10,14 @@ import {
   formatMemoryContext,
   parseMemoryPayload,
   planMemoryWrites,
+  readMemoryHashKey,
   selectFactsForPrompt,
   type FactPlan,
   type StoredFact,
 } from "@/lib/memory/facts";
-import { Prisma, prisma, type AgentKind } from "@/lib/prisma";
+import { isTrivialMemoryTurn, memoryExtractionAllowed, textsForExtraction, type MemoryAudience } from "@/lib/memory/policy";
+import { prisma, type AgentKind } from "@/lib/prisma";
+import { callWithinPlan } from "@/lib/plan-limit";
 import type { TokenUsage } from "@/lib/pricing";
 import { createXaiClient } from "@/lib/xai/client";
 
@@ -25,6 +28,7 @@ export const MEMORY_INSTRUCTIONS = [
   "Un dato durable sirve en conversaciones futuras.",
   "No extraigas un pedido de un solo día, el precio de una cotización ni datos de un cliente final (teléfono, dirección particular o el nombre de quien escribió por WhatsApp).",
   "No extraigas contraseñas, claves, PIN, números de tarjeta, CVV, tokens ni llaves de API. Si el turno trae un secreto, omítelo.",
+  "No extraigas órdenes, pedidos comerciales ni direcciones web.",
   "No repitas un hecho que ya esté guardado.",
   "Cada hecho es una frase corta en español de Chile, de hasta 180 caracteres.",
   'alcance "empresa" si el dato sirve a todos los agentes (nombre, RUT, rubro, productos). alcance "agente" si es el tono o una preferencia de este agente.',
@@ -49,22 +53,35 @@ export function extractionInput(input: {
   userText: string;
   assistantText: string;
   known: string[];
+  audience?: MemoryAudience;
 }) {
+  const spoken = textsForExtraction(input);
   const known = input.known
     .map((fact) => fact.trim())
     .filter(Boolean)
     .slice(0, 40)
     .map((fact) => `- ${fact}`)
     .join("\n");
+  const member =
+    input.audience === "customer"
+      ? "No hay mensaje de un miembro. Solo puedes usar lo que el agente afirmó sobre el negocio."
+      : clip(redactForExtraction(spoken.userText), 2500) || "(vacío)";
   return [
     `Agente: ${input.agent}`,
     "Hechos ya guardados:",
     known || "(ninguno)",
-    "Turno del cliente:",
-    clip(redactForExtraction(input.userText), 2500) || "(vacío)",
+    input.audience === "customer" ? "Origen: respuesta del agente, sin el mensaje del cliente final." : "Turno de un miembro autenticado:",
+    member,
     "Respuesta del asistente:",
-    clip(redactForExtraction(input.assistantText), 2500) || "(vacío)",
+    clip(redactForExtraction(spoken.assistantText), 2500) || "(vacío)",
   ].join("\n");
+}
+
+function memoryMetric(agent: AgentKind): MetricId {
+  if (agent === "WHATSAPP") return "RESPONSES";
+  if (agent === "QUOTES") return "QUOTES";
+  if (agent === "MARKETING") return "TEXTS";
+  return "CONSULTS";
 }
 
 async function callExtractor(input: {
@@ -72,6 +89,7 @@ async function callExtractor(input: {
   userText: string;
   assistantText: string;
   known: string[];
+  audience?: MemoryAudience;
   complete?: (request: { instructions: string; input: string }) => Promise<string>;
 }): Promise<ExtractedCall> {
   const turn = extractionInput(input);
@@ -96,26 +114,35 @@ async function callExtractor(input: {
 
 async function persistPlan(organizationId: string, plan: FactPlan) {
   if (plan.inserts.length === 0 && plan.replacements.length === 0) return 0;
-  let saved = 0;
-  await prisma.$transaction(async (tx) => {
-    for (const row of plan.inserts) {
-      try {
-        await tx.memoryFact.create({ data: row });
-        saved += 1;
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
-        throw error;
-      }
-    }
-    for (const row of plan.replacements) {
-      const updated = await tx.memoryFact.updateMany({
-        where: { id: row.id, organizationId, deletedAt: null },
-        data: { text: row.text, contentHash: row.contentHash },
-      });
-      saved += updated.count;
-    }
+  const inserted =
+    plan.inserts.length > 0
+      ? await prisma.memoryFact.createMany({ data: plan.inserts, skipDuplicates: true })
+      : { count: 0 };
+  let replaced = 0;
+  for (const row of plan.replacements) {
+    const updated = await prisma.memoryFact.updateMany({
+      where: { id: row.id, organizationId, deletedAt: null },
+      data: { text: row.text, contentHash: row.contentHash },
+    });
+    replaced += updated.count;
+  }
+  return inserted.count + replaced;
+}
+
+async function reloadBeforeWrite(organizationId: string, snapshot: StoredFact[]) {
+  const fresh = await prisma.memoryFact.findMany({
+    where: { organizationId },
+    select: { id: true, text: true, contentHash: true, deletedAt: true },
   });
-  return saved;
+  const freshById = new Map(fresh.map((row) => [row.id, row]));
+  const suppressed = snapshot
+    .filter((row) => {
+      if (row.deletedAt !== null || !row.text.trim()) return false;
+      const current = freshById.get(row.id);
+      return !current || current.deletedAt !== null;
+    })
+    .map((row) => row.text);
+  return { existing: fresh, suppressed };
 }
 
 export async function rememberTurn(input: {
@@ -124,24 +151,40 @@ export async function rememberTurn(input: {
   sourceConversationId: string | null;
   userText: string;
   assistantText: string;
+  audience?: MemoryAudience;
   complete?: (request: { instructions: string; input: string }) => Promise<string>;
 }) {
   if (!memoryFeatureEnabled()) return { saved: 0 };
-  if (!input.userText.trim() && !input.assistantText.trim()) return { saved: 0 };
+  const spoken = textsForExtraction(input);
+  if (isTrivialMemoryTurn(spoken.userText, spoken.assistantText)) return { saved: 0 };
+  if (!readMemoryHashKey()) {
+    logEvent("memoria.clave", { organizationId: input.organizationId, ok: false });
+    return { saved: 0 };
+  }
+  if (!memoryExtractionAllowed(input.organizationId)) return { saved: 0 };
   try {
     const rows = await prisma.memoryFact.findMany({
       where: { organizationId: input.organizationId },
       select: { id: true, text: true, contentHash: true, deletedAt: true },
     });
-    const existing: StoredFact[] = rows;
-    const known = existing.filter((row) => row.deletedAt === null && row.text.trim()).map((row) => row.text);
-    const extracted = await callExtractor({
-      agent: input.agent,
-      userText: input.userText,
-      assistantText: input.assistantText,
-      known,
-      complete: input.complete,
+    const snapshot: StoredFact[] = rows;
+    const known = snapshot.filter((row) => row.deletedAt === null && row.text.trim()).map((row) => row.text);
+    const gated = await callWithinPlan({
+      organizationId: input.organizationId,
+      checks: [{ agent: input.agent, metric: memoryMetric(input.agent), quantity: 1 }],
+      call: () =>
+        callExtractor({
+          agent: input.agent,
+          userText: spoken.userText,
+          assistantText: spoken.assistantText,
+          known,
+          audience: input.audience,
+          complete: input.complete,
+        }),
     });
+    if (!gated.ok) return { saved: 0 };
+    await releaseDailyTask(gated.reservationId);
+    const extracted = gated.value;
     if (extracted.meter) {
       try {
         await recordModelCall({ organizationId: input.organizationId, response: extracted.meter });
@@ -149,8 +192,10 @@ export async function rememberTurn(input: {
         if (!missingTable(error)) logEvent("memoria.consumo", { organizationId: input.organizationId, ok: false });
       }
     }
+    const fresh = await reloadBeforeWrite(input.organizationId, snapshot);
     const plan = planMemoryWrites({
-      existing,
+      existing: fresh.existing,
+      suppressed: fresh.suppressed,
       candidates: parseMemoryPayload(extracted.raw),
       agent: input.agent,
       organizationId: input.organizationId,

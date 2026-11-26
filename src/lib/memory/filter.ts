@@ -47,6 +47,30 @@ export function containsBlockedSecret(text: string) {
   return carriesSuspectedSecret(text) || containsPaymentCard(text) || containsAccessKey(text);
 }
 
+const INSTRUCTION = [
+  /\bignor(?:a|ar|en|e)\b/i,
+  /\binstruccion(?:es)?\b/i,
+  /\bsistema\b/i,
+  /\bsiempre responde\b/i,
+  /\bdescuento\b/i,
+  /\bregal(?:a|ar|o|amos|en)\b/i,
+  /https?:\/\//i,
+  /\bwww\./i,
+];
+
+/** Una orden disfrazada de dato no se guarda ni se inyecta. */
+export function looksLikeInstruction(text: string) {
+  const plain = text.normalize("NFD").replace(/\p{M}/gu, "");
+  return INSTRUCTION.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(plain);
+  });
+}
+
+export function rejectMemoryFact(text: string) {
+  return containsBlockedSecret(text) || looksLikeInstruction(text);
+}
+
 /** El modelo de extracción no recibe el secreto. El filtro de salida es la segunda barrera. */
 export function redactForExtraction(text: string) {
   if (carriesSuspectedSecret(text)) return "[omitido: el mensaje trae una clave]";

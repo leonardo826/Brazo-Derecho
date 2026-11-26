@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { AgentMemory, AgentMemoryPanel } from "@/components/agent-memory";
+import { AgentMemoryPanel } from "@/components/agent-memory";
+import { memoryPanelVisible } from "@/lib/memory/policy";
 
 describe("panel de memoria", () => {
   test("lista los datos y ofrece borrar uno y borrar todo", () => {
@@ -43,14 +44,26 @@ describe("panel de memoria", () => {
     expect(html).not.toContain("Borrar todo");
   });
 
-  test("apagada, la sección no se muestra", async () => {
-    const previous = process.env.MEMORY_FEATURE_ENABLED;
-    delete process.env.MEMORY_FEATURE_ENABLED;
-    try {
-      expect(await AgentMemory({ organizationId: "org-a", agent: "MARKETING" })).toBeNull();
-    } finally {
-      if (previous === undefined) delete process.env.MEMORY_FEATURE_ENABLED;
-      else process.env.MEMORY_FEATURE_ENABLED = previous;
-    }
+  test("apagada, igual se puede borrar lo que quedó", () => {
+    expect(memoryPanelVisible(false, 0)).toBe(false);
+    expect(memoryPanelVisible(false, 1)).toBe(true);
+    const html = renderToStaticMarkup(
+      createElement(AgentMemoryPanel, {
+        agent: "MARKETING",
+        expanded: true,
+        enabled: false,
+        facts: [
+          {
+            id: "fact-9",
+            text: "El rubro es cafetería.",
+            scope: "empresa",
+            createdAt: new Date("2026-11-26T15:00:00Z"),
+          },
+        ],
+      }),
+    );
+    expect(html).toContain("La memoria está apagada");
+    expect(html).toContain("Borrar: El rubro es cafetería.");
+    expect(html).toContain("Borrar todo");
   });
 });

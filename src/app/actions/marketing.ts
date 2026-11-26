@@ -5,6 +5,7 @@ import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { channelFor, draftImageSvg, toMarketingRecord } from "@/lib/agents/marketing";
 import { instructionsFor, limitFor, modelFor, routineModel } from "@/lib/catalog";
+import { scheduleAfterResponse } from "@/lib/memory/schedule";
 import { memoryPrompt, rememberTurn } from "@/lib/memory/service";
 import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
@@ -206,12 +207,15 @@ export async function generatePostsAction(formData: FormData) {
     await releaseHeld();
     redirect("/panel/marketing?error=limite");
   }
-  await rememberTurn({
-    organizationId: session.organizationId,
-    agent: "MARKETING",
-    sourceConversationId: null,
-    userText: `Voz: ${profile.voice}. Público: ${profile.audience}. Resumen: ${profile.summary}`,
-    assistantText: drafts.map((draft) => draft.copy).join("\n\n"),
-  });
+  scheduleAfterResponse(() =>
+    rememberTurn({
+      organizationId: session.organizationId,
+      agent: "MARKETING",
+      audience: "member",
+      sourceConversationId: null,
+      userText: `Voz: ${profile.voice}. Público: ${profile.audience}. Resumen: ${profile.summary}`,
+      assistantText: drafts.map((draft) => draft.copy).join("\n\n"),
+    }),
+  );
   redirect("/panel/marketing?ok=borradores");
 }

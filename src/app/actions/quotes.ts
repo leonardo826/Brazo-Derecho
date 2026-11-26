@@ -6,6 +6,7 @@ import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "@/lib/agents/quotes";
 import { instructionsFor, modelFor } from "@/lib/catalog";
+import { scheduleAfterResponse } from "@/lib/memory/schedule";
 import { memoryPrompt, rememberTurn } from "@/lib/memory/service";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
@@ -239,13 +240,16 @@ export async function createQuoteAction(formData: FormData) {
     await releaseQuoteSlot();
     redirect("/panel/cotizador?error=limite");
   }
-  await rememberTurn({
-    organizationId: session.organizationId,
-    agent: "QUOTES",
-    sourceConversationId: quoteId,
-    userText: `Cliente de la cotización: ${customerName}. Notas: ${notes}. Pedido: ${freeText}`,
-    assistantText: response.outputText,
-  });
+  scheduleAfterResponse(() =>
+    rememberTurn({
+      organizationId: session.organizationId,
+      agent: "QUOTES",
+      audience: "member",
+      sourceConversationId: quoteId,
+      userText: `Cliente de la cotización: ${customerName}. Notas: ${notes}. Pedido: ${freeText}`,
+      assistantText: response.outputText,
+    }),
+  );
   redirect(`/panel/cotizador/${quoteId}?ok=cotizacion`);
 }
 

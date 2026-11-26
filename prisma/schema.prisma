@@ -590,8 +590,8 @@ model AgentAttachment {
 }
 
 /// Dato durable de la empresa. agent null lo comparten todos los agentes.
-/// Al borrar, deletedAt queda puesto y text vacío: el dato personal ya no está.
-/// El hash se conserva para no volver a guardar lo que la persona eliminó.
+/// contentHash en una fila activa es un HMAC (MEMORY_HASH_KEY, o un derivado de CREDENTIALS_MASTER_KEY).
+/// Al borrar: deletedAt, text vacío, contentHash vacío y sourceConversationId null.
 model MemoryFact {
   id                   String     @id @default(cuid())
   organizationId       String
