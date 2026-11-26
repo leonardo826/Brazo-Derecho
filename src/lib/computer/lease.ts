@@ -68,31 +68,41 @@ function blockedHost(host: string) {
   );
 }
 
-export async function endpointAllowed(raw: string, options: Options = {}) {
+export type EndpointVerdict =
+  | { ok: true; origin: string; pin: string }
+  | { ok: false; reason: "datos" | "dns" };
+
+export async function classifyEndpoint(raw: string, options: Options = {}): Promise<EndpointVerdict> {
   let url: URL;
   try {
     url = new URL(raw.trim());
   } catch {
-    return null;
+    return { ok: false, reason: "datos" };
   }
-  if (url.username || url.password) return null;
+  if (url.username || url.password) return { ok: false, reason: "datos" };
   const host = bareHost(url.hostname);
-  if (blockedHost(host)) return null;
+  if (blockedHost(host)) return { ok: false, reason: "datos" };
   if (host === "127.0.0.1") {
-    if (options.harness !== LOCAL_HARNESS || url.protocol !== "http:") return null;
-    return { origin: url.origin, pin: "127.0.0.1" };
+    if (options.harness !== LOCAL_HARNESS || url.protocol !== "http:") return { ok: false, reason: "datos" };
+    return { ok: true, origin: url.origin, pin: "127.0.0.1" };
   }
-  if (url.protocol !== "https:") return null;
-  if (isPrivateAddress(host)) return null;
+  if (url.protocol !== "https:") return { ok: false, reason: "datos" };
+  if (isPrivateAddress(host)) return { ok: false, reason: "datos" };
   try {
     const records = await (options.lookupImpl ?? ((hostname: string) => lookup(hostname, { all: true, verbatim: true })))(host);
-    if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) return null;
+    if (records.length === 0) return { ok: false, reason: "dns" };
+    if (records.some((record) => isPrivateAddress(record.address))) return { ok: false, reason: "datos" };
     const pin = records[0]?.address;
-    if (!pin || isPrivateAddress(pin)) return null;
-    return { origin: url.origin, pin };
+    if (!pin || isPrivateAddress(pin)) return { ok: false, reason: "datos" };
+    return { ok: true, origin: url.origin, pin };
   } catch {
-    return null;
+    return { ok: false, reason: "dns" };
   }
+}
+
+export async function endpointAllowed(raw: string, options: Options = {}) {
+  const verdict = await classifyEndpoint(raw, options);
+  return verdict.ok ? { origin: verdict.origin, pin: verdict.pin } : null;
 }
 
 async function manager(organizationId: string, actorUserId: string) {

@@ -33,6 +33,8 @@ function env(extra: Record<string, string> = {}) {
 
 function memory() {
   const rows = new Map<string, QaComputerRow>();
+  const qa = new Set<string>();
+  const marked: string[] = [];
   let inserts = 0;
   const store: QaEnrollStore = {
     async findByOrg(orgId) {
@@ -45,6 +47,10 @@ function memory() {
       }
       return null;
     },
+    async markQa(orgId) {
+      marked.push(orgId);
+      qa.add(orgId);
+    },
     async insert(row) {
       inserts += 1;
       if (rows.has(row.clientId)) return "duplicado";
@@ -56,6 +62,8 @@ function memory() {
     store,
     rows,
     inserts: () => inserts,
+    qa: () => [...qa].sort(),
+    marked: () => [...marked],
   };
 }
 
@@ -112,6 +120,7 @@ describe("alta de un solo uso", () => {
     });
     expect(first).toBe(0);
     expect(db.inserts()).toBe(3);
+    expect(db.qa()).toEqual(["org-qa-a", "org-qa-b", "org-qa-c"]);
     expect(lines).toEqual([
       qaEnrollLogLine("org-qa-a", true),
       qaEnrollLogLine("org-qa-b", true),
@@ -134,6 +143,8 @@ describe("alta de un solo uso", () => {
     });
     expect(again).toBe(0);
     expect(db.inserts()).toBe(3);
+    expect(db.qa()).toEqual(["org-qa-a", "org-qa-b", "org-qa-c"]);
+    expect(db.marked()).toEqual(["org-qa-a", "org-qa-b", "org-qa-c", "org-qa-a", "org-qa-b", "org-qa-c"]);
     const joined = lines.join("\n");
     for (const secret of secrets()) expect(joined).not.toContain(secret);
     for (const line of lines) expect(line).toMatch(/^qa-enroll orgId=[A-Za-z0-9_-]{4,80} OK$/);
@@ -173,5 +184,35 @@ describe("alta de un solo uso", () => {
     expect(text).toContain(qaEnrollLogLine("-", false));
     expect(text).toContain(qaEnrollLogLine("org-qa-a", false));
     expect(text).toContain(qaEnrollLogLine("org-qa-b", true));
+    expect(db.qa()).toEqual(["org-qa-a", "org-qa-b", "org-qa-c"]);
+  });
+
+  test("un DNS que no resuelve anota ERROR y no tumba el deploy", async () => {
+    const db = memory();
+    const lines: string[] = [];
+    const host = "dns-roto-no-log.example";
+    const bad = { ...spec, A: { ...spec.A, endpoint: `https://${host}` } };
+    const code = await runQaEnroll(env({ QA_ENROLL_SPEC: JSON.stringify(bad) }), {
+      store: db.store,
+      lookupImpl: async (hostname) => {
+        if (hostname === host) throw new Error(`getaddrinfo ENOTFOUND ${host}`);
+        return [{ address: "93.184.216.34", family: 4 }];
+      },
+      log: (line) => lines.push(line),
+    });
+    expect(code).toBe(0);
+    expect(db.rows.has("org-qa-a")).toBe(false);
+    expect(db.rows.has("org-qa-b")).toBe(true);
+    expect(db.rows.has("org-qa-c")).toBe(true);
+    expect(db.qa()).toEqual(["org-qa-a", "org-qa-b", "org-qa-c"]);
+    expect(db.qa()).not.toContain("org-otra");
+    const text = lines.join("\n");
+    expect(text).toContain(qaEnrollLogLine("org-qa-a", false));
+    expect(text).toContain(qaEnrollLogLine("org-qa-b", true));
+    expect(text).toContain(qaEnrollLogLine("org-qa-c", true));
+    expect(text).not.toContain(host);
+    expect(text).not.toContain("ENOTFOUND");
+    expect(text).not.toContain(TOKEN_A);
+    expect(text).not.toContain(KEY);
   });
 });

@@ -1,4 +1,4 @@
-import { computerTokenAad, endpointAllowed } from "@/lib/computer/lease";
+import { classifyEndpoint, computerTokenAad } from "@/lib/computer/lease";
 import { qaEnrollConfigured, qaEnrollLogLine } from "@/lib/computer/qa-enroll-gate";
 import { encryptSecret, readMasterKey, type VaultEnv } from "@/lib/credentials/crypto";
 import { Prisma, prisma } from "@/lib/prisma";
@@ -30,6 +30,7 @@ export type QaComputerRow = {
 export type QaEnrollStore = {
   findByOrg(orgId: string): Promise<QaComputerRow | null>;
   machineOwner(machineId: string): Promise<string | null>;
+  markQa(orgId: string): Promise<void>;
   insert(row: QaComputerRow): Promise<"ok" | "duplicado">;
 };
 
@@ -108,6 +109,9 @@ function prismaStore(): QaEnrollStore {
       const row = await prisma.computer.findFirst({ where: { machineId }, select: { clientId: true } });
       return row?.clientId ?? null;
     },
+    async markQa(orgId) {
+      await prisma.organization.updateMany({ where: { id: orgId }, data: { isQa: true } });
+    },
     async insert(row) {
       try {
         await prisma.$transaction(async (tx) => {
@@ -171,6 +175,7 @@ export async function runQaEnroll(
   let failed = false;
   for (const slot of slots) {
     try {
+      await store.markQa(slot.orgId);
       const current = await store.findByOrg(slot.orgId);
       const hinted = declaredOrigin(slot.endpoint);
       if (current && hinted && sameLease(current, slot.machineName, hinted)) {
@@ -182,10 +187,10 @@ export async function runQaEnroll(
         failed = true;
         continue;
       }
-      const target = await endpointAllowed(slot.endpoint, { lookupImpl: options.lookupImpl });
-      if (!target) {
+      const target = await classifyEndpoint(slot.endpoint, { lookupImpl: options.lookupImpl });
+      if (!target.ok) {
         log(qaEnrollLogLine(slot.orgId, false));
-        failed = true;
+        if (target.reason !== "dns") failed = true;
         continue;
       }
       const owner = await store.machineOwner(slot.machineName);

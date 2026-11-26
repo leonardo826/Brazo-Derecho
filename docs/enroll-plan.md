@@ -24,23 +24,17 @@ El computador de una empresa queda activo solo si `COMPUTER_FEATURE_ENABLED` es 
 
 ## Alta en la app
 
-El script `scripts/qa-enroll.ts` corre en el build, después de `prisma migrate deploy` y antes de `next build` (`vercel.json` y `npm run build`). Si no están las variables, sale sin hacer nada y el build sigue. Si está alguna y falta otra, el build falla: no deja un alta a medias. No llama al VPS y no hace handshake. Cifra cada token con `CREDENTIALS_MASTER_KEY` (AES-256-GCM, AAD `v1`, empresa y máquina), comprueba el endpoint con las mismas reglas que rechazan un origen privado, y no crea una segunda fila si esa empresa ya tiene esa máquina en `RUNNING`. El log solo dice `qa-enroll orgId=<id> OK` o `qa-enroll orgId=<id> ERROR`. No imprime el token, la URL, el nombre de la máquina ni la clave.
+El script `scripts/qa-enroll.ts` corre en el build, después de `prisma migrate deploy` y antes de `next build` (`vercel.json` y `npm run build`). Si no están las variables, sale sin hacer nada y el build sigue. Si está alguna y falta otra, el build falla: no deja un alta a medias. No llama al VPS y no hace handshake. Cifra cada token con `CREDENTIALS_MASTER_KEY` (AES-256-GCM, AAD `v1`, empresa y máquina), comprueba el endpoint con las mismas reglas que rechazan un origen privado, y no crea una segunda fila si esa empresa ya tiene esa máquina en `RUNNING`. En las empresas del JSON pone `isQa = true` y no toca ninguna otra. Repetir el deploy las deja en true. El log solo dice `qa-enroll orgId=<id> OK` o `qa-enroll orgId=<id> ERROR`. No imprime el token, la URL, el nombre de la máquina ni la clave.
+
+Si el DNS de un endpoint no resuelve, esa empresa queda en `ERROR`, las otras siguen y el deploy no se corta. El siguiente deploy vuelve a intentar esa empresa. Un origen privado o inválido sí detiene el build.
 
 La época que escribe es 1. En el VPS, `LEASE_EPOCH` tiene que ser 1 y `MACHINE_ID` el `machineName` de esa empresa. Si no coinciden, la tarea responde 409. El script no rota el token: para cambiarlo se usa `scripts/computer-lease-admin.ts rotate`.
 
 ### 1. Crear las tres empresas
 
-Registro normal en `/registro`, una cuenta por cliente de prueba. No actives la prueba de 7 días y no pagues. Anota el `id` de cada `Organization`.
+Registro normal en `/registro`, una cuenta por cliente de prueba. No actives la prueba de 7 días y no pagues. Anota el `id` de cada `Organization` y ponlo en `QA_ENROLL_SPEC`.
 
-El arriendo solo se lee si la empresa es `isQa` y no está suspendida. Esa marca también abre Contador, Marketing y WhatsApp sin prueba ni pago, y no factura. Después del registro:
-
-```sql
-update "Organization"
-set "isQa" = true
-where id in ('ID_ORG_A', 'ID_ORG_B', 'ID_ORG_C');
-```
-
-Sin esa marca la fila puede existir, pero el chat responde que no hay computador y los módulos siguen cerrados.
+El script marca `isQa` solo en esas tres empresas. Con eso el arriendo se lee, Contador, Marketing y WhatsApp abren sin prueba ni pago, y no se factura. No hace falta un `UPDATE` en la base. Una empresa que no esté en el JSON no cambia.
 
 ### 2. Cargar variables
 
@@ -68,17 +62,20 @@ Además:
 
 ### 3. Deploy
 
-El build corre el script. En el log del deploy tienen que aparecer tres líneas `qa-enroll orgId=... OK` y ninguna otra línea de ese script. Un segundo deploy de las mismas variables no crea otra máquina: vuelve a decir OK y no escribe de nuevo.
+El build corre el script. En el log del deploy tienen que aparecer tres líneas `qa-enroll orgId=... OK` y ninguna otra línea de ese script. Si una dice `ERROR` porque el DNS no resolvió, las otras pueden decir `OK` y el deploy igual termina: el siguiente deploy reintenta la que falló. Un segundo deploy de las mismas variables no crea otra máquina y no vuelve a cambiar `isQa`: vuelve a decir OK y no escribe de nuevo.
 
 ### 4. Verificar
 
 No selecciones las columnas del token.
 
 ```sql
+select id, "isQa" from "Organization" where id in ('ID_ORG_A', 'ID_ORG_B', 'ID_ORG_C');
 select "clientId", "machineId", status, "leaseEpoch"
 from "Computer"
 where "clientId" in ('ID_ORG_A', 'ID_ORG_B', 'ID_ORG_C');
 ```
+
+Las tres empresas quedan `isQa`. Ninguna otra empresa cambia esa marca.
 
 Tres filas `RUNNING`, época 1, cada `machineId` el de su VPS. Desde otra máquina, sin mandar el token:
 
