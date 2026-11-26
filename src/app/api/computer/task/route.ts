@@ -1,4 +1,7 @@
+import { machineAgentKind } from "@/lib/computer/agent-kind";
 import { computerFeatureEnabled, computerUnavailable } from "@/lib/computer/flag";
+import { usableLease } from "@/lib/chat/desktop-task";
+import { loadTenantLease } from "@/lib/computer/lease";
 import { enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { prismaComputerStore } from "@/lib/computer/store";
 import { missingVaultTable, vaultStatus } from "@/lib/credentials/http";
@@ -22,8 +25,10 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ ok: false, error: "datos" }, { status: 400 });
   }
-  const record = body && typeof body === "object" ? (body as { goal?: unknown; credentialId?: unknown }) : {};
+  const record = body && typeof body === "object" ? (body as { goal?: unknown; credentialId?: unknown; agentKind?: unknown }) : {};
   const goal = typeof record.goal === "string" ? record.goal : "";
+  const agentKind = machineAgentKind(typeof record.agentKind === "string" ? record.agentKind : "");
+  if (!agentKind) return Response.json({ ok: false, error: "datos" }, { status: 400 });
   const credentialId = typeof record.credentialId === "string" ? record.credentialId.trim() : "";
   let agentPayload: { credentials: { id: string; label: string; portal: string; usernameHint: string }[]; fillGrant: string } | undefined;
   try {
@@ -43,12 +48,14 @@ export async function POST(request: Request) {
     if (!missingVaultTable(error)) throw error;
     if (credentialId) return Response.json({ ok: false, error: "boveda_migracion" }, { status: 503 });
   }
+  const looked = await loadTenantLease(session.organizationId);
+  const lease = looked.state === "listo" ? usableLease(looked.lease, session.organizationId) : null;
   const result = await enqueueComputerTask(
     {
       clientId: session.organizationId,
       goal,
-      agentUrl: process.env.COMPUTER_AGENT_URL,
-      agentToken: process.env.COMPUTER_AGENT_TOKEN,
+      agentKind,
+      lease,
       agentPayload,
     },
     { store: prismaComputerStore() },

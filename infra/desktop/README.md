@@ -1,6 +1,6 @@
 # Computador del agente (Fase 0 local)
 
-Un escritorio por cliente: Debian, Xvfb, fluxbox, Chromium, noVNC y el agente en `agent-runtime/`. El perfil del navegador queda en `/data/chrome-profile` (volumen). WhatsApp Web se abre en otra pestaña del **mismo** Chromium. El QR lo escanea una persona. No hay envíos masivos ni pagos.
+Un escritorio por cliente: Debian, Xvfb, fluxbox, Chromium, noVNC y el agente en `agent-runtime/`. Este contenedor local muestra un Chromium para escanear el QR a mano; el perfil de esa pantalla queda en `/data/chrome-profile` (volumen). En el VPS no hay una sesión de navegador única para la máquina: Contador, Marketing y WhatsApp de la misma empresa tienen cada uno su perfil. Ver `docs/enroll-plan.md`. WhatsApp Web, en esta pantalla local, se abre en otra pestaña. El QR lo escanea una persona. No hay envíos masivos ni pagos.
 
 No crea apps en Fly y no gasta plata. El computador de producción parte recién cuando Leonardo cargue las claves.
 
@@ -52,7 +52,7 @@ Para bajarlo: `docker compose -f infra/desktop/docker-compose.yml down`. El volu
 | `AGENT_RUNTIME_TOKEN` | Obligatorio. `/task` y el resto exigen `Authorization: Bearer`. Si falta, la API responde 401. El chat no usa este valor. | 401. En compose el puerto del host es `127.0.0.1` y el default local es `local`. |
 | `MACHINE_ID` | Identificador de esta máquina. `/task` lo exige igual al cuerpo. | 403. En compose el default local es `desktop-local`. |
 | `VAULT_FILL_URL` | URL de `POST /api/credenciales/rellenar` para escribir un acceso en el formulario. La clave no va al modelo. | El relleno falla y no se inventa una clave. La llave maestra no vive en este computador: está en `CREDENTIALS_MASTER_KEY` de la app. |
-| `COMPUTER_AGENT_URL` | El panel puede encolar hacia esta URL. El chat no la usa: no aísla una máquina. | La tarea del panel queda en cola y no hay red. |
+| `COMPUTER_AGENT_URL` | El chat y el panel no la usan. El computador es el arriendo de la empresa. | Sin arriendo no hay red. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En `next dev` se muestra. En producción no. |
 | `FLY_API_TOKEN` | Token de Fly. Solo por entorno. | El alta no llama a Fly. |
 | `FLY_DRY_RUN` | Exactamente `false` para permitir la API. | Dry-run. |

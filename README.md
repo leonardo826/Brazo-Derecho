@@ -21,7 +21,7 @@ Con Docker, la base:
 docker compose up -d
 ```
 
-Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía está en `infra/desktop/README.md`.
+Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía local está en `infra/desktop/README.md`. Los tres VPS de Santiago son tres clientes de prueba (org A, org B y org C). Cada cliente tiene un computador compartido por Contador, Marketing y WhatsApp, con un perfil de navegador por agente. No es una organización por bot. El alta está en `docs/enroll-plan.md`.
 
 Sin Docker, crea la base y el usuario `brazo` / `brazo` sobre la base `brazo_derecho`.
 
@@ -59,7 +59,7 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `MEMORY_HASH_KEY` | HMAC de cada hecho, base64 de 32 bytes. Vacío deriva la llave de `CREDENTIALS_MASTER_KEY`. Al borrar se vacían el texto y la conversación de origen; el HMAC queda para no volver a guardar ese dato. | Sin esta ni la llave de la bóveda, no se guardan hechos nuevos. |
 | `XAI_COMPUTER_MODEL` | Modelo del computador del agente. `grok-4.3` o `grok-4.7`. | `grok-4.3`. Con `XAI_MODE=mock` o sin `XAI_API_KEY` no llama a xAI. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En local se muestra. En producción queda oculto. |
-| `COMPUTER_AGENT_URL` | URL del agente del escritorio (`POST /task`). | La tarea queda en cola y no hay red. |
+| `COMPUTER_AGENT_URL` | Ya no elige el computador. El chat y el panel usan el arriendo de la empresa, firmado con el token de esa máquina. | Sin arriendo, la tarea no sale y no se usa un token global. |
 | `FLY_API_TOKEN` | Token de Fly para el piloto. Solo por entorno. | El script de alta no llama a Fly. |
 | `FLY_DRY_RUN` | Tiene que ser exactamente `false`, con token y `--confirmo-gasto`, para crear máquina. | Dry-run: imprime el plan y no cobra. |
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
