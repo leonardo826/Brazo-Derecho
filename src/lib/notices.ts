@@ -62,6 +62,8 @@ export const OKS: Record<string, string> = {
   persona: "Quedó anotada la respuesta de una persona.",
   conocimiento: "Información guardada. El agente ya puede usarla.",
   eliminado: "Listo, lo sacamos de la base.",
+  memoria: "Listo. Ese dato ya no está. El agente deja de usarlo.",
+  memoria_todo: "Listo. Borramos lo que este agente recordaba, y también los datos de la empresa que compartía.",
   precio: "Producto guardado en la lista.",
   cotizacion: "Cotización armada. Quedó pendiente de tu aprobación y no se envió.",
   aprobada: "Cotización aprobada. Brazo Derecho no la envía: la mandas tú.",

@@ -4,6 +4,7 @@ import {
   togglePriceAction,
   updatePriceAction,
 } from "@/app/actions/quotes";
+import { AgentMemory } from "@/components/agent-memory";
 import { CsrfField } from "@/components/csrf-field";
 import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
@@ -60,6 +61,7 @@ export default async function QuotesPage({
         <SubscribeActions agent="QUOTES" back="/panel/cotizador" subscription={subscription} qa={qa} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      <AgentMemory organizationId={session.organizationId} agent="QUOTES" />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
           La prueba de {TRIAL_DAYS} días quedó activa. No se cobra nada durante la prueba. Agrega un producto con su precio neto y arma una cotización de prueba.

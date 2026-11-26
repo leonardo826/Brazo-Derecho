@@ -51,6 +51,7 @@ model Organization {
   credentialFillGrants     CredentialFillGrant[]
   agentThreads             AgentThread[]
   agentAttachments         AgentAttachment[]
+  memoryFacts              MemoryFact[]
 }
 
 enum MemberRole {
@@ -586,4 +587,24 @@ model AgentAttachment {
 
   @@index([messageId])
   @@index([organizationId])
+}
+
+/// Dato durable de la empresa. agent null lo comparten todos los agentes.
+/// Al borrar, deletedAt queda puesto y text vacío: el dato personal ya no está.
+/// El hash se conserva para no volver a guardar lo que la persona eliminó.
+model MemoryFact {
+  id                   String     @id @default(cuid())
+  organizationId       String
+  agent                AgentKind?
+  text                 String
+  contentHash          String
+  sourceConversationId String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  deletedAt            DateTime?
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, agent, deletedAt])
+  @@index([organizationId, contentHash])
 }

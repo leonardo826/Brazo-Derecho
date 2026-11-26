@@ -1,5 +1,6 @@
 import { requireApiSession } from "@/lib/api-session";
 import { chatSurface, isChatAgent, type ChatAgentId } from "@/lib/chat/agents";
+import { captureChatMemory } from "@/lib/memory/capture";
 import { MAX_FILES, prepareUpload, type PreparedFile } from "@/lib/chat/files";
 import { sseResponse } from "@/lib/chat/sse";
 import { streamChatTurn } from "@/lib/chat/run";
@@ -96,16 +97,20 @@ export async function POST(request: Request) {
   if (!room.ok) return Response.json({ error: "limite" }, { status: 409 });
   return sseResponse(
     (signal) =>
-      streamChatTurn({
-        organizationId: session.organizationId,
-        organizationName: session.organizationName,
-        actorUserId: session.userId,
-        text: parsed.text,
-        files: parsed.files,
-        portal: parsed.portal,
-        agent: parsed.agent,
-        signal,
-      }),
+      captureChatMemory(
+        session.organizationId,
+        parsed.agent,
+        streamChatTurn({
+          organizationId: session.organizationId,
+          organizationName: session.organizationName,
+          actorUserId: session.userId,
+          text: parsed.text,
+          files: parsed.files,
+          portal: parsed.portal,
+          agent: parsed.agent,
+          signal,
+        }),
+      ),
     request.signal,
   );
 }

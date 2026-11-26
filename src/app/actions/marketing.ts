@@ -5,6 +5,7 @@ import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { channelFor, draftImageSvg, toMarketingRecord } from "@/lib/agents/marketing";
 import { instructionsFor, limitFor, modelFor, routineModel } from "@/lib/catalog";
+import { memoryPrompt, rememberTurn } from "@/lib/memory/service";
 import { callWithinPlan, planRoom, type PlanCheck } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { addUsage, EMPTY_USAGE, USAGE_PRESETS } from "@/lib/pricing";
@@ -57,6 +58,12 @@ export async function generatePostsAction(formData: FormData) {
   if (count < 1) redirect("/panel/marketing?error=limite");
 
   const client = createXaiClient();
+  const memory = await memoryPrompt({
+    organizationId: session.organizationId,
+    agent: "MARKETING",
+    query: `${profile.voice} ${profile.audience} ${profile.summary}`,
+  });
+  const instructions = [instructionsFor("MARKETING", session.organizationName), memory].filter(Boolean).join("\n\n");
   const drafts: ReturnType<typeof toMarketingRecord>[] = [];
   const held: (string | null)[] = [];
   let textTokens = { ...EMPTY_USAGE };
@@ -85,7 +92,7 @@ export async function generatePostsAction(formData: FormData) {
         call: () =>
           client.respond({
             model: textModel,
-            instructions: instructionsFor("MARKETING", session.organizationName),
+            instructions,
             task: {
               type: "marketing_post",
               channel,
@@ -114,7 +121,7 @@ export async function generatePostsAction(formData: FormData) {
           call: () =>
             client.respond({
               model: imageModel,
-              instructions: instructionsFor("MARKETING", session.organizationName),
+              instructions,
               task: { type: "marketing_image", summary: profile.summary, channel },
               usage: EMPTY_USAGE,
               businessName: session.organizationName,
@@ -199,5 +206,12 @@ export async function generatePostsAction(formData: FormData) {
     await releaseHeld();
     redirect("/panel/marketing?error=limite");
   }
+  await rememberTurn({
+    organizationId: session.organizationId,
+    agent: "MARKETING",
+    sourceConversationId: null,
+    userText: `Voz: ${profile.voice}. Público: ${profile.audience}. Resumen: ${profile.summary}`,
+    assistantText: drafts.map((draft) => draft.copy).join("\n\n"),
+  });
   redirect("/panel/marketing?ok=borradores");
 }

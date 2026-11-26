@@ -3,6 +3,7 @@ import {
   deleteKnowledgeAction,
 } from "@/app/actions/whatsapp";
 import { AgentChat } from "@/components/agent-chat";
+import { AgentMemory } from "@/components/agent-memory";
 import { CsrfField } from "@/components/csrf-field";
 import { EmptyState } from "@/components/empty-state";
 import { Flash } from "@/components/flash";
@@ -59,6 +60,7 @@ export default async function WhatsappPage({
         <SubscribeActions agent="WHATSAPP" back="/panel/whatsapp" subscription={subscription} qa={qa} />
       </div>
       <Flash error={firstParam(params.error)} ok={firstParam(params.ok)} />
+      <AgentMemory organizationId={session.organizationId} agent="WHATSAPP" />
       {firstParam(params.guia) === "1" ? (
         <p className="banner ok">
           La prueba de {TRIAL_DAYS} días quedó activa. No se cobra nada durante la prueba. Escribe el horario o la dirección y haz una pregunta de prueba.

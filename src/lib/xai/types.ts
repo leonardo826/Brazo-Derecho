@@ -21,7 +21,8 @@ export type XaiTask =
     }
   | { type: "marketing_image"; summary: string; channel: string }
   | { type: "accounting_question"; question: string; today: string }
-  | { type: "agent_chat"; today: string; messages: ChatMessageInput[] };
+  | { type: "agent_chat"; today: string; messages: ChatMessageInput[] }
+  | { type: "memory_extract"; turn: string };
 
 export type ChatFileInput = {
   name: string;
