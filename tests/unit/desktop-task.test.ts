@@ -45,6 +45,7 @@ function run(text: string, extra: Partial<Parameters<typeof executeDesktopReques
 
 beforeEach(() => {
   process.env.COMPUTER_FEATURE_ENABLED = "true";
+  process.env.COMPUTER_ENABLED_ORGS = "org-a,org-b";
 });
 
 afterEach(() => {
@@ -52,6 +53,7 @@ afterEach(() => {
   delete process.env.COMPUTER_AGENT_URL;
   delete process.env.COMPUTER_AGENT_TOKEN;
   delete process.env.COMPUTER_FEATURE_ENABLED;
+  delete process.env.COMPUTER_ENABLED_ORGS;
 });
 
 describe("contrato del computador en el chat", () => {

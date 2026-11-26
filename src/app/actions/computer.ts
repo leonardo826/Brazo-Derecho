@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { machineAgentKind } from "@/lib/computer/agent-kind";
-import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed } from "@/lib/computer/flag";
 import { decideSensitiveTask, enqueueComputerTask } from "@/lib/computer/orchestrator";
 import { loadTenantLease } from "@/lib/computer/lease";
 import { issueNovncToken } from "@/lib/computer/novnc";
@@ -17,10 +17,16 @@ import { requireSession } from "@/lib/session";
 
 const BACK = "/panel/computador";
 
-export async function enqueueComputerAction(formData: FormData) {
-  if (!computerFeatureEnabled()) redirect("/panel");
+async function openComputerSession(formData: FormData) {
+  if (computerOrgGateClosed()) redirect("/panel");
   await guardMutation(formData, BACK);
   const session = await requireSession();
+  if (!computerEnabledForOrg(session.organizationId)) redirect("/panel");
+  return session;
+}
+
+export async function enqueueComputerAction(formData: FormData) {
+  const session = await openComputerSession(formData);
   await assertOwnOrganizationActive(session.organizationId, BACK);
   guardRate(`computer:${session.organizationId}`, 20, 60_000, BACK);
   const goal = String(formData.get("goal") ?? "");
@@ -68,9 +74,7 @@ export async function enqueueComputerAction(formData: FormData) {
 }
 
 export async function mintComputerViewAction(formData: FormData) {
-  if (!computerFeatureEnabled()) redirect("/panel");
-  await guardMutation(formData, BACK);
-  const session = await requireSession();
+  const session = await openComputerSession(formData);
   await assertOwnOrganizationActive(session.organizationId, BACK);
   guardRate(`novnc:${session.organizationId}`, 10, 60_000, BACK);
   const issued = issueNovncToken();
@@ -83,9 +87,7 @@ export async function mintComputerViewAction(formData: FormData) {
 }
 
 export async function decideComputerAction(formData: FormData) {
-  if (!computerFeatureEnabled()) redirect("/panel");
-  await guardMutation(formData, BACK);
-  const session = await requireSession();
+  const session = await openComputerSession(formData);
   await assertOwnOrganizationActive(session.organizationId, BACK);
   guardRate(`computer-decision:${session.organizationId}`, 30, 60_000, BACK);
   const decision = formData.get("decision") === "APPROVED" ? "APPROVED" : formData.get("decision") === "REJECTED" ? "REJECTED" : null;

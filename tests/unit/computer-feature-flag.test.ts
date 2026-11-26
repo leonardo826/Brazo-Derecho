@@ -54,6 +54,7 @@ const session = {
 describe("interruptor del computador", () => {
   beforeEach(() => {
     delete process.env.COMPUTER_FEATURE_ENABLED;
+    delete process.env.COMPUTER_ENABLED_ORGS;
     vi.mocked(resolveSession).mockResolvedValue(session);
     vi.mocked(enrollComputerLease).mockClear();
     vi.mocked(prisma.computer.findUnique).mockClear();

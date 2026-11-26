@@ -2,7 +2,7 @@
 
 Servicio Node para un VPS con Ubuntu 24.04. El proceso escucha en `127.0.0.1:8787`. nginx publica solo el 443. Chromium headless abre páginas públicas a través de un proxy local que resuelve el DNS, rechaza una IP privada y no sigue un salto hacia ella. El código de `/opt/iabot-machine-agent` queda de root y no lo puede escribir `iabot`.
 
-`COMPUTER_FEATURE_ENABLED` de la app no cambia con esta instalación. Solo vale si es exactamente `true`.
+`COMPUTER_FEATURE_ENABLED` de la app no cambia con esta instalación. Solo vale si es exactamente `true`, y la empresa tiene que estar en `COMPUTER_ENABLED_ORGS`. Si esa lista falta o está vacía, no entra nadie. El alta está en `docs/enroll-plan.md`.
 
 ## Qué exige el protocolo
 

@@ -1,5 +1,5 @@
 import { machineAgentKind } from "@/lib/computer/agent-kind";
-import { computerFeatureEnabled, computerUnavailable } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed, computerUnavailable } from "@/lib/computer/flag";
 import { usableLease } from "@/lib/chat/desktop-task";
 import { loadTenantLease } from "@/lib/computer/lease";
 import { enqueueComputerTask } from "@/lib/computer/orchestrator";
@@ -13,9 +13,10 @@ import { resolveSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  if (!computerFeatureEnabled()) return computerUnavailable();
+  if (computerOrgGateClosed()) return computerUnavailable();
   const session = await resolveSession();
   if (!session) return Response.json({ ok: false, error: "sesion" }, { status: 401 });
+  if (!computerEnabledForOrg(session.organizationId)) return computerUnavailable();
   if (!consumeRateLimit(`computer-api:${session.organizationId}`, 20, 60_000).ok) {
     return Response.json({ ok: false, error: "ritmo" }, { status: 429 });
   }

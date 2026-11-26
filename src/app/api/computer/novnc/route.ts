@@ -1,4 +1,4 @@
-import { computerFeatureEnabled, computerUnavailable } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed, computerUnavailable } from "@/lib/computer/flag";
 import { localNovncUrl, novncStillValid, safeNovncHref, tokenMatches } from "@/lib/computer/novnc";
 import { prisma } from "@/lib/prisma";
 import { resolveSession } from "@/lib/session";
@@ -6,9 +6,10 @@ import { resolveSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  if (!computerFeatureEnabled()) return computerUnavailable();
+  if (computerOrgGateClosed()) return computerUnavailable();
   const session = await resolveSession();
   if (!session) return Response.json({ ok: false, error: "sesion" }, { status: 401 });
+  if (!computerEnabledForOrg(session.organizationId)) return computerUnavailable();
   const token = new URL(request.url).searchParams.get("token") ?? "";
   const computer = await prisma.computer.findUnique({ where: { clientId: session.organizationId } });
   const valid = Boolean(computer && tokenMatches(token, computer.novncTokenHash) && novncStillValid(computer.novncExpiresAt));

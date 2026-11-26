@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { machineAgentKind, type MachineAgentKind } from "@/lib/computer/agent-kind";
-import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { computerEnabledForOrg } from "@/lib/computer/flag";
 import { COMPUTER_WARMING_MESSAGE } from "@/lib/computer/power-copy";
 import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
 import { signRequest } from "@/lib/computer/request-sign";
@@ -213,7 +213,7 @@ export async function executeDesktopRequest(input: {
   fetchImpl?: typeof fetch;
   log?: (fields: DesktopLog) => void;
 }): Promise<{ kind: "chat" } | { kind: "confirm" } | { kind: "reply"; text: string }> {
-  if (!computerFeatureEnabled()) return { kind: "chat" };
+  if (!computerEnabledForOrg(input.organizationId)) return { kind: "chat" };
   const started = performance.now();
   const key = `${input.userId}\n${input.organizationId}\n${input.conversationId}`;
   const plan = planDesktopTask(input.text, key);

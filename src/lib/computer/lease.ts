@@ -37,8 +37,12 @@ export function leaseGate(status: string): "running" | "closed" | "absent" {
   return "absent";
 }
 
-function aad(organizationId: string, machineId: string) {
+export function computerTokenAad(organizationId: string, machineId: string) {
   return `${AAD_VERSION}\n${organizationId}\n${machineId}`;
+}
+
+function aad(organizationId: string, machineId: string) {
+  return computerTokenAad(organizationId, machineId);
 }
 
 function operatorOk(operatorId: string) {

@@ -31,6 +31,7 @@ const listo = async () => ({ state: "listo" as const, lease });
 
 afterEach(() => {
   delete process.env.COMPUTER_FEATURE_ENABLED;
+  delete process.env.COMPUTER_ENABLED_ORGS;
   resetRateLimits();
 });
 
@@ -492,7 +493,7 @@ describe("precalentado y cron", () => {
     const on = await idleCronResponse(
       new Request("https://app.local/api/cron/computer-idle", { headers: { authorization: "Bearer secreto-cron" } }),
       {
-        env: { CRON_SECRET: "secreto-cron", COMPUTER_FEATURE_ENABLED: "true" },
+        env: { CRON_SECRET: "secreto-cron", COMPUTER_FEATURE_ENABLED: "true", COMPUTER_ENABLED_ORGS: "org-1,org-2" },
         reap: async () => {
           ran += 1;
           return { stopped: ["org-1"], skippedBusy: ["org-2"] };

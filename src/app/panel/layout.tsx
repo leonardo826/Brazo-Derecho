@@ -25,7 +25,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   ]);
   const suspended = Boolean(organization?.suspendedAt);
   return (
-    <PanelShell session={session} showAdmin={admin} computerHref={panelComputerHref()}>
+    <PanelShell session={session} showAdmin={admin} computerHref={panelComputerHref(process.env, session.organizationId)}>
       {user?.emailVerifiedAt ? null : <VerifyBanner />}
       <UsageWarningBanner totals={usage.totals} />
       {suspended && admin ? (

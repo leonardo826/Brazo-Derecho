@@ -20,4 +20,4 @@ Un computador por empresa. `ComputerProvider` es `create`, `start`, `stop`, `del
 
 ## Lo que este paso no es
 
-No compra máquinas, no elige un SDK de nube y no trata un simulador como navegación. El servicio de referencia está en `machine-agent/` y se instala con `README-machine-agent.md`. La intención durable, la evidencia de tarifa y la Bóveda quedan aparte. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
+No compra máquinas, no elige un SDK de nube y no trata un simulador como navegación. El servicio de referencia está en `machine-agent/` y se instala con `README-machine-agent.md`. La intención durable, la evidencia de tarifa y la Bóveda quedan aparte. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`, y la empresa tiene que estar en `COMPUTER_ENABLED_ORGS`. Si esa lista falta o está vacía, no entra nadie.

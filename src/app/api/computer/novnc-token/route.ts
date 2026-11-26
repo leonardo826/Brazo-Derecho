@@ -1,4 +1,4 @@
-import { computerFeatureEnabled, computerUnavailable } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed, computerUnavailable } from "@/lib/computer/flag";
 import { issueNovncToken } from "@/lib/computer/novnc";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -7,9 +7,10 @@ import { resolveSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  if (!computerFeatureEnabled()) return computerUnavailable();
+  if (computerOrgGateClosed()) return computerUnavailable();
   const session = await resolveSession();
   if (!session) return Response.json({ ok: false, error: "sesion" }, { status: 401 });
+  if (!computerEnabledForOrg(session.organizationId)) return computerUnavailable();
   if (!consumeRateLimit(`novnc-api:${session.organizationId}`, 10, 60_000).ok) {
     return Response.json({ ok: false, error: "ritmo" }, { status: 429 });
   }

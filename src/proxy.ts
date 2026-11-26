@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed } from "@/lib/computer/flag";
 import { SESSION_COOKIE } from "@/lib/cookie";
+import { readSessionToken } from "@/lib/session-token";
 import { CSRF_COOKIE, CSRF_HEADER, validCsrfToken } from "@/lib/csrf-token";
 
 const CLOSED = `<!doctype html>
@@ -50,13 +51,22 @@ function applyCsrf(response: NextResponse, request: NextRequest, token: string) 
   return response;
 }
 
-export function proxy(request: NextRequest) {
+function closedPage() {
+  return new NextResponse(CLOSED, {
+    status: 404,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  if ((path === "/panel/computador" || path.startsWith("/panel/computador/")) && !computerFeatureEnabled()) {
-    return new NextResponse(CLOSED, {
-      status: 404,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+  if (path === "/panel/computador" || path.startsWith("/panel/computador/")) {
+    if (computerOrgGateClosed()) return closedPage();
+    const raw = request.cookies.get(SESSION_COOKIE)?.value ?? "";
+    if (raw) {
+      const session = await readSessionToken(raw);
+      if (!session || !computerEnabledForOrg(session.organizationId)) return closedPage();
+    }
   }
 
   if (request.headers.has("next-action")) {
