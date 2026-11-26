@@ -450,6 +450,8 @@ model ComputerPower {
   generation      Int                 @default(0)
   provider        String              @default("static")
   machineId       String              @default("")
+  /// Época del arriendo que dejó la fila en READY. Otra época no cuenta como listo.
+  leaseEpoch      Int                 @default(0)
   lastActivityAt  DateTime            @default(now())
   activeTaskCount Int                 @default(0)
   /// Cuando el proveedor aceptó el encendido. No se borra en ERROR.

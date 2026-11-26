@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { closeBrowsers, rememberBrowser } from "../src/browser.mjs";
 import { handshakeProof, isPrivateAddress, requestSignature } from "../src/protocol.mjs";
 import { handleMachine, resetMachineTasks } from "../src/server.mjs";
 
@@ -172,4 +173,23 @@ test("cerrar chromium espera a que no haya una tarea", async () => {
   assert.equal(closed, 1);
   release();
   await pending;
+});
+
+test("el cierre del proceso cierra el chromium que quedó abierto", async () => {
+  resetMachineTasks();
+  let closed = 0;
+  rememberBrowser({
+    async close() {
+      closed += 1;
+    },
+  });
+  const body = { machineId, epoch: 1 };
+  const wire = signed("POST", "/browser/close", body);
+  const result = await handleMachine(
+    { method: "POST", path: "/browser/close", body, rawBody: wire.raw, headers: wire.headers },
+    deps({ closeBrowser: closeBrowsers }),
+  );
+  assert.equal(result.status, 200);
+  assert.equal(closed, 1);
+  assert.equal(JSON.parse(result.body.toString("utf8")).ok, true);
 });

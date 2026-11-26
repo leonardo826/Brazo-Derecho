@@ -1,0 +1,29 @@
+name: Apagar computadores quietos
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pedir el apagado
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "Falta CRON_SECRET. No llamo al cron."
+            exit 0
+          fi
+          base="${APP_URL:-https://brazo-derecho.vercel.app}"
+          base="${base%/}"
+          curl --fail-with-body --silent --show-error --max-time 60 \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "${base}/api/cron/computer-idle"

@@ -9,6 +9,7 @@ export type PowerSnapshot = {
   generation: number;
   provider: string;
   machineId: string;
+  leaseEpoch: number;
   lastActivityAt: number;
   activeTaskCount: number;
   powerOnAt: number | null;
@@ -27,10 +28,11 @@ export type PowerUse = {
 type ClaimView = Pick<PowerSnapshot, "state" | "claimExpiresAt">;
 type StopView = Pick<PowerSnapshot, "state" | "activeTaskCount" | "lastActivityAt" | "claimExpiresAt">;
 
-/** OFF, ERROR, o un STARTING cuyo dueño ya no responde. */
+/** OFF, ERROR, un STARTING vencido, o un STOPPING vencido. */
 export function canClaimStart(row: ClaimView, now: number) {
   if (row.state === "OFF" || row.state === "ERROR") return true;
-  return row.state === "STARTING" && (row.claimExpiresAt ?? 0) <= now;
+  if (row.state === "STARTING" || row.state === "STOPPING") return (row.claimExpiresAt ?? 0) <= now;
+  return false;
 }
 
 /** Listo o en error, quieto, sin tareas. Un STOPPING vencido se puede reintentar. */

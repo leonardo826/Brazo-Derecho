@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { createServer as createHttps } from "node:https";
 import { pathToFileURL } from "node:url";
-import { browsePublic, navigationAllowed } from "./browser.mjs";
+import { browsePublic, closeBrowsers, navigationAllowed } from "./browser.mjs";
 import { installProcessGuards } from "./process-guard.mjs";
 import { handshakeProof, normalizeHost, proofsMatch, requestSignature } from "./protocol.mjs";
 
@@ -227,7 +227,7 @@ export function listen(env = process.env) {
     process.stderr.write("un bind público exige TLS_CERT_FILE y TLS_KEY_FILE\n");
     process.exit(1);
   }
-  const deps = { token, previousToken, machineId, leaseEpoch, domain };
+  const deps = { token, previousToken, machineId, leaseEpoch, domain, closeBrowser: closeBrowsers };
   const onRequest = async (req, res) => {
     const chunks = [];
     let size = 0;

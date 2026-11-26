@@ -75,14 +75,14 @@ describe("estado del computador", () => {
 
   test("OFF pasa a READY y un STOPPING no se roba mientras dura", async () => {
     const store = memoryPowerStore();
-    const meta = { provider: "fake", machineId: "maq-1" };
+    const meta = { provider: "fake", machineId: "maq-1", epoch: 1 };
     const [first, second] = await Promise.all([
       store.claimStart(ORG, 0, 1_000, meta),
       store.claimStart(ORG, 0, 1_000, meta),
     ]);
     expect([first.role, second.role].sort()).toEqual(["starter", "waiter"]);
     await store.notePowerOn(ORG, 0);
-    expect(await store.markReady(ORG, 10)).toBe(true);
+    expect(await store.markReady(ORG, 10, { machineId: "maq-1", epoch: 1 })).toBe(true);
     expect((await store.read(ORG))?.state).toBe("READY");
     expect(await store.beginTask(ORG, 10)).toBe(true);
     expect(await store.claimStop(ORG, 11, 20)).toBe("busy");
@@ -103,13 +103,44 @@ describe("estado del computador", () => {
 
   test("un STARTING vencido se puede tomar y el dueño viejo ya no renueva", async () => {
     const store = memoryPowerStore();
-    const meta = { provider: "fake", machineId: "maq-1" };
+    const meta = { provider: "fake", machineId: "maq-1", epoch: 1 };
     const claim = await store.claimStart(ORG, 0, 100, meta);
     expect(claim.role).toBe("starter");
     if (claim.role !== "starter") return;
     const stolen = await store.claimStart(ORG, 100, 100, meta);
     expect(stolen.role).toBe("starter");
     expect(await store.refreshClaim(ORG, claim.generation, 100, 100)).toBe(false);
+  });
+
+  test("un STOPPING vencido y un apagado fallido se pueden volver a tomar", async () => {
+    const store = memoryPowerStore();
+    const meta = { provider: "fake", machineId: "maq-1", epoch: 1 };
+    expect((await store.claimStart(ORG, 0, 1_000, meta)).role).toBe("starter");
+    expect(await store.markReady(ORG, 0, { machineId: "maq-1", epoch: 1 })).toBe(true);
+    expect(await store.claimStop(ORG, 1, 0)).toBe("stop");
+    const held = await store.claimStart(ORG, 1_000, 1_000, meta);
+    expect(held.role).toBe("stopping");
+    expect((await store.claimStart(ORG, 60_000, 1_000, meta)).role).toBe("starter");
+    expect(await store.markReady("org-apagado", 0, { machineId: "maq-1", epoch: 1 })).toBe(false);
+    expect((await store.claimStart("org-apagado", 0, 1_000, meta)).role).toBe("starter");
+    expect(await store.markReady("org-apagado", 0, { machineId: "maq-1", epoch: 1 })).toBe(true);
+    expect(await store.claimStop("org-apagado", 1, 0)).toBe("stop");
+    await store.failStop("org-apagado", 0);
+    const failed = await store.read("org-apagado");
+    expect(failed?.state).toBe("ERROR");
+    expect(failed?.errorCode).toBe("apagado");
+    expect((await store.claimStart("org-apagado", 1, 1_000, meta)).role).toBe("starter");
+  });
+
+  test("READY de otra época o de otra máquina no está listo", async () => {
+    const store = memoryPowerStore();
+    const meta = { provider: "fake", machineId: "maq-1", epoch: 1 };
+    expect((await store.claimStart(ORG, 0, 1_000, meta)).role).toBe("starter");
+    expect(await store.markReady(ORG, 0, meta)).toBe(true);
+    expect((await store.read(ORG))?.leaseEpoch).toBe(1);
+    expect((await store.claimStart(ORG, 10, 1_000, { ...meta, epoch: 2 })).role).toBe("starter");
+    expect(await store.markReady(ORG, 10, { machineId: "maq-1", epoch: 2 })).toBe(true);
+    expect((await store.claimStart(ORG, 20, 1_000, { ...meta, machineId: "maq-2", epoch: 2 })).role).toBe("starter");
   });
 
   test("quince minutos es el silencio, salvo que se configure", () => {
@@ -346,6 +377,61 @@ describe("reaper", () => {
     expect(provider.calls.stop).toBe(0);
     expect((await store.read(ORG))?.state).toBe("READY");
   });
+
+  test("un contador colgado más de 30 minutos se suelta y un 409 se respeta", async () => {
+    const store = memoryPowerStore();
+    const provider = fakeProvider();
+    await ensureComputerReady(ORG, {
+      enabled: true,
+      store,
+      provider,
+      now: () => 0,
+      loadLease: listo,
+      handshake: async () => true,
+    });
+    expect(await beginComputerTask(ORG, store, 0)).toBe(true);
+    const denied = await reapIdleComputers({
+      now: () => 40 * 60 * 1000,
+      idleMs: 15 * 60 * 1000,
+      store,
+      provider,
+      closeBrowser: async () => "busy",
+    });
+    expect(denied.stopped).toEqual([]);
+    expect(provider.calls.stop).toBe(0);
+    expect((await store.read(ORG))?.activeTaskCount).toBe(1);
+
+    const released = await reapIdleComputers({
+      now: () => 40 * 60 * 1000,
+      idleMs: 15 * 60 * 1000,
+      store,
+      provider,
+      closeBrowser: async () => "down",
+    });
+    expect(released.stopped).toEqual([ORG]);
+    expect((await store.read(ORG))?.activeTaskCount).toBe(0);
+    expect((await store.read(ORG))?.state).toBe("OFF");
+  });
+
+  test("cada pasada apaga como máximo 20 máquinas", async () => {
+    const store = memoryPowerStore();
+    const provider = fakeProvider();
+    const meta = { provider: "fake", machineId: "maq-1", epoch: 1 };
+    for (let index = 0; index < 25; index += 1) {
+      const id = `org-lote-${index}`;
+      expect((await store.claimStart(id, 0, 1_000, meta)).role).toBe("starter");
+      expect(await store.markReady(id, 0, meta)).toBe(true);
+    }
+    const result = await reapIdleComputers({
+      now: () => 20 * 60 * 1000,
+      idleMs: 15 * 60 * 1000,
+      store,
+      provider,
+      closeBrowser: async () => "closed",
+    });
+    expect(result.stopped).toHaveLength(20);
+    expect(provider.calls.stop).toBe(20);
+  });
 });
 
 describe("precalentado y cron", () => {
@@ -369,6 +455,18 @@ describe("precalentado y cron", () => {
       ensure: async () => ({ ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "tiempo" }),
     });
     expect(warming).toEqual({ ok: false, message: COMPUTER_WARMING_MESSAGE });
+    const stopped = await prewarmOrganization({
+      enabled: true,
+      organizationId: "org-detenido",
+      ensure: async () => ({ ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "detenido" }),
+    });
+    const lost = await prewarmOrganization({
+      enabled: true,
+      organizationId: "org-transporte",
+      ensure: async () => ({ ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "transporte" }),
+    });
+    expect(stopped).toEqual({ ok: true });
+    expect(lost).toEqual({ ok: true });
   });
 
   test("el cron exige CRON_SECRET y no apaga si la función está apagada", async () => {

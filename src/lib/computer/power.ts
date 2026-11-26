@@ -10,6 +10,21 @@ import { callMachine } from "@/lib/computer/transport";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const DEFAULT_INTERVAL_MS = 1_000;
+const REAP_LIMIT = 20;
+const REAP_PARALLEL = 4;
+const STUCK_TASK_MS = 30 * 60 * 1000;
+
+async function mapLimit<T>(items: T[], limit: number, run: (item: T) => Promise<void>) {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) return;
+      await run(item);
+    }
+  });
+  await Promise.all(workers);
+}
 
 export { COMPUTER_WARMING_MESSAGE };
 export { memoryPowerStore };
@@ -122,7 +137,10 @@ async function awaitReady(input: {
       if (same) {
         const proved = await input.handshake(input.lease).catch(() => false);
         if (proved) {
-          const marked = await input.store.markReady(input.organizationId, input.now());
+          const marked = await input.store.markReady(input.organizationId, input.now(), {
+            machineId: input.lease.machineId,
+            epoch: input.lease.epoch,
+          });
           if (marked) return "ready";
         }
       }
@@ -149,16 +167,20 @@ export async function ensureComputerReady(organizationId: string, options: Ensur
   } catch {
     return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "transporte" };
   }
-  if (looked.state === "ausente") return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "ausente" };
-  if (looked.state === "detenido") return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "detenido" };
-  if (looked.state !== "listo") return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "transporte" };
+  if (looked.state === "ausente") return { ok: false, message: "", reason: "ausente" };
+  if (looked.state === "detenido") return { ok: false, message: "", reason: "detenido" };
+  if (looked.state !== "listo") return { ok: false, message: "", reason: "transporte" };
   const lease = looked.lease;
   const ref = { organizationId, machineId: lease.machineId };
   const deadline = now() + timeoutMs;
 
   while (now() < deadline) {
     if (options.signal?.aborted) return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "cancelado" };
-    const claim = await store.claimStart(organizationId, now(), timeoutMs, { provider: provider.kind, machineId: lease.machineId });
+    const claim = await store.claimStart(organizationId, now(), timeoutMs, {
+      provider: provider.kind,
+      machineId: lease.machineId,
+      epoch: lease.epoch,
+    });
     if (claim.role === "ready") {
       await store.touch(organizationId, now());
       return { ok: true };
@@ -174,8 +196,8 @@ export async function ensureComputerReady(organizationId: string, options: Ensur
         void store.refreshClaim(organizationId, claim.generation, now(), timeoutMs);
       }, Math.max(50, Math.min(intervalMs, 1_000)));
       try {
-        await provider.start(ref);
         await store.notePowerOn(organizationId, now());
+        await provider.start(ref);
       } catch {
         await store.markError(organizationId, claim.generation, "arranque", now());
         return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "tiempo" };
@@ -261,30 +283,45 @@ export async function reapIdleComputers(options: {
   const closeBrowser = options.closeBrowser ?? closeChromium;
   const at = now();
   const idleBefore = at - (options.idleMs ?? computerIdleMs());
-  const skippedBusy = (await store.listBusy(idleBefore)).map((row) => row.organizationId);
+  const stuckBefore = at - STUCK_TASK_MS;
+  const skippedBusy: string[] = [];
   const stopped: string[] = [];
-  const candidates = await store.listStoppable(idleBefore, at);
-  for (const row of candidates) {
+  const busyRows = await store.listBusy(idleBefore);
+  const stuck = busyRows.filter((row) => row.lastActivityAt < stuckBefore).slice(0, REAP_LIMIT);
+  for (const row of busyRows) {
+    if (row.lastActivityAt >= stuckBefore) skippedBusy.push(row.organizationId);
+  }
+  await mapLimit(stuck, REAP_PARALLEL, async (row) => {
+    const closed = await closeBrowser({ organizationId: row.organizationId, machineId: row.machineId }).catch(() => "down" as const);
+    if (closed === "busy") {
+      skippedBusy.push(row.organizationId);
+      return;
+    }
+    const cleared = await store.clearStuckTasks(row.organizationId, row.generation, row.lastActivityAt);
+    if (!cleared) skippedBusy.push(row.organizationId);
+  });
+  const candidates = (await store.listStoppable(idleBefore, at)).slice(0, REAP_LIMIT);
+  await mapLimit(candidates, REAP_PARALLEL, async (row) => {
     const claim = await store.claimStop(row.organizationId, idleBefore, at);
     if (claim === "busy") {
       skippedBusy.push(row.organizationId);
-      continue;
+      return;
     }
-    if (claim !== "stop") continue;
+    if (claim !== "stop") return;
     const closed = await closeBrowser({ organizationId: row.organizationId, machineId: row.machineId }).catch(() => "down" as const);
     if (closed === "busy") {
       await store.abortStop(row.organizationId, now());
       skippedBusy.push(row.organizationId);
-      continue;
+      return;
     }
     try {
       await provider.stop({ organizationId: row.organizationId, machineId: row.machineId });
     } catch {
       await store.failStop(row.organizationId, now());
-      continue;
+      return;
     }
     const metered = await store.markOff(row.organizationId, now());
     if (metered) stopped.push(row.organizationId);
-  }
+  });
   return { stopped, skippedBusy: [...new Set(skippedBusy)] };
 }

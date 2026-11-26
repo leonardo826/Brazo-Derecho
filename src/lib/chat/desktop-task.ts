@@ -242,7 +242,12 @@ export async function executeDesktopRequest(input: {
     return finish("revocado", false, TRANSPORT);
   }
 
-  const powered = await openPower(input);
+  let powered: ReadyGate;
+  try {
+    powered = await openPower(input);
+  } catch {
+    return finish("transporte", false, TRANSPORT);
+  }
   if (!powered.ok) {
     if (powered.reason === "ausente") return finish("ausente", false, ABSENT);
     if (powered.reason === "detenido" || powered.reason === "transporte") return finish(powered.reason, false, TRANSPORT);

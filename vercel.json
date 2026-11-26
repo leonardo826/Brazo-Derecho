@@ -1,10 +1,4 @@
 {
   "framework": "nextjs",
-  "buildCommand": "prisma generate && prisma migrate deploy && next build",
-  "crons": [
-    {
-      "path": "/api/cron/computer-idle",
-      "schedule": "*/5 * * * *"
-    }
-  ]
+  "buildCommand": "prisma generate && prisma migrate deploy && next build"
 }

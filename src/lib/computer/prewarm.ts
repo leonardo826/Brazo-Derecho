@@ -18,6 +18,8 @@ export async function prewarmOrganization(input: {
   }
   const ensure = input.ensure ?? ensureComputerReady;
   const ready = await ensure(input.organizationId);
-  if (ready.ok || ready.reason === "ausente" || ready.reason === "apagado") return { ok: true as const };
-  return { ok: false as const, message: ready.message || COMPUTER_WARMING_MESSAGE };
+  if (ready.ok || ready.reason === "ausente" || ready.reason === "apagado" || ready.reason === "detenido" || ready.reason === "transporte") {
+    return { ok: true as const };
+  }
+  return { ok: false as const, message: COMPUTER_WARMING_MESSAGE };
 }

@@ -2,6 +2,21 @@ import { lookup } from "node:dns/promises";
 import { startGuardProxy } from "./guard-proxy.mjs";
 import { isIpAddress, isPrivateAddress, publicUrl } from "./protocol.mjs";
 
+const openBrowsers = new Set();
+
+export function rememberBrowser(browser) {
+  openBrowsers.add(browser);
+  return () => {
+    openBrowsers.delete(browser);
+  };
+}
+
+export async function closeBrowsers() {
+  const current = [...openBrowsers];
+  openBrowsers.clear();
+  await Promise.all(current.map((browser) => Promise.resolve(browser.close()).catch(() => undefined)));
+}
+
 async function hostAllowed(hostname, lookupImpl) {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   if (isIpAddress(host)) return !isPrivateAddress(host);
@@ -33,6 +48,7 @@ export async function browsePublic(raw, signal, lookupImpl) {
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
     ],
   });
+  const forget = rememberBrowser(browser);
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -51,7 +67,8 @@ export async function browsePublic(raw, signal, lookupImpl) {
       await context.close().catch(() => undefined);
     }
   } finally {
-    await browser.close();
+    forget();
+    await browser.close().catch(() => undefined);
     await proxy.close();
   }
 }

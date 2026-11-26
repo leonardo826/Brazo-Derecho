@@ -21,11 +21,11 @@ export type PowerStore = {
     organizationId: string,
     now: number,
     timeoutMs: number,
-    meta: { provider: string; machineId: string },
+    meta: { provider: string; machineId: string; epoch: number },
   ): Promise<StartClaim>;
   notePowerOn(organizationId: string, now: number): Promise<void>;
   refreshClaim(organizationId: string, generation: number, now: number, timeoutMs: number): Promise<boolean>;
-  markReady(organizationId: string, now: number): Promise<boolean>;
+  markReady(organizationId: string, now: number, lease: { machineId: string; epoch: number }): Promise<boolean>;
   markError(organizationId: string, generation: number, code: string, now: number): Promise<void>;
   read(organizationId: string): Promise<PowerSnapshot | null>;
   touch(organizationId: string, now: number): Promise<void>;
@@ -36,9 +36,14 @@ export type PowerStore = {
   claimStop(organizationId: string, idleBefore: number, now: number): Promise<"stop" | "busy" | "skip">;
   abortStop(organizationId: string, now: number): Promise<void>;
   failStop(organizationId: string, now: number): Promise<void>;
+  clearStuckTasks(organizationId: string, generation: number, lastActivityAt: number): Promise<boolean>;
   markOff(organizationId: string, now: number): Promise<{ seconds: number } | null>;
   uses(organizationId: string): Promise<PowerUse[]>;
 };
+
+function sameLease(row: PowerSnapshot, meta: { machineId: string; epoch: number }) {
+  return row.machineId === meta.machineId && row.leaseEpoch === meta.epoch;
+}
 
 function blank(organizationId: string, now: number, meta: { provider: string; machineId: string }): PowerSnapshot {
   return {
@@ -48,6 +53,7 @@ function blank(organizationId: string, now: number, meta: { provider: string; ma
     generation: 0,
     provider: meta.provider,
     machineId: meta.machineId,
+    leaseEpoch: 0,
     lastActivityAt: now,
     activeTaskCount: 0,
     powerOnAt: null,
@@ -80,9 +86,10 @@ export function memoryPowerStore(): PowerStore {
           row = blank(organizationId, now, meta);
           rows.set(organizationId, row);
         }
-        if (row.state === "READY") return { role: "ready" as const };
+        if (row.state === "READY" && sameLease(row, meta)) return { role: "ready" as const };
         if (row.state === "STOPPING" && (row.claimExpiresAt ?? 0) > now) return { role: "stopping" as const };
-        if (!canClaimStart(row, now)) return { role: "waiter" as const };
+        const staleReady = row.state === "READY" && !sameLease(row, meta);
+        if (!canClaimStart(row, now) && !staleReady) return { role: "waiter" as const };
         row.state = "STARTING";
         row.generation += 1;
         row.provider = meta.provider;
@@ -107,11 +114,12 @@ export function memoryPowerStore(): PowerStore {
         return true;
       });
     },
-    markReady(organizationId, now) {
+    markReady(organizationId, now, lease) {
       return exclusive(() => {
         const row = rowOf(organizationId);
         if (!row) return false;
         if (row.state === "READY") {
+          if (!sameLease(row, lease)) return false;
           row.lastActivityAt = now;
           return true;
         }
@@ -119,6 +127,8 @@ export function memoryPowerStore(): PowerStore {
         if (row.powerOnAt === null) row.powerOnAt = now;
         row.state = "READY";
         row.generation += 1;
+        row.machineId = lease.machineId;
+        row.leaseEpoch = lease.epoch;
         row.lastActivityAt = now;
         row.claimExpiresAt = null;
         row.errorCode = "";
@@ -195,12 +205,25 @@ export function memoryPowerStore(): PowerStore {
         row.lastActivityAt = now;
       });
     },
-    failStop(organizationId, now) {
+    failStop(organizationId) {
       return exclusive(() => {
         const row = rowOf(organizationId);
         if (!row || row.state !== "STOPPING") return;
-        row.claimExpiresAt = now;
+        row.state = "ERROR";
+        row.generation += 1;
         row.errorCode = "apagado";
+        row.claimExpiresAt = null;
+      });
+    },
+    clearStuckTasks(organizationId, generation, lastActivityAt) {
+      return exclusive(() => {
+        const row = rowOf(organizationId);
+        if (!row || row.generation !== generation || row.lastActivityAt !== lastActivityAt || row.activeTaskCount <= 0) {
+          return false;
+        }
+        row.activeTaskCount = 0;
+        row.generation += 1;
+        return true;
       });
     },
     markOff(organizationId, now) {
@@ -243,6 +266,7 @@ type PowerRow = {
   generation: number;
   provider: string;
   machineId: string;
+  leaseEpoch: number;
   lastActivityAt: Date;
   activeTaskCount: number;
   powerOnAt: Date | null;
@@ -258,6 +282,7 @@ function snapshot(row: PowerRow): PowerSnapshot {
     generation: row.generation,
     provider: row.provider,
     machineId: row.machineId,
+    leaseEpoch: row.leaseEpoch,
     lastActivityAt: row.lastActivityAt.getTime(),
     activeTaskCount: row.activeTaskCount,
     powerOnAt: row.powerOnAt?.getTime() ?? null,
@@ -302,6 +327,11 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
           OR: [
             { state: { in: ["OFF", "ERROR"] } },
             { state: "STARTING", claimExpiresAt: { lte: stamp } },
+            { state: "STOPPING", claimExpiresAt: { lte: stamp } },
+            {
+              state: "READY",
+              OR: [{ machineId: { not: meta.machineId } }, { leaseEpoch: { not: meta.epoch } }],
+            },
           ],
         },
         data: {
@@ -320,8 +350,8 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
       }
       const row = await readRow(organizationId);
       if (!row) return { role: "waiter" };
-      if (row.state === "READY") return { role: "ready" };
-      if (row.state === "STOPPING") return { role: "stopping" };
+      if (row.state === "READY" && row.machineId === meta.machineId && row.leaseEpoch === meta.epoch) return { role: "ready" };
+      if (row.state === "STOPPING" && (row.claimExpiresAt ?? 0) > now) return { role: "stopping" };
       return { role: "waiter" };
     },
     async notePowerOn(organizationId, now) {
@@ -337,7 +367,7 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
       });
       return updated.count === 1;
     },
-    async markReady(organizationId, now) {
+    async markReady(organizationId, now, lease) {
       const stamp = new Date(now);
       await client.computerPower.updateMany({
         where: { organizationId, state: "STARTING", powerOnAt: null },
@@ -348,6 +378,8 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
         data: {
           state: "READY",
           generation: { increment: 1 },
+          machineId: lease.machineId,
+          leaseEpoch: lease.epoch,
           lastActivityAt: stamp,
           claimExpiresAt: null,
           errorCode: "",
@@ -355,7 +387,7 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
       });
       if (updated.count === 1) return true;
       const touched = await client.computerPower.updateMany({
-        where: { organizationId, state: "READY" },
+        where: { organizationId, state: "READY", machineId: lease.machineId, leaseEpoch: lease.epoch },
         data: { lastActivityAt: stamp },
       });
       return touched.count === 1;
@@ -446,11 +478,28 @@ export function prismaPowerStore(client: typeof prisma = prisma): PowerStore {
         },
       });
     },
-    async failStop(organizationId, now) {
+    async failStop(organizationId) {
       await client.computerPower.updateMany({
         where: { organizationId, state: "STOPPING" },
-        data: { claimExpiresAt: new Date(now), errorCode: "apagado" },
+        data: {
+          state: "ERROR",
+          generation: { increment: 1 },
+          errorCode: "apagado",
+          claimExpiresAt: null,
+        },
       });
+    },
+    async clearStuckTasks(organizationId, generation, lastActivityAt) {
+      const updated = await client.computerPower.updateMany({
+        where: {
+          organizationId,
+          generation,
+          lastActivityAt: new Date(lastActivityAt),
+          activeTaskCount: { gt: 0 },
+        },
+        data: { activeTaskCount: 0, generation: { increment: 1 } },
+      });
+      return updated.count === 1;
     },
     async markOff(organizationId, now) {
       const stamp = new Date(now);

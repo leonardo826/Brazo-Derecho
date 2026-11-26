@@ -16,7 +16,7 @@ HTTPS alcanzable desde la app. Cada request va firmada con HMAC del token (méto
 
 ## Encendido
 
-Un computador por empresa. `ComputerProvider` es `create`, `start`, `stop`, `delete`, `status` y `getEndpoint`. `StaticProvider` es el VPS que ya está: `start` y `stop` no lo apagan. El estado guardado es `OFF → STARTING → READY → STOPPING → OFF`, y `ERROR`. Un `UPDATE` condicionado impide dos arranques. La app no manda una tarea hasta un apretón firmado y el estado `READY`. Si se agota el tiempo, la persona ve «Encendiendo tu computador…». Un cron con `CRON_SECRET` apaga las máquinas quietas más de 15 minutos (`COMPUTER_IDLE_MINUTES`) si `activeTaskCount` es 0. Antes pide `POST /browser/close`. Los segundos encendidos quedan en `ComputerPowerUse`.
+Un computador por empresa. `ComputerProvider` es `create`, `start`, `stop`, `delete`, `status` y `getEndpoint`. `StaticProvider` es el VPS que ya está: `start` y `stop` no lo apagan. El estado guardado es `OFF → STARTING → READY → STOPPING → OFF`, y `ERROR`. Un `UPDATE` condicionado impide dos arranques. La app no manda una tarea hasta un apretón firmado y el estado `READY` de esa máquina y esa época. Si se agota el tiempo, la persona ve «Encendiendo tu computador…». GitHub Actions, con `CRON_SECRET`, llama `GET /api/cron/computer-idle` y apaga las máquinas quietas más de 15 minutos (`COMPUTER_IDLE_MINUTES`) si `activeTaskCount` es 0. Antes pide `POST /browser/close`. Un contador colgado más de 30 minutos se suelta si el agente no tiene una tarea. Un apagado fallido queda en `ERROR` (`apagado`) y se puede volver a tomar. Los segundos encendidos quedan en `ComputerPowerUse`. No hay cron en `vercel.json`.
 
 ## Lo que este paso no es
 

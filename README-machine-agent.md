@@ -10,7 +10,7 @@ Cada request lleva `x-iabot-timestamp`, `x-iabot-nonce`, `x-iabot-host` y `x-iab
 
 `POST /handshake` también va firmado. La respuesta prueba `HMAC(token, nonce + salto + machineId + host)`. Un `status: RUNNING` que declare la máquina no cuenta. `LEASE_EPOCH` vacío rechaza la tarea, el cancel y la acción. `/action` además exige la época y una tarea viva.
 
-`POST /browser/close` pide cerrar Chromium antes de un apagado por inactividad. Va firmado y exige la época. Si hay una tarea viva responde 409 y no cierra.
+`POST /browser/close` pide cerrar Chromium antes de un apagado por inactividad. Va firmado y exige la época. Si hay una tarea viva responde 409 y no cierra. Si no hay tarea, cierra los Chromium que el proceso todavía tenga abiertos.
 
 Durante una rotación el VPS acepta `AGENT_RUNTIME_TOKEN` y `AGENT_RUNTIME_TOKEN_PREVIOUS`.
 

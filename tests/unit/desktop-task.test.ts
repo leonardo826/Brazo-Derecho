@@ -280,4 +280,17 @@ describe("contrato del computador en el chat", () => {
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.WARMING });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  test("si el encendido falla, no llama y dice que no hay transporte", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const result = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      ensureReady: async () => {
+        throw new Error("caida");
+      },
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.TRANSPORT });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });
