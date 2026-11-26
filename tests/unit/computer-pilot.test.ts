@@ -227,10 +227,16 @@ describe("piloto del computador", () => {
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_PANEL: "true", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "development", COMPUTER_FEATURE_ENABLED: "true" })).toBe(true);
     expect(computerPanelEnabled({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "True" })).toBe(false);
-    expect(panelComputerHref({ NODE_ENV: "production" })).toBeNull();
-    expect(panelComputerHref({ NODE_ENV: "production", COMPUTER_FEATURE_ENABLED: "true", COMPUTER_PANEL: "true" })).toBe(
-      "/panel/computador",
-    );
+    expect(panelComputerHref({ NODE_ENV: "production" }, "org-panel")).toBeNull();
+    const abierto = {
+      NODE_ENV: "production" as const,
+      COMPUTER_FEATURE_ENABLED: "true",
+      COMPUTER_PANEL: "true",
+      COMPUTER_ENABLED_ORGS: "org-panel",
+    };
+    expect(panelComputerHref(abierto, "org-panel")).toBe("/panel/computador");
+    expect(panelComputerHref(abierto, "org-otra")).toBeNull();
+    expect(panelComputerHref({ ...abierto, COMPUTER_ENABLED_ORGS: "" }, "org-panel")).toBeNull();
     const nav = readFileSync("src/components/panel-nav.tsx", "utf8");
     const shell = readFileSync("src/components/panel-shell.tsx", "utf8");
     expect(nav).not.toContain("/panel/computador");

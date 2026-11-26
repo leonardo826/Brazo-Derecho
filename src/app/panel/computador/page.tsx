@@ -3,7 +3,7 @@ import { decideComputerAction, enqueueComputerAction, mintComputerViewAction } f
 import { CsrfField } from "@/components/csrf-field";
 import { Flash } from "@/components/flash";
 import { MACHINE_AGENT_KINDS } from "@/lib/computer/agent-kind";
-import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { computerEnabledForOrg, computerOrgGateClosed } from "@/lib/computer/flag";
 import { localNovncUrl, novncStillValid, safeNovncHref, tokenMatches } from "@/lib/computer/novnc";
 import { missingVaultTable } from "@/lib/credentials/http";
 import { prismaCredentialRepo } from "@/lib/credentials/repo";
@@ -36,8 +36,9 @@ export default async function ComputerPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  if (!computerFeatureEnabled()) notFound();
+  if (computerOrgGateClosed()) notFound();
   const session = await requireSession();
+  if (!computerEnabledForOrg(session.organizationId)) notFound();
   const params = await searchParams;
   const token = firstParam(params.token);
   let migration = false;

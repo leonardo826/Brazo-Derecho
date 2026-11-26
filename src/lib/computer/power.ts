@@ -1,5 +1,5 @@
 import type { ComputerLease, LeaseState } from "@/lib/chat/desktop-task";
-import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { computerEnabledForOrg } from "@/lib/computer/flag";
 import { loadTenantLease } from "@/lib/computer/lease";
 import { COMPUTER_WARMING_MESSAGE } from "@/lib/computer/power-copy";
 import { memoryPowerStore, prismaPowerStore, type PowerStore } from "@/lib/computer/power-store";
@@ -152,7 +152,7 @@ async function awaitReady(input: {
 }
 
 export async function ensureComputerReady(organizationId: string, options: EnsureDeps = {}): Promise<ReadyResult> {
-  const enabled = options.enabled ?? computerFeatureEnabled();
+  const enabled = options.enabled ?? computerEnabledForOrg(organizationId);
   if (!enabled) return { ok: false, message: COMPUTER_WARMING_MESSAGE, reason: "apagado" };
   const now = options.now ?? Date.now;
   const store = options.store ?? prismaPowerStore();
@@ -270,11 +270,16 @@ async function closeChromium(input: { organizationId: string; machineId: string 
   }
 }
 
+function orgMayIdle(organizationId: string, allow: ReadonlySet<string> | undefined) {
+  return allow === undefined || allow.has(organizationId);
+}
+
 export async function reapIdleComputers(options: {
   now?: () => number;
   idleMs?: number;
   store?: PowerStore;
   provider?: ComputerProvider;
+  allowOrganizationIds?: ReadonlySet<string>;
   closeBrowser?: (input: { organizationId: string; machineId: string }) => Promise<"closed" | "busy" | "down">;
 } = {}) {
   const now = options.now ?? Date.now;
@@ -286,7 +291,8 @@ export async function reapIdleComputers(options: {
   const stuckBefore = at - STUCK_TASK_MS;
   const skippedBusy: string[] = [];
   const stopped: string[] = [];
-  const busyRows = await store.listBusy(idleBefore);
+  const allow = options.allowOrganizationIds;
+  const busyRows = (await store.listBusy(idleBefore)).filter((row) => orgMayIdle(row.organizationId, allow));
   const stuck = busyRows.filter((row) => row.lastActivityAt < stuckBefore).slice(0, REAP_LIMIT);
   for (const row of busyRows) {
     if (row.lastActivityAt >= stuckBefore) skippedBusy.push(row.organizationId);
@@ -300,7 +306,9 @@ export async function reapIdleComputers(options: {
     const cleared = await store.clearStuckTasks(row.organizationId, row.generation, row.lastActivityAt);
     if (!cleared) skippedBusy.push(row.organizationId);
   });
-  const candidates = (await store.listStoppable(idleBefore, at)).slice(0, REAP_LIMIT);
+  const candidates = (await store.listStoppable(idleBefore, at))
+    .filter((row) => orgMayIdle(row.organizationId, allow))
+    .slice(0, REAP_LIMIT);
   await mapLimit(candidates, REAP_PARALLEL, async (row) => {
     const claim = await store.claimStop(row.organizationId, idleBefore, at);
     if (claim === "busy") {
