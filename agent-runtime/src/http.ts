@@ -74,6 +74,7 @@ function signedToken(request: AgentRequest, env: AgentEnv) {
   const signature = header(request.headers, "x-iabot-signature");
   if (!/^[0-9]{10}$/.test(timestamp) || !/^[A-Za-z0-9_-]{16,80}$/.test(nonce) || !signature) return null;
   const now = Math.floor(Date.now() / 1000);
+  expireSeenNonces(now);
   if (Math.abs(now - Number(timestamp)) > 60 || host !== domain || seenNonces.has(nonce)) return null;
   const body = request.rawBody ?? "";
   const matched = runtimeTokens(env).find((token) =>
@@ -84,6 +85,21 @@ function signedToken(request: AgentRequest, env: AgentEnv) {
   return matched;
 }
 
+export function expireSeenNonces(now = Math.floor(Date.now() / 1000)) {
+  for (const [key, at] of seenNonces) {
+    if (now - at > 120) seenNonces.delete(key);
+  }
+}
+
+export function rememberSeenNonce(nonce: string, now: number) {
+  seenNonces.set(nonce, now);
+}
+
+export function nonceStillSeen(nonce: string, now: number) {
+  expireSeenNonces(now);
+  return seenNonces.has(nonce);
+}
+
 type Inflight = { controller: AbortController };
 const inflight = new Map<string, Inflight>();
 const cancelledEarly = new Set<string>();
@@ -92,6 +108,7 @@ export function resetAgentTasks() {
   for (const job of inflight.values()) job.controller.abort();
   inflight.clear();
   cancelledEarly.clear();
+  seenNonces.clear();
 }
 
 function rememberCancel(taskId: string) {
@@ -110,7 +127,7 @@ function taskIdOf(body: unknown) {
 
 function epochAccepted(body: unknown, env: AgentEnv) {
   const expected = (env.LEASE_EPOCH ?? "").trim();
-  if (!expected) return true;
+  if (!/^[0-9]+$/.test(expected)) return false;
   const value = body && typeof body === "object" ? (body as { epoch?: unknown }).epoch : undefined;
   return typeof value === "number" && Number.isInteger(value) && String(value) === expected;
 }

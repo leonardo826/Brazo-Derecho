@@ -29,6 +29,8 @@ export async function browsePublic(raw, signal, lookupImpl) {
     proxy: { server: `http://127.0.0.1:${port}` },
     args: [
       "--disable-dev-shm-usage",
+      "--disable-features=WebRTC",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
     ],
   });

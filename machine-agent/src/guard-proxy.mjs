@@ -36,61 +36,72 @@ function defaultConnect(address, port) {
   });
 }
 
-async function openTarget(rawUrl, lookupImpl, connectImpl) {
-  let target;
-  try {
-    target = new URL(rawUrl);
-  } catch {
-    return null;
-  }
-  if (target.protocol !== "http:" && target.protocol !== "https:") return null;
-  const pin = await resolvePublic(target.hostname, lookupImpl);
-  if (!pin) return null;
-  const port = Number(target.port || (target.protocol === "https:" ? 443 : 80));
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  const socket = await connectImpl(pin, port);
-  return { target, pin, port, socket };
+export function parseConnectTarget(raw) {
+  const match = /^(.+):(\d+)$/.exec(String(raw ?? "").trim());
+  if (!match) return null;
+  const port = Number(match[2]);
+  if (port !== 443) return null;
+  const host = match[1].replace(/^\[|\]$/g, "");
+  if (!host) return null;
+  return { host, port };
+}
+
+function tieSockets(clientSocket, upstream) {
+  let closed = false;
+  const fail = () => {
+    if (closed) return;
+    closed = true;
+    if (upstream && !upstream.destroyed) upstream.destroy();
+    if (!clientSocket.destroyed) clientSocket.destroy();
+  };
+  clientSocket.on("error", fail);
+  upstream.on("error", fail);
+  upstream.pipe(clientSocket);
+  clientSocket.pipe(upstream);
+  return fail;
 }
 
 export function startGuardProxy(options = {}) {
   const lookupImpl = options.lookup ?? defaultLookup;
   const connectImpl = options.connect ?? defaultConnect;
-  const server = http.createServer((req, res) => {
-    void (async () => {
-      const opened = await openTarget(req.url ?? "", lookupImpl, connectImpl);
-      if (!opened) {
-        res.writeHead(403);
-        res.end();
-        return;
-      }
-      const path = `${opened.target.pathname}${opened.target.search}` || "/";
-      opened.socket.write(`${req.method} ${path} HTTP/1.1\r\nHost: ${opened.target.host}\r\nConnection: close\r\n\r\n`);
-      opened.socket.pipe(res);
-      opened.socket.on("error", () => {
-        if (!res.headersSent) res.writeHead(502);
-        res.end();
-      });
-    })().catch(() => {
-      if (!res.headersSent) res.writeHead(502);
-      res.end();
+  const server = http.createServer((_req, res) => {
+    res.on("error", () => {
+      res.destroy();
     });
+    if (!res.headersSent) res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+    res.end("solo https");
   });
   server.on("connect", (req, clientSocket) => {
+    let upstream = null;
+    let closed = false;
+    const fail = () => {
+      if (closed) return;
+      closed = true;
+      if (upstream && !upstream.destroyed) upstream.destroy();
+      if (!clientSocket.destroyed) clientSocket.destroy();
+    };
+    clientSocket.on("error", fail);
     void (async () => {
-      const [host, portRaw] = String(req.url ?? "").split(":");
-      const pin = await resolvePublic(host, lookupImpl);
-      const port = Number(portRaw || 443);
-      if (!pin || !Number.isInteger(port)) {
-        clientSocket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+      const target = parseConnectTarget(req.url);
+      const pin = target ? await resolvePublic(target.host, lookupImpl) : null;
+      if (!target || !pin) {
+        if (!clientSocket.destroyed) clientSocket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
         return;
       }
-      const upstream = await connectImpl(pin, port);
-      clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-      upstream.pipe(clientSocket);
-      clientSocket.pipe(upstream);
+      upstream = await connectImpl(pin, 443);
+      tieSockets(clientSocket, upstream);
+      if (!clientSocket.destroyed) clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
     })().catch(() => {
-      clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      fail();
     });
+  });
+  const sockets = new Set();
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  server.on("clientError", (_error, socket) => {
+    socket.destroy();
   });
   return {
     server,
@@ -103,6 +114,7 @@ export function startGuardProxy(options = {}) {
       });
     },
     close() {
+      for (const socket of sockets) socket.destroy();
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };

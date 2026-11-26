@@ -3,6 +3,7 @@ import { createServer as createHttp } from "node:http";
 import { createServer as createHttps } from "node:https";
 import { pathToFileURL } from "node:url";
 import { browsePublic, navigationAllowed } from "./browser.mjs";
+import { installProcessGuards } from "./process-guard.mjs";
 import { handshakeProof, normalizeHost, proofsMatch, requestSignature } from "./protocol.mjs";
 
 const inflight = new Map();
@@ -199,6 +200,7 @@ export async function handleMachine(request, deps) {
 }
 
 export function listen(env = process.env) {
+  installProcessGuards();
   const token = (env.AGENT_RUNTIME_TOKEN ?? "").trim();
   const previousToken = (env.AGENT_RUNTIME_TOKEN_PREVIOUS ?? "").trim();
   const machineId = (env.MACHINE_ID ?? "").trim();

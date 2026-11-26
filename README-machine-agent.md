@@ -25,9 +25,18 @@ git checkout cursor/computer-lease-secure-4691
 MACHINE_AGENT_DOMAIN=vm.ejemplo.cl bash machine-agent/install-ubuntu-24.04.sh
 ```
 
-El instalador usa el repositorio firmado de NodeSource, no un `curl | bash`. Deja ufw con el 443 abierto y el 22 abierto. Para no abrir el 22: `MACHINE_AGENT_ALLOW_SSH=0` delante del instalador, cuando el acceso no dependa de SSH. También aplica reglas de salida para el usuario `iabot`: metadatos `169.254.0.0/16`, redes privadas y el loopback hacia el puerto 8787.
+El instalador usa el repositorio firmado de NodeSource, no un `curl | bash`. ufw abre el 80 (para renovar el certificado), el 443 y el 22. Para no abrir el 22: `MACHINE_AGENT_ALLOW_SSH=0` delante del instalador. La salida de `iabot` va a la cadena `IABOT-EGRESS`, insertada al frente de OUTPUT y guardada en `/etc/ufw/before.rules` y `before6.rules`. Un servicio `iabot-egress` la vuelve a aplicar al arrancar. El UDP de salida se rechaza, salvo el DNS del resolver de `/etc/resolv.conf`. Chromium además arranca con WebRTC apagado.
 
-Chromium conserva su sandbox. Hace falta user namespace. En Ubuntu 24.04 AppArmor lo restringe; el instalador carga un perfil que permite `userns` solo a ese binario. systemd no pone `RestrictNamespaces` porque el sandbox de Chromium lo necesita. El resto del servicio queda con `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, `CapabilityBoundingSet` vacío y familias de red limitadas. `AF_NETLINK` se deja porque el sandbox de Chromium lo usa.
+Chromium conserva su sandbox. Ubuntu 24.04 trae `kernel.apparmor_restrict_unprivileged_userns=1`, así que el instalador carga un perfil AppArmor con `userns` para `chrome` y para `chrome-headless-shell` (el binario que usa Playwright en headless). systemd no pone `RestrictNamespaces` porque ese sandbox lo necesita. Para comprobarlo, con el agente en marcha:
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_userns
+grep -E 'iabot-chromium|chrome-headless-shell' /sys/kernel/security/apparmor/profiles
+pid="$(pgrep -f chrome-headless-shell | head -1)"
+tr '\0' ' ' < "/proc/${pid}/attr/current"
+```
+
+La última línea tiene que mencionar `iabot-chromium-headless` y no un rechazo de userns en `journalctl -k`.
 
 El token se genera en un archivo y no entra en la shell:
 
@@ -39,19 +48,15 @@ openssl rand -base64 32 > /root/iabot-token-new
 
 `maq-empresa-1` es el `MACHINE_ID` (letras, números, `_` y `-`, de 4 a 80). La época inicial es 1.
 
-Certificado:
+El certificado lo pide el instalador, no `certbot --nginx`. Primero deja nginx solo en el puerto 80 con `/.well-known/acme-challenge/`, pide el certificado por webroot y después habilita el 443 apuntando a `/etc/letsencrypt/live/<dominio>/`. Esos archivos son enlaces que Certbot renueva; un hook en `/etc/letsencrypt/renewal-hooks/deploy/iabot-nginx` recarga nginx. Si el certificado ya está en esa ruta, el instalador lo reutiliza y no pide otro.
 
-```bash
-apt-get install -y certbot python3-certbot-nginx
-certbot certonly --nginx -d vm.ejemplo.cl
-install -d -m 0750 -o root -g iabot /etc/iabot-machine-agent/tls
-cp /etc/letsencrypt/live/vm.ejemplo.cl/fullchain.pem /etc/iabot-machine-agent/tls/fullchain.pem
-cp /etc/letsencrypt/live/vm.ejemplo.cl/privkey.pem /etc/iabot-machine-agent/tls/privkey.pem
-chown root:iabot /etc/iabot-machine-agent/tls/fullchain.pem /etc/iabot-machine-agent/tls/privkey.pem
-chmod 0640 /etc/iabot-machine-agent/tls/fullchain.pem /etc/iabot-machine-agent/tls/privkey.pem
-nginx -t && systemctl reload nginx
-systemctl restart iabot-machine-agent
-```
+En los tres VPS ya instalados los certificados están en:
+
+- `/etc/letsencrypt/live/64-176-27-253.sslip.io/`
+- `/etc/letsencrypt/live/64-176-26-74.sslip.io/`
+- `/etc/letsencrypt/live/64-176-28-67.sslip.io/`
+
+`MACHINE_AGENT_DOMAIN` tiene que ser exactamente ese nombre.
 
 Desde otra máquina, sin mandar el token:
 
@@ -130,19 +135,25 @@ npx tsx scripts/computer-lease-admin.ts revoke \
   --epoch EPOCA_ACTUAL
 ```
 
-## 4. Actualizar un VPS que ya tiene f134457 y no está enrolado
+## 4. Actualizar un VPS que ya está instalado
 
-En cada uno de los tres VPS, como root. No borres `/etc/iabot-machine-agent.env` si ya tiene token: el instalador no lo pisa. Sí agrega `MACHINE_AGENT_DOMAIN` si falta.
+Como root. No borres `/etc/iabot-machine-agent.env`. El instalador reutiliza `/etc/letsencrypt/live/<dominio>/` si el certificado ya está. `init` va en un bloque aparte y solo corre si no hay token.
 
 ```bash
 cd /opt/brazo-src
 git fetch origin cursor/computer-lease-secure-4691
-git checkout cursor/computer-lease-secure-4691
+git checkout --detach SHA
 MACHINE_AGENT_DOMAIN=vm.ejemplo.cl bash machine-agent/install-ubuntu-24.04.sh
-/opt/iabot-machine-agent/rotate-token.sh init maq-empresa-1 vm.ejemplo.cl
+git rev-parse HEAD
 ```
 
-`rotate-token.sh init` solo si todavía no hay token, y después de crear `/root/iabot-token-new`. Si el entorno ya tiene token y máquina, no corras `init`: deja el archivo y reinicia el servicio.
+```bash
+if ! grep -Eq '^AGENT_RUNTIME_TOKEN=.+' /etc/iabot-machine-agent.env; then
+  umask 077
+  openssl rand -base64 32 > /root/iabot-token-new
+  /opt/iabot-machine-agent/rotate-token.sh init maq-empresa-1 vm.ejemplo.cl
+fi
+```
 
 ```bash
 nginx -t && systemctl reload nginx
@@ -150,4 +161,4 @@ systemctl restart iabot-machine-agent
 systemctl status iabot-machine-agent --no-pager
 ```
 
-El checkout `cursor/computer-lease-secure-4691` tiene que ser el commit nuevo del PR, no `f134457`. Comprueba con `git rev-parse HEAD`. Después enrola con el paso 2. Hasta entonces la app no llama a esa máquina.
+`SHA` es el commit publicado con esta revisión. `git rev-parse HEAD` tiene que coincidir. Si el entorno ya tiene token, el segundo bloque no hace nada.

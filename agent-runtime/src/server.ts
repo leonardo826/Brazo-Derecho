@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createCdpDesktop, ensureWhatsappTab, waitForCdp } from "./cdp.ts";
 import { handleAgent } from "./http.ts";
+import { readAgentHttp } from "./request.ts";
 import { resolveXaiMode } from "./xai.ts";
 
 const port = Number(process.env.AGENT_PORT || 8787);
@@ -24,22 +25,10 @@ const server = createServer(async (req, res) => {
     chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks);
-  let body: unknown;
-  if (raw.length) {
-    try {
-      body = JSON.parse(raw.toString("utf8"));
-    } catch {
-      body = null;
-    }
-  }
   const url = new URL(req.url || "/", "http://127.0.0.1");
-  const headers: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(req.headers)) {
-    headers[key] = Array.isArray(value) ? value[0] : value;
-  }
   try {
     const result = await handleAgent(
-      { method: req.method || "GET", path: url.pathname, body, headers },
+      readAgentHttp(req.method || "GET", url.pathname, raw, req.headers),
       { env: process.env, desktop },
     );
     res.writeHead(result.status, result.headers);

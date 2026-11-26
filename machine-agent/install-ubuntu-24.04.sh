@@ -34,7 +34,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl gnupg nginx ufw iptables apparmor
+apt-get install -y ca-certificates curl gnupg nginx ufw iptables apparmor certbot python3
 if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)'; then
   install -d -m 0755 /usr/share/keyrings
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
@@ -69,36 +69,74 @@ elif [[ -n "${DOMAIN}" ]] && ! grep -q '^MACHINE_AGENT_DOMAIN=' /etc/iabot-machi
 fi
 
 install -m 0755 "${SOURCE}/firewall/iabot-egress.sh" /usr/local/sbin/iabot-egress
+install -m 0644 "${SOURCE}/systemd/iabot-egress.service" /etc/systemd/system/iabot-egress.service
 install -m 0644 "${SOURCE}/apparmor/iabot-chromium" /etc/apparmor.d/iabot-chromium
 if command -v apparmor_parser >/dev/null 2>&1; then
   apparmor_parser -r /etc/apparmor.d/iabot-chromium || true
 fi
+systemctl daemon-reload
+systemctl enable iabot-egress
 /usr/local/sbin/iabot-egress
 ufw default deny incoming
+ufw allow 80/tcp
 ufw allow 443/tcp
 if [[ "${MACHINE_AGENT_ALLOW_SSH:-1}" != "0" ]]; then
   ufw allow 22/tcp
 fi
 ufw --force enable
+ufw reload || true
 
-if [[ -n "${DOMAIN}" ]]; then
-  sed "s/MACHINE_AGENT_DOMAIN/${DOMAIN}/g" "${SOURCE}/nginx/iabot-machine-agent.conf" > /etc/nginx/sites-available/iabot-machine-agent.conf
+install -d -m 0755 /var/www/html
+install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/iabot-nginx <<'EOF'
+#!/bin/sh
+systemctl reload nginx
+EOF
+chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/iabot-nginx
+
+write_nginx() {
+  local mode="$1"
+  if [[ "$mode" == "https" ]]; then
+    sed "s/MACHINE_AGENT_DOMAIN/${DOMAIN}/g" "${SOURCE}/nginx/iabot-machine-agent.conf" > /etc/nginx/sites-available/iabot-machine-agent.conf
+  else
+    cat > /etc/nginx/sites-available/iabot-machine-agent.conf <<EOF
+server {
+  listen 80;
+  server_name ${DOMAIN};
+  location /.well-known/acme-challenge/ { root /var/www/html; }
+  location / { return 404; }
+}
+EOF
+  fi
   ln -sfn /etc/nginx/sites-available/iabot-machine-agent.conf /etc/nginx/sites-enabled/iabot-machine-agent.conf
   rm -f /etc/nginx/sites-enabled/default
+}
+
+if [[ -n "${DOMAIN}" ]]; then
+  if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" && -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
+    write_nginx https
+  else
+    write_nginx http
+    nginx -t
+    systemctl enable nginx
+    systemctl reload nginx || systemctl restart nginx
+    certbot_args=(certonly --webroot -w /var/www/html -d "${DOMAIN}" --non-interactive --agree-tos)
+    if [[ -n "${CERTBOT_EMAIL:-}" ]]; then
+      certbot_args+=(--email "${CERTBOT_EMAIL}")
+    else
+      certbot_args+=(--register-unsafely-without-email)
+    fi
+    certbot "${certbot_args[@]}"
+    write_nginx https
+  fi
+  nginx -t
+  systemctl enable nginx
+  systemctl reload nginx || systemctl restart nginx
 fi
 
 install -m 0644 "${SOURCE}/systemd/iabot-machine-agent.service" /etc/systemd/system/iabot-machine-agent.service
 systemctl daemon-reload
 systemctl enable iabot-machine-agent
-
-if [[ -n "${DOMAIN}" ]]; then
-  if nginx -t; then
-    systemctl enable nginx
-    systemctl reload nginx
-  else
-    echo "nginx todavía no tiene el certificado. Colócalo y vuelve a cargar nginx." >&2
-  fi
-fi
 
 if grep -Eq '^AGENT_RUNTIME_TOKEN=.+' /etc/iabot-machine-agent.env && grep -Eq '^MACHINE_ID=.+' /etc/iabot-machine-agent.env; then
   systemctl restart iabot-machine-agent

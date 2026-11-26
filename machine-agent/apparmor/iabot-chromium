@@ -4,3 +4,7 @@ include <tunables/global>
 profile iabot-chromium /opt/iabot-machine-agent/browsers/**/chrome flags=(unconfined) {
   userns,
 }
+
+profile iabot-chromium-headless /opt/iabot-machine-agent/browsers/**/chrome-headless-shell flags=(unconfined) {
+  userns,
+}
