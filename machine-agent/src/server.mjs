@@ -144,6 +144,14 @@ export async function handleMachine(request, deps) {
     return json(400, { ok: false, error: "accion" });
   }
 
+  if (method === "POST" && path === "/browser/close") {
+    if (!bound) return json(403, { ok: false, error: "maquina" });
+    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
+    if (inflight.size > 0) return json(409, { ok: false, error: "tarea" });
+    if (deps.closeBrowser) await deps.closeBrowser();
+    return json(200, { ok: true });
+  }
+
   if (method === "POST" && path === "/task") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
     if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });

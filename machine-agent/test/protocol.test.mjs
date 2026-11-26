@@ -120,3 +120,56 @@ test("el apretÃ³n exige firma y el token anterior sigue valiendo en la transiciÃ
   assert.equal(JSON.parse(accepted.body.toString("utf8")).status, "DONE");
   assert.equal(accepted.body.toString("utf8").includes(previous), false);
 });
+
+test("cerrar chromium espera a que no haya una tarea", async () => {
+  resetMachineTasks();
+  let closed = 0;
+  const idleBody = { machineId, epoch: 1 };
+  const idleWire = signed("POST", "/browser/close", idleBody);
+  const idle = await handleMachine(
+    { method: "POST", path: "/browser/close", body: idleBody, rawBody: idleWire.raw, headers: idleWire.headers },
+    deps({
+      closeBrowser: async () => {
+        closed += 1;
+      },
+    }),
+  );
+  assert.equal(idle.status, 200);
+  assert.equal(closed, 1);
+
+  const unsigned = await handleMachine(
+    { method: "POST", path: "/browser/close", body: idleBody, rawBody: JSON.stringify(idleBody), headers: {} },
+    deps(),
+  );
+  assert.equal(unsigned.status, 401);
+
+  let release = () => {};
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const taskId = "task-close-0001";
+  const openBody = { goal: "Abre https://example.com", machineId, taskId, epoch: 1 };
+  const openSigned = signed("POST", "/task", openBody);
+  const pending = handleMachine(
+    { method: "POST", path: "/task", body: openBody, rawBody: openSigned.raw, headers: openSigned.headers },
+    deps({
+      browse: () => gate.then(() => ({ title: "Example", finalUrl: "https://example.com/" })),
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const busyBody = { machineId, epoch: 1 };
+  const busyWire = signed("POST", "/browser/close", busyBody);
+  const busy = await handleMachine(
+    { method: "POST", path: "/browser/close", body: busyBody, rawBody: busyWire.raw, headers: busyWire.headers },
+    deps({
+      closeBrowser: async () => {
+        closed += 1;
+      },
+    }),
+  );
+  assert.equal(busy.status, 409);
+  assert.equal(JSON.parse(busy.body.toString("utf8")).error, "tarea");
+  assert.equal(closed, 1);
+  release();
+  await pending;
+});

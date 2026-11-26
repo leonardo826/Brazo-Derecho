@@ -85,6 +85,7 @@ export default async function ContadorPage({
           draftUserId={session.userId}
           draftOrganizationId={session.organizationId}
           draftConversationId={CONTADOR_CONVERSATION_ID}
+          prewarm={open}
         />
       )}
     </div>

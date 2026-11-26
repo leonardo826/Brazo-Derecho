@@ -14,6 +14,10 @@ El chat y el arriendo no eligen proveedor. Un escritorio especializado entra si 
 
 HTTPS alcanzable desde la app. Cada request va firmada con HMAC del token (método, ruta, cuerpo, timestamp, nonce y host). El token no viaja. `POST /handshake` incluye el host en la prueba y el agente lo compara con `MACHINE_AGENT_DOMAIN`. `POST /task`, `POST /task/cancel` y `POST /action` exigen la época. `/action` solo corre si esa tarea sigue viva. Sin firma, 401. Con otra máquina, 403. Época distinta o vacía, 409. El alta exige la prueba y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen.
 
+## Encendido
+
+Un computador por empresa. `ComputerProvider` es `create`, `start`, `stop`, `delete`, `status` y `getEndpoint`. `StaticProvider` es el VPS que ya está: `start` y `stop` no lo apagan. El estado guardado es `OFF → STARTING → READY → STOPPING → OFF`, y `ERROR`. Un `UPDATE` condicionado impide dos arranques. La app no manda una tarea hasta un apretón firmado y el estado `READY`. Si se agota el tiempo, la persona ve «Encendiendo tu computador…». Un cron con `CRON_SECRET` apaga las máquinas quietas más de 15 minutos (`COMPUTER_IDLE_MINUTES`) si `activeTaskCount` es 0. Antes pide `POST /browser/close`. Los segundos encendidos quedan en `ComputerPowerUse`.
+
 ## Lo que este paso no es
 
-No compra máquinas, no elige proveedor y no trata un simulador como navegación. El servicio de referencia está en `machine-agent/` y se instala con `README-machine-agent.md`. La intención durable, la evidencia de tarifa y la Bóveda quedan aparte. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
+No compra máquinas, no elige un SDK de nube y no trata un simulador como navegación. El servicio de referencia está en `machine-agent/` y se instala con `README-machine-agent.md`. La intención durable, la evidencia de tarifa y la Bóveda quedan aparte. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
