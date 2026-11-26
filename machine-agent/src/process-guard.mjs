@@ -8,8 +8,10 @@ function safeProcessLog(tipo, error) {
 export function installProcessGuards() {
   process.on("uncaughtException", (error) => {
     safeProcessLog("uncaughtException", error);
+    process.exit(1);
   });
   process.on("unhandledRejection", (error) => {
     safeProcessLog("unhandledRejection", error);
+    process.exit(1);
   });
 }

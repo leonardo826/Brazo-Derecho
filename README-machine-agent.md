@@ -25,7 +25,7 @@ git checkout cursor/computer-lease-secure-4691
 MACHINE_AGENT_DOMAIN=vm.ejemplo.cl bash machine-agent/install-ubuntu-24.04.sh
 ```
 
-El instalador usa el repositorio firmado de NodeSource, no un `curl | bash`. ufw abre el 80 (para renovar el certificado), el 443 y el 22. Para no abrir el 22: `MACHINE_AGENT_ALLOW_SSH=0` delante del instalador. La salida de `iabot` va a la cadena `IABOT-EGRESS`, insertada al frente de OUTPUT y guardada en `/etc/ufw/before.rules` y `before6.rules`. Un servicio `iabot-egress` la vuelve a aplicar al arrancar. El UDP de salida se rechaza, salvo el DNS del resolver de `/etc/resolv.conf`. Chromium además arranca con WebRTC apagado.
+El instalador usa el repositorio firmado de NodeSource, no un `curl | bash`. ufw abre el 80 (para renovar el certificado), el 443 y el 22. Para no abrir el 22: `MACHINE_AGENT_ALLOW_SSH=0` delante del instalador. La salida de `iabot` va a `IABOT-EGRESS` en `before.rules` (salto en `ufw-before-output`) y a `IABOT-EGRESS6` en `before6.rules` (salto en `ufw6-before-output`). El salto queda antes de `-o lo -j ACCEPT`, así el bloqueo de loopback:8787 sobrevive un reinicio. El script solo escribe esos archivos si `iptables-restore --test` e `ip6tables-restore --test` pasan. El UDP de salida se rechaza, salvo el DNS de `/etc/resolv.conf`. Chromium no anuncia direcciones locales por WebRTC (`disable_non_proxied_udp`).
 
 Chromium conserva su sandbox. Ubuntu 24.04 trae `kernel.apparmor_restrict_unprivileged_userns=1`, así que el instalador carga un perfil AppArmor con `userns` para `chrome` y para `chrome-headless-shell` (el binario que usa Playwright en headless). systemd no pone `RestrictNamespaces` porque ese sandbox lo necesita. Para comprobarlo, con el agente en marcha:
 

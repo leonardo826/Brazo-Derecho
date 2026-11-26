@@ -68,23 +68,39 @@ elif [[ -n "${DOMAIN}" ]] && ! grep -q '^MACHINE_AGENT_DOMAIN=' /etc/iabot-machi
   printf 'MACHINE_AGENT_DOMAIN=%s\n' "${DOMAIN}" >> /etc/iabot-machine-agent.env
 fi
 
+install -d /usr/local/lib/iabot
 install -m 0755 "${SOURCE}/firewall/iabot-egress.sh" /usr/local/sbin/iabot-egress
+install -m 0644 "${SOURCE}/firewall/render-ufw.mjs" /usr/local/lib/iabot/render-ufw.mjs
 install -m 0644 "${SOURCE}/systemd/iabot-egress.service" /etc/systemd/system/iabot-egress.service
 install -m 0644 "${SOURCE}/apparmor/iabot-chromium" /etc/apparmor.d/iabot-chromium
 if command -v apparmor_parser >/dev/null 2>&1; then
-  apparmor_parser -r /etc/apparmor.d/iabot-chromium || true
+  apparmor_parser -r /etc/apparmor.d/iabot-chromium
 fi
 systemctl daemon-reload
 systemctl enable iabot-egress
-/usr/local/sbin/iabot-egress
+ufw_bak="$(mktemp -d)"
+cp -a /etc/ufw/before.rules /etc/ufw/before6.rules "$ufw_bak/"
+restore_ufw() {
+  cp -a "$ufw_bak/before.rules" /etc/ufw/before.rules
+  cp -a "$ufw_bak/before6.rules" /etc/ufw/before6.rules
+  ufw --force enable
+}
+if ! /usr/local/sbin/iabot-egress; then
+  restore_ufw
+  echo "El firewall no se aplicó. ufw volvió a before.rules anterior." >&2
+  exit 1
+fi
 ufw default deny incoming
 ufw allow 80/tcp
 ufw allow 443/tcp
 if [[ "${MACHINE_AGENT_ALLOW_SSH:-1}" != "0" ]]; then
   ufw allow 22/tcp
 fi
-ufw --force enable
-ufw reload || true
+if ! ufw --force enable; then
+  restore_ufw
+  echo "ufw no arrancó. Se restauraron before.rules y before6.rules." >&2
+  exit 1
+fi
 
 install -d -m 0755 /var/www/html
 install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
