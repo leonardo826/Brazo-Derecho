@@ -8,6 +8,50 @@ export function egressSpec(family) {
   return { chain: "IABOT-EGRESS", jumpChain: "ufw-before-output", loop: "127.0.0.0/8", nets: V4_NETS };
 }
 
+const BUILTIN_JUMPS = new Set([
+  "ACCEPT",
+  "DROP",
+  "REJECT",
+  "RETURN",
+  "LOG",
+  "MASQUERADE",
+  "REDIRECT",
+  "SNAT",
+  "DNAT",
+  "MARK",
+  "TCPMSS",
+  "CLASSIFY",
+  "NFLOG",
+  "NFQUEUE",
+  "QUEUE",
+  "ULOG",
+]);
+
+export function undeclaredJumps(text) {
+  const missing = [];
+  for (const part of text.split(/\n(?=\*)/)) {
+    if (!part.trim()) continue;
+    const declared = new Set();
+    const jumps = [];
+    for (const line of part.split("\n")) {
+      const trimmed = line.trim();
+      const declaration = trimmed.match(/^:([A-Za-z0-9_-]+)\s/);
+      if (declaration) declared.add(declaration[1]);
+      if (!trimmed.startsWith("-A ") && !trimmed.startsWith("-I ")) continue;
+      const jump = trimmed.match(/(?:^|\s)-[jg]\s+([A-Za-z0-9_-]+)/);
+      if (jump) jumps.push(jump[1]);
+    }
+    for (const target of jumps) {
+      if (!BUILTIN_JUMPS.has(target) && !declared.has(target)) missing.push(target);
+    }
+  }
+  return missing;
+}
+
+export function missingOwnChains(text) {
+  return undeclaredJumps(text).filter((target) => target.startsWith("IABOT-"));
+}
+
 export function egressRules({ family, resolver }) {
   const { chain, loop, nets } = egressSpec(family);
   const lines = [];
@@ -57,6 +101,15 @@ function flag(name) {
 
 if (process.argv[1] && process.argv[1].endsWith("render-ufw.mjs")) {
   const { readFileSync } = await import("node:fs");
+  const checkAt = process.argv.indexOf("--check");
+  if (checkAt >= 0) {
+    const missing = missingOwnChains(readFileSync(process.argv[checkAt + 1] ?? "", "utf8"));
+    if (missing.length) {
+      console.error(missing.join(" "));
+      process.exit(1);
+    }
+    process.exit(0);
+  }
   const source = readFileSync(flag("--input"), "utf8");
   process.stdout.write(renderUfwFile(source, { family: flag("--family"), uid: flag("--uid"), resolver: flag("--resolver") }));
 }

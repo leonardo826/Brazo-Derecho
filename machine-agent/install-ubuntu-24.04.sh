@@ -78,12 +78,12 @@ if command -v apparmor_parser >/dev/null 2>&1; then
 fi
 systemctl daemon-reload
 systemctl enable iabot-egress
+# shellcheck disable=SC1091
+source "${SOURCE}/firewall/load-ufw.sh"
 ufw_bak="$(mktemp -d)"
 cp -a /etc/ufw/before.rules /etc/ufw/before6.rules "$ufw_bak/"
 restore_ufw() {
-  cp -a "$ufw_bak/before.rules" /etc/ufw/before.rules
-  cp -a "$ufw_bak/before6.rules" /etc/ufw/before6.rules
-  ufw --force enable
+  rollback_ufw_files "$ufw_bak" || echo "No se pudo recargar el respaldo de ufw." >&2
 }
 if ! /usr/local/sbin/iabot-egress; then
   restore_ufw
@@ -96,9 +96,9 @@ ufw allow 443/tcp
 if [[ "${MACHINE_AGENT_ALLOW_SSH:-1}" != "0" ]]; then
   ufw allow 22/tcp
 fi
-if ! ufw --force enable; then
+if ! run_ufw_load; then
   restore_ufw
-  echo "ufw no arrancó. Se restauraron before.rules y before6.rules." >&2
+  echo "ufw no cargó IABOT-EGRESS. Se restauraron before.rules y before6.rules." >&2
   exit 1
 fi
 
