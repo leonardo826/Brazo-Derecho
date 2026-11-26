@@ -47,21 +47,53 @@ export function containsBlockedSecret(text: string) {
   return carriesSuspectedSecret(text) || containsPaymentCard(text) || containsAccessKey(text);
 }
 
-const INSTRUCTION = [
-  /\bignor(?:a|ar|en|e)\b/i,
-  /\binstruccion(?:es)?\b/i,
-  /\bsistema\b/i,
+const PHRASES = [
+  /\bignor(?:a|ar|en|e)\b.{0,80}\binstrucciones?\b/i,
+  /\bolvid(?:a|ar|en|e)\b.{0,80}\binstrucciones?\b/i,
+  /\bactua como\b/i,
+  /\ba partir de ahora\b/i,
   /\bsiempre responde\b/i,
-  /\bdescuento\b/i,
-  /\bregal(?:a|ar|o|amos|en)\b/i,
-  /https?:\/\//i,
-  /\bwww\./i,
+  /\bprompt del? sistema\b/i,
+  /\b(?:regala(?:r)?|da(?:r)?)\b.{0,50}\d+\s*%.{0,50}\ba todos\b/i,
+  /\bignore\b.{0,60}\binstructions\b/i,
+  /\bforget\b.{0,60}\binstructions\b/i,
+  /\bact as\b/i,
+  /\bfrom now on\b/i,
+  /\bsystem prompt\b/i,
 ];
 
-/** Una orden disfrazada de dato no se guarda ni se inyecta. */
+const URL_IN_TEXT = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+
+function withoutAccent(text: string) {
+  return text.normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+/** Un solo dominio, sin ruta ni consulta: el sitio de la empresa. Cualquier otra URL no. */
+export function hasDisallowedUrl(text: string) {
+  URL_IN_TEXT.lastIndex = 0;
+  const urls = [...text.matchAll(URL_IN_TEXT)].map((match) => match[0].replace(/[),.;]+$/g, ""));
+  if (urls.length === 0) return false;
+  if (urls.length > 1) return true;
+  const raw = urls[0] ?? "";
+  const withScheme = raw.startsWith("www.") ? `https://${raw}` : raw;
+  try {
+    const parsed = new URL(withScheme);
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) return true;
+    if (!parsed.hostname.includes(".")) return true;
+    return parsed.pathname.replace(/\/+$/g, "") !== "";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Orden dirigida al modelo, no una palabra suelta del negocio.
+ * «Sistema Spa», un descuento a clientes frecuentes o las instrucciones de despacho siguen.
+ */
 export function looksLikeInstruction(text: string) {
-  const plain = text.normalize("NFD").replace(/\p{M}/gu, "");
-  return INSTRUCTION.some((pattern) => {
+  const plain = withoutAccent(text);
+  if (hasDisallowedUrl(plain)) return true;
+  return PHRASES.some((pattern) => {
     pattern.lastIndex = 0;
     return pattern.test(plain);
   });

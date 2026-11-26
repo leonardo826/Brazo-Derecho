@@ -4,7 +4,7 @@ import { routineModel, type MetricId } from "@/lib/catalog";
 import { logEvent } from "@/lib/log";
 import { recordModelCall, releaseDailyTask } from "@/lib/meter-store";
 import { memoryFeatureEnabled } from "@/lib/memory/flag";
-import { redactForExtraction } from "@/lib/memory/filter";
+import { redactForExtraction, rejectMemoryFact } from "@/lib/memory/filter";
 import {
   erasedFactData,
   formatMemoryContext,
@@ -15,7 +15,14 @@ import {
   type FactPlan,
   type StoredFact,
 } from "@/lib/memory/facts";
-import { isTrivialMemoryTurn, memoryExtractionAllowed, textsForExtraction, type MemoryAudience } from "@/lib/memory/policy";
+import {
+  isTrivialMemoryTurn,
+  MEMORY_EXTRACTIONS_PER_WINDOW,
+  MEMORY_EXTRACTION_WINDOW_MS,
+  memoryExtractionAllowed,
+  textsForExtraction,
+  type MemoryAudience,
+} from "@/lib/memory/policy";
 import { prisma, type AgentKind } from "@/lib/prisma";
 import { callWithinPlan } from "@/lib/plan-limit";
 import type { TokenUsage } from "@/lib/pricing";
@@ -145,6 +152,29 @@ async function reloadBeforeWrite(organizationId: string, snapshot: StoredFact[])
   return { existing: fresh, suppressed };
 }
 
+/**
+ * El mapa en memoria es por proceso. Si la tabla existe, el conteo de la base
+ * manda entre instancias. Sin la tabla, queda solo el tope del proceso.
+ */
+export async function claimMemoryExtraction(organizationId: string, now = new Date()) {
+  if (!memoryExtractionAllowed(organizationId, now.getTime())) return false;
+  try {
+    const since = new Date(now.getTime() - MEMORY_EXTRACTION_WINDOW_MS);
+    const recent = await prisma.memoryExtraction.count({
+      where: { organizationId, createdAt: { gte: since } },
+    });
+    if (recent >= MEMORY_EXTRACTIONS_PER_WINDOW) return false;
+    await prisma.memoryExtraction.deleteMany({
+      where: { organizationId, createdAt: { lt: since } },
+    });
+    await prisma.memoryExtraction.create({ data: { organizationId, createdAt: now } });
+    return true;
+  } catch (error) {
+    if (missingTable(error)) return true;
+    throw error;
+  }
+}
+
 export async function rememberTurn(input: {
   organizationId: string;
   agent: AgentKind;
@@ -161,7 +191,7 @@ export async function rememberTurn(input: {
     logEvent("memoria.clave", { organizationId: input.organizationId, ok: false });
     return { saved: 0 };
   }
-  if (!memoryExtractionAllowed(input.organizationId)) return { saved: 0 };
+  if (!(await claimMemoryExtraction(input.organizationId))) return { saved: 0 };
   try {
     const rows = await prisma.memoryFact.findMany({
       where: { organizationId: input.organizationId },
@@ -223,7 +253,8 @@ export async function memoryPrompt(input: { organizationId: string; agent: Agent
       take: 80,
       select: { id: true, text: true, agent: true, updatedAt: true },
     });
-    return formatMemoryContext(selectFactsForPrompt(rows, input.query));
+    const safe = rows.filter((row) => !rejectMemoryFact(row.text));
+    return formatMemoryContext(selectFactsForPrompt(safe, input.query));
   } catch (error) {
     if (!missingTable(error)) logEvent("memoria.contexto", { organizationId: input.organizationId, agent: input.agent });
     return "";

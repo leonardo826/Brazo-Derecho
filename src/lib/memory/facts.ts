@@ -203,9 +203,9 @@ export function parseMemoryPayload(raw: string): FactCandidate[] {
   return facts;
 }
 
-/** Borrado real: sale el texto, el hash y la conversación de origen. La fila queda marcada. */
+/** Borrado real: sale el texto y la conversación. El HMAC queda para no volver a guardar el mismo dato. */
 export function erasedFactData(now = new Date()) {
-  return { deletedAt: now, text: "", contentHash: "", sourceConversationId: null };
+  return { deletedAt: now, text: "", sourceConversationId: null };
 }
 
 export function planMemoryWrites(input: {
@@ -221,7 +221,7 @@ export function planMemoryWrites(input: {
   const active = input.existing
     .filter((row) => row.deletedAt === null && row.text.trim())
     .map((row) => ({ ...row }));
-  const blocked = new Set(input.existing.map((row) => row.contentHash));
+  const blocked = new Set(input.existing.map((row) => row.contentHash).filter((hash) => hash.trim() !== ""));
   let room = (input.activeLimit ?? MEMORY_ACTIVE_LIMIT) - active.length;
   const inserts: PlannedFact[] = [];
   const replacements: FactPlan["replacements"] = [];

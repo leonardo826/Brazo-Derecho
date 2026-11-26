@@ -30,6 +30,10 @@ export function isTrivialMemoryTurn(userText: string, assistantText: string) {
   return false;
 }
 
+/**
+ * Tope en memoria del proceso: 4 extracciones por empresa cada 10 minutos.
+ * No se comparte entre instancias. La base (`MemoryExtraction`) es la que vale entre procesos.
+ */
 export function memoryExtractionAllowed(organizationId: string, now = Date.now()) {
   return consumeRateLimit(
     `memoria:${organizationId}`,
