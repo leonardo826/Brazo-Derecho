@@ -41,6 +41,7 @@ export function xaiErrorDetail(status: number, body: string) {
 }
 
 function inputFor(request: XaiRequest) {
+  if (request.task.type === "memory_extract") return request.task.turn;
   if (request.task.type === "agent_chat") return modelInput(request.task, request.businessName);
   if (request.task.type === "accounting_question") {
     return [

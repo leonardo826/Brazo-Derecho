@@ -37,6 +37,13 @@ export default function PrivacyPage() {
           negocio.
         </li>
         <li>
+          <strong>Memoria del agente:</strong> si la memoria está activada, guardamos datos durables de tu empresa para
+          usarlos en conversaciones posteriores: nombre o razón social, RUT, rubro, productos, preferencias y tono. No
+          guardamos contraseñas, claves, números de tarjeta ni llaves de acceso. En el panel, «Lo que el agente recuerda»
+          lista esos datos. Puedes borrar uno o todos. El borrado es real: el texto se elimina de la base y el agente deja
+          de usarlo. Esto atiende el derecho de supresión de la Ley 19.628 y de la Ley 21.719.
+        </li>
+        <li>
           <strong>Datos de tus clientes finales:</strong> cuando usas el agente de Atención WhatsApp, recibimos nombres,
           números y mensajes de las personas que te escriben. En ese caso tú eres el responsable de esos datos y Brazo
           Derecho actúa como encargado del tratamiento por cuenta tuya.
@@ -49,6 +56,7 @@ export default function PrivacyPage() {
       <h2>3. Para qué los usamos</h2>
       <ol>
         <li>Prestar el servicio contratado y operar tus agentes.</li>
+        <li>Recordar datos durables de tu empresa entre conversaciones, solo cuando la memoria está activada, y dejar de usarlos si los borras.</li>
         <li>Cobrar la suscripción y emitir boletas o facturas.</li>
         <li>Darte soporte y avisarte de cambios importantes.</li>
         <li>Controlar el uso, prevenir abusos y mantener la seguridad.</li>
@@ -103,7 +111,8 @@ export default function PrivacyPage() {
       <p>
         Las respuestas de los agentes las genera un sistema de inteligencia artificial y pueden contener errores.
         Recomendamos revisar cotizaciones y piezas de marketing antes de enviarlas. Los mensajes de WhatsApp indican que
-        la persona está conversando con un asistente virtual.
+        la persona está conversando con un asistente virtual. Si la memoria está activada, el agente puede usar datos de
+        tu empresa guardados en turnos anteriores. Esos datos se ven y se borran en el panel, en «Lo que el agente recuerda».
       </p>
 
       <h2>10. Cambios</h2>

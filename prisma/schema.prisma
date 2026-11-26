@@ -51,6 +51,8 @@ model Organization {
   credentialFillGrants     CredentialFillGrant[]
   agentThreads             AgentThread[]
   agentAttachments         AgentAttachment[]
+  memoryFacts              MemoryFact[]
+  memoryExtractions        MemoryExtraction[]
 }
 
 enum MemberRole {
@@ -586,4 +588,35 @@ model AgentAttachment {
 
   @@index([messageId])
   @@index([organizationId])
+}
+
+/// Dato durable de la empresa. agent null lo comparten todos los agentes.
+/// contentHash es un HMAC (MEMORY_HASH_KEY, o un derivado de CREDENTIALS_MASTER_KEY).
+/// Al borrar: deletedAt, text vacío y sourceConversationId null. El HMAC se conserva
+/// para no volver a guardar el mismo dato.
+model MemoryFact {
+  id                   String     @id @default(cuid())
+  organizationId       String
+  agent                AgentKind?
+  text                 String
+  contentHash          String
+  sourceConversationId String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  deletedAt            DateTime?
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, agent, deletedAt])
+  @@index([organizationId, contentHash])
+}
+
+/// Una extracción de memoria. Sirve para el tope por empresa entre procesos.
+model MemoryExtraction {
+  id             String       @id @default(cuid())
+  organizationId String
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
 }

@@ -1,5 +1,6 @@
 import { requireApiSession } from "@/lib/api-session";
 import { chatSurface, isChatAgent } from "@/lib/chat/agents";
+import { captureChatMemory } from "@/lib/memory/capture";
 import { streamDecision } from "@/lib/chat/run";
 import { sseResponse } from "@/lib/chat/sse";
 import { agentIsOpen } from "@/lib/agent-access";
@@ -44,14 +45,18 @@ export async function POST(request: Request) {
   }
   return sseResponse(
     (signal) =>
-      streamDecision({
-        organizationId: session.organizationId,
-        organizationName: session.organizationName,
-        actorUserId: session.userId,
-        messageId: id,
-        decision,
-        signal,
-      }),
+      captureChatMemory(
+        session.organizationId,
+        agent,
+        streamDecision({
+          organizationId: session.organizationId,
+          organizationName: session.organizationName,
+          actorUserId: session.userId,
+          messageId: id,
+          decision,
+          signal,
+        }),
+      ),
     request.signal,
   );
 }

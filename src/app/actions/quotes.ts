@@ -6,6 +6,8 @@ import { agentIsOpen } from "@/lib/agent-access";
 import { assertOwnOrganizationActive, guardMutation, guardRate } from "@/lib/guard";
 import { buildQuoteLines, matchFreeText, quoteTotal } from "@/lib/agents/quotes";
 import { instructionsFor, modelFor } from "@/lib/catalog";
+import { scheduleAfterResponse } from "@/lib/memory/schedule";
+import { memoryPrompt, rememberTurn } from "@/lib/memory/service";
 import { callWithinPlan } from "@/lib/plan-limit";
 import { prisma } from "@/lib/prisma";
 import { USAGE_PRESETS } from "@/lib/pricing";
@@ -140,6 +142,12 @@ export async function createQuoteAction(formData: FormData) {
         ? "1 línea no estaba en la lista activa y no se incluyó. No inventamos el precio."
         : `${built.rejected} líneas no estaban en la lista activa y no se incluyeron. No inventamos el precio.`
       : "";
+  const memory = await memoryPrompt({
+    organizationId: session.organizationId,
+    agent: "QUOTES",
+    query: `${customerName} ${notes} ${freeText}`,
+  });
+  const instructions = [instructionsFor("QUOTES", session.organizationName), memory].filter(Boolean).join("\n\n");
   let gated: { ok: true; value: XaiResponse; reservationId: string | null } | { ok: false; reason: "limite"; message: string };
   try {
     gated = await callWithinPlan({
@@ -148,7 +156,7 @@ export async function createQuoteAction(formData: FormData) {
       call: () =>
         createXaiClient().respond({
           model: modelFor("QUOTES"),
-          instructions: instructionsFor("QUOTES", session.organizationName),
+          instructions,
           task: {
             type: "quote_note",
             customerName,
@@ -232,6 +240,16 @@ export async function createQuoteAction(formData: FormData) {
     await releaseQuoteSlot();
     redirect("/panel/cotizador?error=limite");
   }
+  scheduleAfterResponse(() =>
+    rememberTurn({
+      organizationId: session.organizationId,
+      agent: "QUOTES",
+      audience: "member",
+      sourceConversationId: quoteId,
+      userText: `Cliente de la cotización: ${customerName}. Notas: ${notes}. Pedido: ${freeText}`,
+      assistantText: response.outputText,
+    }),
+  );
   redirect(`/panel/cotizador/${quoteId}?ok=cotizacion`);
 }
 
