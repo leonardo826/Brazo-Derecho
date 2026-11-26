@@ -4,7 +4,7 @@ La beta no contrata un servicio de uptime ni manda avisos sola. Esta nota dice c
 
 ## Qué revisar
 
-`GET /api/health` pregunta a Postgres con `SELECT 1` y espera como máximo dos segundos.
+`GET /api/health` pregunta a Postgres con `SELECT 1`. Si la base está dormida, espera a que despierte (como máximo ocho segundos y medio) y solo reintenta si la conexión se corta.
 
 | Respuesta | Significado |
 | --- | --- |

@@ -1,5 +1,18 @@
+import { connectTimeoutMillis, withConnectTimeout } from "@/lib/db-retry";
+
 export function appUrl() {
   return (process.env.APP_URL?.trim() || "http://localhost:3000").replace(/\/$/, "");
+}
+
+/** URL de la base con connect_timeout si no venía. No la registres: lleva la clave. */
+export function databaseUrl() {
+  const connectionString = process.env.DATABASE_URL?.trim() ?? "";
+  if (!connectionString) throw new Error("Falta DATABASE_URL");
+  return withConnectTimeout(connectionString);
+}
+
+export function databaseConnectTimeoutMs() {
+  return connectTimeoutMillis(databaseUrl());
 }
 
 export function whatsappEnv() {
