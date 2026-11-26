@@ -20,6 +20,7 @@ import { prepareComposerTurn } from "@/lib/chat/secrets";
 import { portalPresetFromText, type PortalId } from "@/lib/credentials/portal-form";
 import { insertBeforeQueue, placeThreadMessage } from "@/lib/chat/thread";
 import { hideActionMarker, plainSpeech } from "@/lib/chat/visible";
+import { prewarmComputer } from "@/app/actions/computer-power";
 import { CSRF_HEADER } from "@/lib/csrf-token";
 import { formatWhen } from "@/lib/format";
 
@@ -187,6 +188,7 @@ export function AgentChat({
   draftUserId = "",
   draftOrganizationId = "",
   draftConversationId = "",
+  prewarm = false,
 }: {
   open: boolean;
   messages: PublicMessage[];
@@ -202,6 +204,7 @@ export function AgentChat({
   draftUserId?: string;
   draftOrganizationId?: string;
   draftConversationId?: string;
+  prewarm?: boolean;
 }) {
   const router = useRouter();
   const csrf = useCsrfToken();
@@ -224,6 +227,7 @@ export function AgentChat({
   const [status, setStatus] = useState("");
   const [live, setLive] = useState("");
   const [notice, setNotice] = useState("");
+  const [warm, setWarm] = useState("");
   const [consults, setConsults] = useState(used);
   const [recording, setRecording] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>(voice);
@@ -255,6 +259,22 @@ export function AgentChat({
   const [atEnd, setAtEnd] = useState(true);
   const sawReply = useRef(false);
   const imeGuard = useRef(false);
+
+  useEffect(() => {
+    if (!prewarm) return;
+    let live = true;
+    void prewarmComputer()
+      .then((result) => {
+        if (!live) return;
+        setWarm(result.ok ? "" : result.message);
+      })
+      .catch(() => {
+        if (live) setWarm("");
+      });
+    return () => {
+      live = false;
+    };
+  }, [prewarm]);
 
   useEffect(() => {
     const earsNow = ears.current;
@@ -1049,6 +1069,7 @@ export function AgentChat({
           Volver al final
         </button>
       )}
+      {warm ? <p className="muted">{warm}</p> : null}
       {notice ? (
         <p className="banner error" role="alert">
           {notice}

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { createServer as createHttps } from "node:https";
 import { pathToFileURL } from "node:url";
-import { browsePublic, navigationAllowed } from "./browser.mjs";
+import { browsePublic, closeBrowsers, navigationAllowed } from "./browser.mjs";
 import { installProcessGuards } from "./process-guard.mjs";
 import { createProfileGate, PROFILE_ROOT, profileDirFor } from "./profiles.mjs";
 import { handshakeProof, normalizeHost, proofsMatch, requestSignature } from "./protocol.mjs";
@@ -171,6 +171,14 @@ export async function handleMachine(request, deps) {
     return json(400, { ok: false, error: "accion" });
   }
 
+  if (method === "POST" && path === "/browser/close") {
+    if (!bound) return json(403, { ok: false, error: "maquina" });
+    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
+    if (inflight.size > 0) return json(409, { ok: false, error: "tarea" });
+    if (deps.closeBrowser) await deps.closeBrowser();
+    return json(200, { ok: true });
+  }
+
   if (method === "POST" && path === "/task") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
     if (!epochOk(record, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
@@ -266,7 +274,16 @@ export function listen(env = process.env) {
     process.exit(1);
   }
   const profileRoot = (env.IABOT_PROFILE_ROOT ?? "").trim() || PROFILE_ROOT;
-  const deps = { token, previousToken, machineId, leaseEpoch, domain, profileRoot, gate: createProfileGate({ root: profileRoot }) };
+  const deps = {
+    token,
+    previousToken,
+    machineId,
+    leaseEpoch,
+    domain,
+    profileRoot,
+    closeBrowser: closeBrowsers,
+    gate: createProfileGate({ root: profileRoot }),
+  };
   const onRequest = async (req, res) => {
     const chunks = [];
     let size = 0;

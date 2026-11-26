@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { machineAgentKind, type MachineAgentKind } from "@/lib/computer/agent-kind";
 import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { COMPUTER_WARMING_MESSAGE } from "@/lib/computer/power-copy";
 import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
 import { signRequest } from "@/lib/computer/request-sign";
 import { callMachine } from "@/lib/computer/transport";
@@ -53,6 +54,10 @@ export type DesktopLog = {
   ms: number;
   called: boolean;
 };
+
+export type ReadyGate =
+  | { ok: true }
+  | { ok: false; message: string; reason?: string };
 
 type Step = { kind?: unknown; action?: { type?: unknown; url?: unknown } };
 type AgentPayload = { status?: unknown; result?: unknown; xaiMode?: unknown; steps?: unknown };
@@ -151,6 +156,28 @@ async function readLease(load: (organizationId: string) => Promise<LeaseState>, 
   }
 }
 
+async function openPower(input: {
+  organizationId: string;
+  signal?: AbortSignal;
+  ensureReady?: (organizationId: string) => Promise<ReadyGate>;
+}): Promise<ReadyGate> {
+  if (input.ensureReady) return input.ensureReady(input.organizationId);
+  const { ensureComputerReady } = await import("@/lib/computer/power");
+  return ensureComputerReady(input.organizationId, { signal: input.signal });
+}
+
+async function holdTask(input: { organizationId: string; beginTask?: (organizationId: string) => Promise<boolean> }) {
+  if (input.beginTask) return input.beginTask(input.organizationId);
+  const { beginComputerTask } = await import("@/lib/computer/power");
+  return beginComputerTask(input.organizationId);
+}
+
+async function releaseTask(input: { organizationId: string; endTask?: (organizationId: string) => Promise<void> }) {
+  if (input.endTask) return input.endTask(input.organizationId);
+  const { endComputerTask } = await import("@/lib/computer/power");
+  await endComputerTask(input.organizationId);
+}
+
 function publicSource(data: AgentPayload) {
   const steps = Array.isArray(data.steps) ? (data.steps as Step[]) : [];
   const urls = steps
@@ -180,6 +207,9 @@ export async function executeDesktopRequest(input: {
   loadLease: (organizationId: string) => Promise<LeaseState>;
   reserve?: () => Promise<{ ok: boolean; reservationId?: string | null }>;
   release?: (reservationId: string) => Promise<void>;
+  ensureReady?: (organizationId: string) => Promise<ReadyGate>;
+  beginTask?: (organizationId: string) => Promise<boolean>;
+  endTask?: (organizationId: string) => Promise<void>;
   fetchImpl?: typeof fetch;
   log?: (fields: DesktopLog) => void;
 }): Promise<{ kind: "chat" } | { kind: "confirm" } | { kind: "reply"; text: string }> {
@@ -215,9 +245,23 @@ export async function executeDesktopRequest(input: {
     return finish("revocado", false, TRANSPORT);
   }
 
+  let powered: ReadyGate;
+  try {
+    powered = await openPower(input);
+  } catch {
+    return finish("transporte", false, TRANSPORT);
+  }
+  if (!powered.ok) {
+    if (powered.reason === "ausente") return finish("ausente", false, ABSENT);
+    if (powered.reason === "detenido" || powered.reason === "transporte") return finish(powered.reason, false, TRANSPORT);
+    if (powered.reason === "cancelado") return finish("cancel", false, CANCELLED);
+    return finish("encendiendo", false, powered.message || COMPUTER_WARMING_MESSAGE);
+  }
+
   const slot = await input.reserve?.();
   if (!slot?.ok) return finish("limite", false, LIMITE);
   reservationId = slot.reservationId ?? null;
+  let taskOpen = false;
 
   const goal = plan.goal.split(lease.token).join("[redactado]");
   const taskId = `t_${randomBytes(9).toString("hex")}`;
@@ -262,6 +306,8 @@ export async function executeDesktopRequest(input: {
     if (fresh.state !== "listo" || fresh.lease.epoch !== lease.epoch || fresh.lease.machineId !== lease.machineId) {
       return finish("revocado", false, TRANSPORT);
     }
+    taskOpen = await holdTask(input);
+    if (!taskOpen) return finish("encendiendo", false, COMPUTER_WARMING_MESSAGE);
     timer = setTimeout(() => stop("timeout"), input.timeoutMs ?? 20_000);
     const taskBody = JSON.stringify({
       goal,
@@ -314,7 +360,8 @@ export async function executeDesktopRequest(input: {
   } finally {
     if (timer) clearTimeout(timer);
     input.signal?.removeEventListener("abort", onUserAbort);
+    if (taskOpen) await releaseTask(input);
   }
 }
 
-export const DESKTOP_COPY = { ABSENT, TRANSPORT, NOT_REAL, CANCELLED, TIMEOUT, FAILED, LIMITE };
+export const DESKTOP_COPY = { ABSENT, TRANSPORT, NOT_REAL, CANCELLED, TIMEOUT, FAILED, LIMITE, WARMING: COMPUTER_WARMING_MESSAGE };

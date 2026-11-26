@@ -45,6 +45,8 @@ model Organization {
   usageMeters   UsageMeter[]
   usageMonths   UsageMonth[]
   computer                 Computer?
+  computerPower            ComputerPower?
+  computerPowerUses        ComputerPowerUse[]
   credentials              ClientCredential[]
   credentialAudits         CredentialAuditEvent[]
   credentialConfirmations  CredentialConfirmation[]
@@ -376,6 +378,14 @@ enum ComputerTaskStatus {
   REJECTED
 }
 
+enum ComputerPowerStatus {
+  OFF
+  STARTING
+  READY
+  STOPPING
+  ERROR
+}
+
 // Un computador (Fly Machine + volumen) por cliente. clientId es la organización.
 // El token de noVNC se guarda solo como hash. Fase 1 no crea la máquina.
 model Computer {
@@ -432,6 +442,46 @@ model ComputerLeaseAudit {
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
+}
+
+/// Encendido de un computador por empresa. generation es el compare-and-swap.
+model ComputerPower {
+  id              String              @id @default(cuid())
+  organizationId  String              @unique
+  state           ComputerPowerStatus @default(OFF)
+  generation      Int                 @default(0)
+  provider        String              @default("static")
+  machineId       String              @default("")
+  /// Época del arriendo que dejó la fila en READY. Otra época no cuenta como listo.
+  leaseEpoch      Int                 @default(0)
+  lastActivityAt  DateTime            @default(now())
+  activeTaskCount Int                 @default(0)
+  /// Cuando el proveedor aceptó el encendido. No se borra en ERROR.
+  powerOnAt       DateTime?
+  /// Mientras no venza, otro request no puede robar STARTING ni reintentar STOPPING.
+  claimExpiresAt  DateTime?
+  errorCode       String              @default("")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uses            ComputerPowerUse[]
+
+  @@index([state, lastActivityAt])
+}
+
+/// Segundos encendidos de una empresa, para costo y uso. Sin token y sin URL.
+model ComputerPowerUse {
+  id              String        @id @default(cuid())
+  organizationId  String
+  computerPowerId String
+  provider        String
+  startedAt       DateTime
+  endedAt         DateTime
+  seconds         Int
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  computerPower   ComputerPower @relation(fields: [computerPowerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, startedAt])
 }
 
 /// Acceso de un portal (SII, banco, etc.). El usuario y la clave van solo cifrados.

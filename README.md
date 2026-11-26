@@ -60,6 +60,7 @@ Todas están en `.env.example`. Si falta la clave de un servicio, esa parte qued
 | `XAI_COMPUTER_MODEL` | Modelo del computador del agente. `grok-4.3` o `grok-4.7`. | `grok-4.3`. Con `XAI_MODE=mock` o sin `XAI_API_KEY` no llama a xAI. |
 | `COMPUTER_PANEL` | `true` muestra «Ver mi computador» en producción. | En local se muestra. En producción queda oculto. |
 | `COMPUTER_AGENT_URL` | Ya no elige el computador. El chat y el panel usan el arriendo de la empresa, firmado con el token de esa máquina. | Sin arriendo, la tarea no sale y no se usa un token global. |
+| `CRON_SECRET` | Secreto del apagado por inactividad. GitHub Actions llama `GET /api/cron/computer-idle` con `Authorization: Bearer`. En el repo es un secret. La base es `vars.APP_URL` y, si no está, `https://brazo-derecho.vercel.app`. | El workflow falla y no llama. No hay cron de Vercel. |
 | `FLY_API_TOKEN` | Token de Fly para el piloto. Solo por entorno. | El script de alta no llama a Fly. |
 | `FLY_DRY_RUN` | Tiene que ser exactamente `false`, con token y `--confirmo-gasto`, para crear máquina. | Dry-run: imprime el plan y no cobra. |
 | `FLOW_API_KEY` | Api key de Flow. | La prueba de 14 días se activa en el panel. «Activar plan» abre el pago simulado «Pago de prueba» y no hay cobro. |
@@ -143,6 +144,7 @@ Acciones del servidor  -- filtran por empresa de la sesión
 6. Revisa `GET /api/health`. Responde `{ "ok": true, "base": "ok" }` cuando la base contesta. Las opciones gratis de uptime están en `docs/MONITOREO.md`.
 7. En Administración (correos de `ADMIN_EMAILS`) vincula cada empresa con su id de número y, si hace falta, suspéndela. Sin ese vínculo el webhook no sabe a qué agente entregar el mensaje.
 8. Sin `XAI_API_KEY`, `FLOW_API_KEY`, `WHATSAPP_TOKEN`, `SENTRY_DSN` o `RESEND_API_KEY` el panel sigue en modo simulado y no sale ningún aviso externo. Los correos de la demo se leen en Administración.
+9. El apagado de computadores quietos no usa el cron de Vercel. `.github/workflows/computer-idle.yml` corre cada 5 minutos y también a mano. Llama a `GET /api/cron/computer-idle` con el secret `CRON_SECRET`. La URL sale de `vars.APP_URL` (para pasar después a `ia-bot.cl`); si esa variable no está, usa `https://brazo-derecho.vercel.app`. Sin el secret, el workflow falla. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.
 
 ## Scripts
 

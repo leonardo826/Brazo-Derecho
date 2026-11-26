@@ -36,6 +36,9 @@ function run(text: string, extra: Partial<Parameters<typeof executeDesktopReques
     text,
     loadLease: async () => ({ state: "ausente" }),
     reserve: async () => ({ ok: true, reservationId: "reserva" }),
+    ensureReady: async () => ({ ok: true }),
+    beginTask: async () => true,
+    endTask: async () => undefined,
     ...extra,
   });
 }
@@ -247,6 +250,51 @@ describe("contrato del computador en el chat", () => {
     expect(result.text).not.toContain("lease-de-esa-maquina");
     expect(logs.join("\n")).not.toContain("lease-de-esa-maquina");
     expect(calls.some((url) => url.endsWith("/task/cancel"))).toBe(false);
+  });
+
+  test("sin READY no llama al computador y avisa que está encendiendo", async () => {
+    const order: string[] = [];
+    const result = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      ensureReady: async () => {
+        order.push("encender");
+        return { ok: false, message: DESKTOP_COPY.WARMING, reason: "tiempo" };
+      },
+      reserve: async () => {
+        order.push("reserva");
+        return { ok: true, reservationId: "reserva" };
+      },
+      fetchImpl: (async () => {
+        order.push("fetch");
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.WARMING });
+    expect(order).toEqual(["encender"]);
+  });
+
+  test("si la máquina ya tiene una tarea no se manda otra llamada", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const result = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      beginTask: async () => false,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.WARMING });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test("si el encendido falla, no llama y dice que no hay transporte", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const result = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      ensureReady: async () => {
+        throw new Error("caida");
+      },
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.TRANSPORT });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test("dos agentes de la misma empresa firman agentKind distinto", async () => {

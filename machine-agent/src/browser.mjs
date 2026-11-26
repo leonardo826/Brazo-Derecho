@@ -5,6 +5,21 @@ import { startGuardProxy } from "./guard-proxy.mjs";
 import { ensureProfileDir, profileDirFor } from "./profiles.mjs";
 import { isIpAddress, isPrivateAddress, publicUrl } from "./protocol.mjs";
 
+const openBrowsers = new Set();
+
+export function rememberBrowser(browser) {
+  openBrowsers.add(browser);
+  return () => {
+    openBrowsers.delete(browser);
+  };
+}
+
+export async function closeBrowsers() {
+  const current = [...openBrowsers];
+  openBrowsers.clear();
+  await Promise.all(current.map((browser) => Promise.resolve(browser.close()).catch(() => undefined)));
+}
+
 export const LAUNCH_TIMEOUT_MS = 15_000;
 
 const LOCK_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
@@ -186,6 +201,7 @@ export async function browsePublic(raw, signal, lookupImpl, options = {}) {
       timeout,
     };
     const context = await launchBound(launch, profileDir, launchOptions, signal);
+    const forget = rememberBrowser(context);
     try {
       const page = await freshPage(context);
       const abort = () => {
@@ -202,6 +218,7 @@ export async function browsePublic(raw, signal, lookupImpl, options = {}) {
         signal?.removeEventListener("abort", abort);
       }
     } finally {
+      forget();
       await context.close().catch(() => undefined);
     }
   } finally {
