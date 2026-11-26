@@ -21,7 +21,7 @@ Con Docker, la base:
 docker compose up -d
 ```
 
-Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía está en `infra/desktop/README.md`.
+Ese compose solo levanta Postgres. El computador del agente (escritorio, Chromium, WhatsApp Web y noVNC) va aparte y no cobra nada. La guía local está en `infra/desktop/README.md`. Los tres VPS de Santiago son tres clientes de prueba (org A, org B y org C). Cada cliente tiene un computador compartido por Contador, Marketing y WhatsApp, con un perfil de navegador por agente. No es una organización por bot. El alta está en `docs/enroll-plan.md`.
 
 Sin Docker, crea la base y el usuario `brazo` / `brazo` sobre la base `brazo_derecho`.
 

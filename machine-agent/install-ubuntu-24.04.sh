@@ -44,6 +44,11 @@ if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.v
 fi
 
 install -d -o iabot -g iabot -m 0750 /var/lib/iabot-machine-agent
+install -d -o iabot -g iabot -m 0700 /var/lib/iabot
+install -d -o iabot -g iabot -m 0700 /var/lib/iabot/profiles
+install -d -o iabot -g iabot -m 0700 /var/lib/iabot/profiles/ACCOUNTING
+install -d -o iabot -g iabot -m 0700 /var/lib/iabot/profiles/MARKETING
+install -d -o iabot -g iabot -m 0700 /var/lib/iabot/profiles/WHATSAPP
 cd /opt/iabot-machine-agent
 export PLAYWRIGHT_BROWSERS_PATH=/opt/iabot-machine-agent/browsers
 npm ci --omit=dev

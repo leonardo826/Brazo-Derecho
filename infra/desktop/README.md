@@ -1,6 +1,6 @@
 # Computador del agente (Fase 0 local)
 
-Un escritorio por cliente: Debian, Xvfb, fluxbox, Chromium, noVNC y el agente en `agent-runtime/`. El perfil del navegador queda en `/data/chrome-profile` (volumen). WhatsApp Web se abre en otra pestaña del **mismo** Chromium. El QR lo escanea una persona. No hay envíos masivos ni pagos.
+Un escritorio por cliente: Debian, Xvfb, fluxbox, Chromium, noVNC y el agente en `agent-runtime/`. Este contenedor local muestra un Chromium para escanear el QR a mano; el perfil de esa pantalla queda en `/data/chrome-profile` (volumen). En el VPS no hay una sesión de navegador única para la máquina: Contador, Marketing y WhatsApp de la misma empresa tienen cada uno su perfil. Ver `docs/enroll-plan.md`. WhatsApp Web, en esta pantalla local, se abre en otra pestaña. El QR lo escanea una persona. No hay envíos masivos ni pagos.
 
 No crea apps en Fly y no gasta plata. El computador de producción parte recién cuando Leonardo cargue las claves.
 

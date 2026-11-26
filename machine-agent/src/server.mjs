@@ -4,9 +4,20 @@ import { createServer as createHttps } from "node:https";
 import { pathToFileURL } from "node:url";
 import { browsePublic, navigationAllowed } from "./browser.mjs";
 import { installProcessGuards } from "./process-guard.mjs";
+import { createProfileGate, PROFILE_ROOT, profileDirFor } from "./profiles.mjs";
 import { handshakeProof, normalizeHost, proofsMatch, requestSignature } from "./protocol.mjs";
 
+const sharedGates = new Map();
 const inflight = new Map();
+
+function gateFor(deps, profileRoot) {
+  if (deps.gate) return deps.gate;
+  const existing = sharedGates.get(profileRoot);
+  if (existing) return existing;
+  const created = createProfileGate({ root: profileRoot });
+  sharedGates.set(profileRoot, created);
+  return created;
+}
 const cancelledEarly = new Set();
 const seenNonces = new Map();
 
@@ -79,6 +90,21 @@ export function resetMachineTasks() {
   seenNonces.clear();
 }
 
+function signedRecord(request) {
+  const raw = typeof request.rawBody === "string" ? request.rawBody : "";
+  if (!raw) {
+    const body = request.body;
+    return body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function epochOk(body, leaseEpoch) {
   const expected = String(leaseEpoch ?? "").trim();
   if (!expected) return false;
@@ -93,8 +119,9 @@ export async function handleMachine(request, deps) {
   const machineId = String(deps.machineId || "").trim();
   const signer = authorized({ ...request, method, path }, deps);
   if (!signer) return json(401, { ok: false, error: "token" });
+  const record = method === "POST" ? signedRecord(request) : {};
+  if (record === null) return json(400, { ok: false, error: "datos" });
   if (method === "POST" && path === "/handshake") {
-    const record = request.body && typeof request.body === "object" ? request.body : {};
     const nonce = typeof record.nonce === "string" ? record.nonce : "";
     const claimed = typeof record.machineId === "string" ? record.machineId : "";
     const host = normalizeHost(typeof record.host === "string" ? record.host : "");
@@ -102,7 +129,7 @@ export async function handleMachine(request, deps) {
     if (!machineId || claimed !== machineId || host !== normalizeHost(deps.domain || "")) return json(403, { ok: false, error: "maquina" });
     return json(200, { machineId, nonce, host, proof: handshakeProof(signer, nonce, machineId, host) });
   }
-  const claimedMachine = request.body && typeof request.body === "object" ? request.body.machineId : "";
+  const claimedMachine = typeof record.machineId === "string" ? record.machineId : "";
   const bound = Boolean(machineId) && claimedMachine === machineId;
 
   if (method === "GET" && path === "/status") {
@@ -111,8 +138,8 @@ export async function handleMachine(request, deps) {
 
   if (method === "POST" && path === "/task/cancel") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
-    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
-    const taskId = taskIdOf(request.body);
+    if (!epochOk(record, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
+    const taskId = taskIdOf(record);
     const ids = taskId ? [taskId] : [...inflight.keys()];
     for (const id of ids) {
       const job = inflight.get(id);
@@ -125,11 +152,11 @@ export async function handleMachine(request, deps) {
 
   if (method === "POST" && path === "/action") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
-    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
-    const taskId = taskIdOf(request.body);
+    if (!epochOk(record, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
+    const taskId = taskIdOf(record);
     const job = taskId ? inflight.get(taskId) : undefined;
     if (!job || job.controller.signal.aborted) return json(403, { ok: false, error: "tarea" });
-    const action = request.body;
+    const action = record;
     if (!action || action.type === "fill") return json(403, { ok: false, error: "accion" });
     if (action.type === "goto") {
       const url = await (deps.allow ?? navigationAllowed)(String(action.url ?? ""), deps.lookup);
@@ -146,10 +173,19 @@ export async function handleMachine(request, deps) {
 
   if (method === "POST" && path === "/task") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
-    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
-    const goal = typeof request.body?.goal === "string" ? request.body.goal.trim() : "";
+    if (!epochOk(record, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
+    const goal = typeof record.goal === "string" ? record.goal.trim() : "";
     if (!goal || goal.length > 2000) return json(400, { ok: false, error: "datos" });
-    const taskId = taskIdOf(request.body) || `local_${Date.now().toString(36)}`;
+    const agentKind = typeof record.agentKind === "string" ? record.agentKind : "";
+    const profileRoot = deps.gate?.root
+      || (typeof deps.profileRoot === "string" && deps.profileRoot.trim() ? deps.profileRoot.trim() : PROFILE_ROOT);
+    let profileDir;
+    try {
+      profileDir = profileDirFor(agentKind, profileRoot);
+    } catch {
+      return json(400, { ok: false, error: "agente" });
+    }
+    const taskId = taskIdOf(record) || `local_${Date.now().toString(36)}`;
     if (cancelledEarly.has(taskId)) {
       cancelledEarly.delete(taskId);
       return json(200, { ok: false, status: "FAILED", result: "Cancelada. No hay resultado.", steps: [], xaiMode: "live" });
@@ -169,7 +205,15 @@ export async function handleMachine(request, deps) {
         });
       }
       const browse = deps.browse ?? browsePublic;
-      const page = await browse(url, controller.signal, deps.lookup);
+      const gate = gateFor(deps, profileRoot);
+      const page = await gate.run(
+        agentKind,
+        (dir) => {
+          if (dir !== profileDir) throw new Error("agente");
+          return browse(url, controller.signal, deps.lookup, { agentKind, profileDir: dir, root: profileRoot });
+        },
+        controller.signal,
+      );
       if (controller.signal.aborted) {
         return json(200, { ok: false, status: "FAILED", result: "Cancelada. No hay resultado.", steps: [], xaiMode: "live" });
       }
@@ -219,7 +263,8 @@ export function listen(env = process.env) {
     process.stderr.write("un bind público exige TLS_CERT_FILE y TLS_KEY_FILE\n");
     process.exit(1);
   }
-  const deps = { token, previousToken, machineId, leaseEpoch, domain };
+  const profileRoot = (env.IABOT_PROFILE_ROOT ?? "").trim() || PROFILE_ROOT;
+  const deps = { token, previousToken, machineId, leaseEpoch, domain, profileRoot, gate: createProfileGate({ root: profileRoot }) };
   const onRequest = async (req, res) => {
     const chunks = [];
     let size = 0;

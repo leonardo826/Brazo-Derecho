@@ -31,7 +31,7 @@ UMask=0077
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
-ReadWritePaths=/var/lib/iabot-machine-agent
+ReadWritePaths=/var/lib/iabot-machine-agent /var/lib/iabot
 
 [Install]
 WantedBy=multi-user.target

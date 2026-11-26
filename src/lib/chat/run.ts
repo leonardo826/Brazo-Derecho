@@ -400,6 +400,7 @@ export async function* streamChatTurn(input: {
     conversationId: CONTADOR_CONVERSATION_ID,
     text,
     signal: input.signal,
+    agentKind: agent,
     loadLease: (organizationId) => loadTenantLease(organizationId),
     reserve: () => reserveDailyTask(input.organizationId),
     release: (reservationId) => releaseDailyTask(reservationId),
