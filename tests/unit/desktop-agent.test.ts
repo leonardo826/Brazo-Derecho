@@ -4,6 +4,7 @@ import { pagesFromList, pngFromCdpResult, ensureWhatsappTab } from "../../agent-
 import type { Desktop } from "../../agent-runtime/src/desktop";
 import { pickWorkWindow } from "../../agent-runtime/src/desktop";
 import { handleAgent, resetAgentTasks } from "../../agent-runtime/src/http";
+import { signRequest } from "@/lib/computer/request-sign";
 import { mockUrlForGoal } from "../../agent-runtime/src/mock";
 import { runComputerTask } from "../../agent-runtime/src/loop";
 import { createMockModel } from "../../agent-runtime/src/mock";
@@ -19,17 +20,21 @@ const PNG = Buffer.from(
 
 const AGENT_TOKEN = "agent-token";
 const MACHINE_ID = "machine-1";
+const DOMAIN = "machine.test";
 
 function agentEnv(extra: Record<string, string> = {}) {
-  return { AGENT_RUNTIME_TOKEN: AGENT_TOKEN, MACHINE_ID, ...extra };
+  return { AGENT_RUNTIME_TOKEN: AGENT_TOKEN, MACHINE_ID, MACHINE_AGENT_DOMAIN: DOMAIN, LEASE_EPOCH: "1", ...extra };
 }
 
-function agentTask(body: Record<string, unknown>) {
+function agentTask(body: Record<string, unknown>, path = "/task") {
+  const payload = { machineId: MACHINE_ID, epoch: 1, ...body };
+  const rawBody = JSON.stringify(payload);
   return {
     method: "POST",
-    path: "/task",
-    body: { machineId: MACHINE_ID, ...body },
-    headers: { authorization: `Bearer ${AGENT_TOKEN}` },
+    path,
+    body: payload,
+    rawBody,
+    headers: { "content-type": "application/json", ...signRequest({ token: AGENT_TOKEN, method: "POST", path, body: rawBody, host: DOMAIN }) },
   };
 }
 
@@ -303,17 +308,11 @@ describe("agente de computador en simulador", () => {
       return new Response(JSON.stringify({ output: [{ type: "function_call", name: "computer", arguments: argumentsJson }] }), { status: 200 });
     });
     const response = await handleAgent(
-      {
-        method: "POST",
-        path: "/task",
-        body: {
-          goal: "Entra al SII con mi clave",
-          machineId: MACHINE_ID,
-          fillGrant: "grant-de-prueba-que-no-es-la-clave",
-          credentials: [{ id: "cred12345678", label: "SII", portal: "SII", usernameHint: "9988", secret }],
-        },
-        headers: { authorization: "Bearer agent-token" },
-      },
+      agentTask({
+        goal: "Entra al SII con mi clave",
+        fillGrant: "grant-de-prueba-que-no-es-la-clave",
+        credentials: [{ id: "cred12345678", label: "SII", portal: "SII", usernameHint: "9988", secret }],
+      }),
       {
         env: agentEnv({
           XAI_API_KEY: "xai-test",
@@ -424,8 +423,16 @@ describe("agente de computador en simulador", () => {
     expect(seen.join("\n")).not.toContain(AGENT_TOKEN);
     expect(result.result).not.toContain(AGENT_TOKEN);
 
+    const handshakeBody = { nonce: "nonce-de-prueba-0001", machineId: MACHINE_ID, host: DOMAIN };
+    const handshakeRaw = JSON.stringify(handshakeBody);
     const handshake = await handleAgent(
-      { method: "POST", path: "/handshake", body: { nonce: "nonce-de-prueba-0001", machineId: MACHINE_ID } },
+      {
+        method: "POST",
+        path: "/handshake",
+        body: handshakeBody,
+        rawBody: handshakeRaw,
+        headers: signRequest({ token: AGENT_TOKEN, method: "POST", path: "/handshake", body: handshakeRaw, host: DOMAIN }),
+      },
       { env: agentEnv(), desktop: rig.desktop },
     );
     const proof = JSON.parse(handshake.body.toString("utf8")) as { proof?: string; status?: string };
@@ -436,15 +443,10 @@ describe("agente de computador en simulador", () => {
 
     const taskId = "task-cancel-0001";
     const before = rig.shots();
-    const early = await handleAgent(
-      {
-        method: "POST",
-        path: "/task/cancel",
-        body: { machineId: MACHINE_ID, taskId },
-        headers: { authorization: `Bearer ${AGENT_TOKEN}` },
-      },
-      { env: agentEnv({ XAI_MODE: "mock" }), desktop: rig.desktop },
-    );
+    const early = await handleAgent(agentTask({ taskId }, "/task/cancel"), {
+      env: agentEnv({ XAI_MODE: "mock" }),
+      desktop: rig.desktop,
+    });
     expect(early.status).toBe(200);
     const blocked = await handleAgent(agentTask({ goal: "Abre https://example.com", taskId }), {
       env: agentEnv({ XAI_MODE: "mock" }),
@@ -453,15 +455,10 @@ describe("agente de computador en simulador", () => {
     expect(JSON.parse(blocked.body.toString("utf8")).status).toBe("FAILED");
     expect(rig.shots()).toBe(before);
 
-    const denied = await handleAgent(
-      {
-        method: "POST",
-        path: "/action",
-        body: { type: "click", x: 1, y: 1, machineId: MACHINE_ID },
-        headers: { authorization: `Bearer ${AGENT_TOKEN}` },
-      },
-      { env: agentEnv(), desktop: rig.desktop },
-    );
+    const denied = await handleAgent(agentTask({ type: "click", x: 1, y: 1, taskId: "task-ausente-01" }, "/action"), {
+      env: agentEnv(),
+      desktop: rig.desktop,
+    });
     expect(denied.status).toBe(403);
     expect(rig.actions).toHaveLength(0);
   });

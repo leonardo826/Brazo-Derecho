@@ -1,5 +1,6 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { authorizeRuntimeAction, parseAction } from "./actions.ts";
+import { handshakeProof, normalizeHost, requestSignature, signaturesMatch } from "./sign.ts";
 import { sanitizeCredentialMeta } from "./credentials.ts";
 import type { Desktop } from "./desktop.ts";
 import { runComputerTask, type FillMaterial } from "./loop.ts";
@@ -12,7 +13,9 @@ export type AgentEnv = {
   XAI_API_URL?: string;
   XAI_COMPUTER_MODEL?: string;
   AGENT_RUNTIME_TOKEN?: string;
+  AGENT_RUNTIME_TOKEN_PREVIOUS?: string;
   MACHINE_ID?: string;
+  MACHINE_AGENT_DOMAIN?: string;
   LEASE_EPOCH?: string;
   VAULT_FILL_URL?: string;
   DISPLAY?: string;
@@ -23,7 +26,8 @@ export type AgentRequest = {
   method: string;
   path: string;
   body?: unknown;
-  headers?: Record<string, string | undefined>;
+  rawBody?: string;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 export type AgentResponse = {
@@ -50,9 +54,34 @@ function header(headers: AgentRequest["headers"], name: string) {
   if (!headers) return "";
   const wanted = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === wanted) return value ?? "";
+    if (key.toLowerCase() === wanted) return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
   }
   return "";
+}
+
+const seenNonces = new Map<string, number>();
+
+function runtimeTokens(env: AgentEnv) {
+  return [env.AGENT_RUNTIME_TOKEN, env.AGENT_RUNTIME_TOKEN_PREVIOUS].map((item) => (item ?? "").trim()).filter((item) => item.length > 0);
+}
+
+function signedToken(request: AgentRequest, env: AgentEnv) {
+  const domain = normalizeHost(env.MACHINE_AGENT_DOMAIN ?? "");
+  if (!domain) return null;
+  const timestamp = header(request.headers, "x-iabot-timestamp");
+  const nonce = header(request.headers, "x-iabot-nonce");
+  const host = normalizeHost(header(request.headers, "x-iabot-host"));
+  const signature = header(request.headers, "x-iabot-signature");
+  if (!/^[0-9]{10}$/.test(timestamp) || !/^[A-Za-z0-9_-]{16,80}$/.test(nonce) || !signature) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - Number(timestamp)) > 60 || host !== domain || seenNonces.has(nonce)) return null;
+  const body = request.rawBody ?? "";
+  const matched = runtimeTokens(env).find((token) =>
+    signaturesMatch(requestSignature(token, { timestamp, nonce, method: request.method, path: request.path, body, host }), signature),
+  );
+  if (!matched) return null;
+  seenNonces.set(nonce, now);
+  return matched;
 }
 
 type Inflight = { controller: AbortController };
@@ -86,35 +115,26 @@ function epochAccepted(body: unknown, env: AgentEnv) {
   return typeof value === "number" && Number.isInteger(value) && String(value) === expected;
 }
 
-function authorized(headers: AgentRequest["headers"], expected: string) {
-  if (!expected) return false;
-  const raw = header(headers, "authorization");
-  const got = raw.startsWith("Bearer ") ? raw.slice("Bearer ".length) : "";
-  const a = createHash("sha256").update(got).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-function handshake(body: unknown, deps: AgentDeps): AgentResponse {
-  const token = (deps.env.AGENT_RUNTIME_TOKEN ?? "").trim();
+function handshake(request: AgentRequest, deps: AgentDeps, signer: string): AgentResponse {
   const machineId = (deps.env.MACHINE_ID ?? "").trim();
-  const record = body && typeof body === "object" ? (body as { nonce?: unknown; machineId?: unknown }) : {};
+  const record = request.body && typeof request.body === "object" ? (request.body as { nonce?: unknown; machineId?: unknown; host?: unknown }) : {};
   const nonce = typeof record.nonce === "string" ? record.nonce : "";
   const claimed = typeof record.machineId === "string" ? record.machineId : "";
+  const host = normalizeHost(typeof record.host === "string" ? record.host : "");
   if (!/^[A-Za-z0-9_-]{16,80}$/.test(nonce)) return json(400, { ok: false, error: "datos" });
-  if (!token || !machineId || claimed !== machineId) return json(403, { ok: false, error: "maquina" });
-  const proof = createHmac("sha256", token).update(`${nonce}\n${machineId}`).digest("base64url");
-  return json(200, { machineId, nonce, proof });
+  if (!machineId || claimed !== machineId || host !== normalizeHost(deps.env.MACHINE_AGENT_DOMAIN ?? "")) {
+    return json(403, { ok: false, error: "maquina" });
+  }
+  return json(200, { machineId, nonce, host, proof: handshakeProof(signer, nonce, machineId, host) });
 }
 
 export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promise<AgentResponse> {
   const method = request.method.toUpperCase();
   const path = request.path;
-  if (method === "POST" && path === "/handshake") return handshake(request.body, deps);
-  const runtimeToken = (deps.env.AGENT_RUNTIME_TOKEN ?? "").trim();
-  if (!authorized(request.headers, runtimeToken)) {
-    return json(401, { ok: false, error: "token" });
-  }
+  const signer = signedToken({ ...request, method, path }, deps.env);
+  if (!signer) return json(401, { ok: false, error: "token" });
+  if (method === "POST" && path === "/handshake") return handshake(request, deps, signer);
+  const runtimeToken = signer;
 
   if (method === "GET" && path === "/status") {
     const status = await deps.desktop.status();
@@ -155,6 +175,7 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
 
   if (method === "POST" && path === "/action") {
     if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
+    if (!epochAccepted(request.body, deps.env)) return json(409, { ok: false, error: "epoca" });
     const taskId = taskIdOf(request.body);
     const job = taskId ? inflight.get(taskId) : undefined;
     if (!job || job.controller.signal.aborted) return json(403, { ok: false, error: "tarea" });

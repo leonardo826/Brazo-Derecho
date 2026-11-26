@@ -12,6 +12,7 @@ function v4Private(parts: number[]) {
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a === 198 && b === 51 && c === 100) return true;
   if (a === 203 && b === 0 && c === 113) return true;
+  if (a === 192 && b === 88 && c === 99) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a >= 224) return true;
   return false;
@@ -73,6 +74,9 @@ function v6Private(groups: number[]) {
     return embeddedV4(g6, g7);
   }
   if (g0 === 0x2002) return embeddedV4(g1, g2);
+  if (g0 === 0x2001 && g1 === 0x0db8) return true;
+  if (g0 === 0x2001 && g1 === 0) return true;
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true;
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return embeddedV4(g6, g7);
   return false;
 }

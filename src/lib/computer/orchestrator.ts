@@ -1,4 +1,5 @@
 import { isBulkGoal, isSensitiveGoal } from "../../../agent-runtime/src/sensitive";
+import { signRequest } from "@/lib/computer/request-sign";
 
 export type TaskStatus = "QUEUED" | "RUNNING" | "DONE" | "FAILED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
@@ -79,7 +80,6 @@ export async function enqueueComputerTask(
 
   try {
     const headers: Record<string, string> = { "content-type": "application/json" };
-    if (input.agentToken?.trim()) headers.authorization = `Bearer ${input.agentToken.trim()}`;
     const body: Record<string, unknown> = { goal };
     const payload = input.agentPayload;
     if (payload?.credentials.length) {
@@ -91,10 +91,15 @@ export async function enqueueComputerTask(
       }));
     }
     if (payload?.fillGrant) body.fillGrant = payload.fillGrant;
+    const raw = JSON.stringify(body);
+    const agentToken = input.agentToken?.trim();
+    if (agentToken) {
+      Object.assign(headers, signRequest({ token: agentToken, method: "POST", path: "/task", body: raw, host: new URL(agentUrl).hostname }));
+    }
     const response = await (input.fetchImpl ?? fetch)(`${agentUrl.replace(/\/$/, "")}/task`, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: raw,
       redirect: "manual",
       signal: AbortSignal.timeout(input.timeoutMs ?? 120_000),
     });
@@ -105,7 +110,6 @@ export async function enqueueComputerTask(
     const status = asStatus(data?.status) ?? (response.ok ? "DONE" : "FAILED");
     let result = typeof data?.result === "string" ? data.result.slice(0, 2000) : response.ok ? "" : "El computador no completó la tarea.";
     if (payload?.fillGrant) result = result.split(payload.fillGrant).join("[redactado]");
-    const agentToken = input.agentToken?.trim();
     if (agentToken) result = result.split(agentToken).join("[redactado]");
     return { ok: true, task: await deps.store.finish(task.id, status, result), calledAgent: true };
   } catch {

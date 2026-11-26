@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { startGuardProxy } from "./guard-proxy.mjs";
 import { isIpAddress, isPrivateAddress, publicUrl } from "./protocol.mjs";
 
 async function hostAllowed(hostname, lookupImpl) {
@@ -20,8 +21,17 @@ export async function navigationAllowed(raw, lookupImpl = (hostname) => lookup(h
 export async function browsePublic(raw, signal, lookupImpl) {
   const url = await navigationAllowed(raw, lookupImpl);
   if (!url) throw new Error("destino");
+  const proxy = startGuardProxy({ lookup: lookupImpl });
+  const port = await proxy.listen();
   const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage", "--no-sandbox"] });
+  const browser = await chromium.launch({
+    headless: true,
+    proxy: { server: `http://127.0.0.1:${port}` },
+    args: [
+      "--disable-dev-shm-usage",
+      "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+    ],
+  });
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -31,21 +41,16 @@ export async function browsePublic(raw, signal, lookupImpl) {
     if (signal?.aborted) throw Object.assign(new Error("abort"), { name: "AbortError" });
     signal?.addEventListener("abort", abort, { once: true });
     try {
-      await page.route("**/*", async (route) => {
-        const allowed = await navigationAllowed(route.request().url(), lookupImpl).catch(() => null);
-        if (!allowed) {
-          await route.abort();
-          return;
-        }
-        await route.continue();
-      });
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
-      return { title: await page.title(), finalUrl: page.url() };
+      const finalUrl = page.url();
+      if (!(await navigationAllowed(finalUrl, lookupImpl))) throw new Error("destino");
+      return { title: await page.title(), finalUrl };
     } finally {
       signal?.removeEventListener("abort", abort);
       await context.close().catch(() => undefined);
     }
   } finally {
     await browser.close();
+    await proxy.close();
   }
 }

@@ -1,4 +1,5 @@
 import { LOCAL_HARNESS, enrollComputerLease, revokeComputerLease } from "../src/lib/computer/lease";
+import { signRequest } from "../src/lib/computer/request-sign";
 import { callMachine } from "../src/lib/computer/transport";
 import { decryptSecret, readMasterKey } from "../src/lib/credentials/crypto";
 import { prisma } from "../src/lib/prisma";
@@ -108,17 +109,18 @@ async function main() {
         ? JSON.stringify({ goal: flag("--goal") || "estado", machineId: current.row.machineId, epoch: current.row.leaseEpoch })
         : command === "harness-cancel"
           ? JSON.stringify({ machineId: current.row.machineId, epoch: current.row.leaseEpoch })
-          : undefined;
+          : "";
+    const host = new URL(current.row.agentEndpoint).hostname;
     const response = await callMachine({
       origin: current.row.agentEndpoint,
       pin: "127.0.0.1",
       path,
       method,
       headers: {
-        authorization: `Bearer ${current.token}`,
+        ...signRequest({ token: current.token, method, path, body, host }),
         ...(body ? { "content-type": "application/json" } : {}),
       },
-      body,
+      body: body || undefined,
       allowLoopback: true,
     });
     const outcome = command === "harness-dispatch" ? "no-real" : response.status === 200 ? "ok" : "fallo";
@@ -134,7 +136,7 @@ async function main() {
   }
   if (command === "revoke") {
     const expectedEpoch = epochFlag();
-    if (Number.isNaN(expectedEpoch)) return fail("datos");
+    if (expectedEpoch === undefined || Number.isNaN(expectedEpoch)) return fail("datos");
     const saved = await revokeComputerLease({ organizationId, operatorId, actorUserId, expectedEpoch });
     emit({
       action: "revoke",

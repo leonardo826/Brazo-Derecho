@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { roleMayManageMachine } from "@/lib/admin";
 import { acceptHandshake, handshakeNonce } from "@/lib/computer/handshake";
+import { signRequest } from "@/lib/computer/request-sign";
 import { isPrivateAddress } from "@/lib/computer/private-address";
 import { callMachine, revalidatePin, type LookupImpl } from "@/lib/computer/transport";
 import { decryptSecret, encryptSecret, readMasterKey, type VaultEnv } from "@/lib/credentials/crypto";
@@ -104,30 +105,28 @@ async function manager(organizationId: string, actorUserId: string) {
 
 async function attest(origin: string, pin: string, token: string, machineId: string, options: Options) {
   const nonce = handshakeNonce();
+  const host = new URL(origin).hostname;
+  const body = JSON.stringify({ nonce, machineId, host });
   const result = await callMachine({
     origin,
     pin,
     path: "/handshake",
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ nonce, machineId }),
+    headers: { "content-type": "application/json", ...signRequest({ token, method: "POST", path: "/handshake", body, host }) },
+    body,
     signal: AbortSignal.timeout(3_000),
     allowLoopback: options.harness === LOCAL_HARNESS,
     lookupImpl: options.lookupImpl,
     fetchImpl: options.fetchImpl,
   });
   if (result.status !== 200 || !result.body) return false;
-  let body: unknown;
+  let parsed: unknown;
   try {
-    body = JSON.parse(result.body) as unknown;
+    parsed = JSON.parse(result.body) as unknown;
   } catch {
     return false;
   }
-  return acceptHandshake({ token, nonce, machineId, body });
-}
-
-async function audit(input: { organizationId: string; machineId: string; operatorId: string; action: string; outcome: string; leaseEpoch: number }) {
-  await prisma.computerLeaseAudit.create({ data: input });
+  return acceptHandshake({ token, nonce, machineId, host, body: parsed });
 }
 
 async function organizationOpen(organizationId: string) {
@@ -223,35 +222,43 @@ export async function enrollComputerLease(input: LeaseInput, env: VaultEnv = pro
 
 export async function revokeComputerLease(input: { organizationId: string; operatorId: string; actorUserId: string; expectedEpoch?: number }) {
   if (!operatorOk(input.operatorId)) return { ok: false as const, error: "operador" as const };
-  if (!(await manager(input.organizationId, input.actorUserId))) return { ok: false as const, error: "permiso" as const };
-  const row = await prisma.computer.findUnique({ where: { clientId: input.organizationId } });
-  if (!row) return { ok: false as const, error: "ausente" as const };
-  if (input.expectedEpoch !== undefined && input.expectedEpoch !== row.leaseEpoch) {
-    return { ok: false as const, error: "conflicto" as const };
+  if (input.expectedEpoch === undefined || !Number.isInteger(input.expectedEpoch) || input.expectedEpoch < 0) {
+    return { ok: false as const, error: "datos" as const };
   }
-  const nextEpoch = row.leaseEpoch + 1;
-  const updated = await prisma.computer.updateMany({
-    where: { clientId: input.organizationId, leaseEpoch: row.leaseEpoch },
-    data: {
-      status: "STOPPED",
-      leaseEpoch: nextEpoch,
-      agentEndpoint: "",
-      agentPinnedAddress: "",
-      agentTokenCiphertext: "",
-      agentTokenIv: "",
-      agentTokenAuthTag: "",
-    },
+  if (!(await manager(input.organizationId, input.actorUserId))) return { ok: false as const, error: "permiso" as const };
+  const expectedEpoch = input.expectedEpoch;
+  const saved = await prisma.$transaction(async (tx) => {
+    const row = await tx.computer.findUnique({ where: { clientId: input.organizationId } });
+    if (!row) return "ausente" as const;
+    if (row.leaseEpoch !== expectedEpoch) return "conflicto" as const;
+    const nextEpoch = row.leaseEpoch + 1;
+    const updated = await tx.computer.updateMany({
+      where: { clientId: input.organizationId, leaseEpoch: row.leaseEpoch },
+      data: {
+        status: "STOPPED",
+        leaseEpoch: nextEpoch,
+        agentEndpoint: "",
+        agentPinnedAddress: "",
+        agentTokenCiphertext: "",
+        agentTokenIv: "",
+        agentTokenAuthTag: "",
+      },
+    });
+    if (updated.count !== 1) return "conflicto" as const;
+    await tx.computerLeaseAudit.create({
+      data: {
+        organizationId: input.organizationId,
+        machineId: row.machineId,
+        operatorId: input.operatorId,
+        action: "revoke",
+        outcome: "ok",
+        leaseEpoch: nextEpoch,
+      },
+    });
+    return nextEpoch;
   });
-  if (updated.count !== 1) return { ok: false as const, error: "conflicto" as const };
-  await audit({
-    organizationId: input.organizationId,
-    machineId: row.machineId,
-    operatorId: input.operatorId,
-    action: "revoke",
-    outcome: "ok",
-    leaseEpoch: nextEpoch,
-  });
-  return { ok: true as const, leaseEpoch: nextEpoch };
+  if (typeof saved !== "number") return { ok: false as const, error: saved };
+  return { ok: true as const, leaseEpoch: saved };
 }
 
 export async function loadTenantLease(organizationId: string, env: VaultEnv = process.env, options: Options = {}): Promise<LeaseState> {

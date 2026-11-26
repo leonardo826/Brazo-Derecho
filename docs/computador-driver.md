@@ -12,7 +12,7 @@ El chat y el arriendo no eligen proveedor. Un escritorio especializado entra si 
 
 ## Lo que el proveedor debe ofrecer
 
-HTTPS alcanzable desde la app. `POST /handshake` recibe `nonce` y `machineId` y responde la prueba HMAC, sin recibir el token. `GET /status` exige `Authorization: Bearer`. `POST /task` recibe `goal`, `machineId`, `taskId` y `epoch`. `POST /task/cancel` aborta esa tarea. `POST /action` solo si esa tarea sigue viva. Sin token, 401. Con otra máquina, 403. Una época distinta, 409. El id que responde status no prueba por sí solo que la máquina es de esa empresa: el alta exige la prueba HMAC y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen.
+HTTPS alcanzable desde la app. Cada request va firmada con HMAC del token (método, ruta, cuerpo, timestamp, nonce y host). El token no viaja. `POST /handshake` incluye el host en la prueba y el agente lo compara con `MACHINE_AGENT_DOMAIN`. `POST /task`, `POST /task/cancel` y `POST /action` exigen la época. `/action` solo corre si esa tarea sigue viva. Sin firma, 401. Con otra máquina, 403. Época distinta o vacía, 409. El alta exige la prueba y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen.
 
 ## Lo que este paso no es
 

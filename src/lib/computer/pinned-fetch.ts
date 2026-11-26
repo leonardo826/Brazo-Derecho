@@ -2,6 +2,8 @@ import http from "node:http";
 import https from "node:https";
 import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
 
+export const MAX_RESPONSE_BYTES = 64 * 1024;
+
 export function pinnedRequest(input: {
   origin: string;
   pin: string;
@@ -46,7 +48,17 @@ export function pinnedRequest(input: {
           return;
         }
         const chunks: Buffer[] = [];
-        response.on("data", (chunk) => chunks.push(chunk as Buffer));
+        let size = 0;
+        response.on("data", (chunk) => {
+          const buffer = chunk as Buffer;
+          size += buffer.length;
+          if (size > MAX_RESPONSE_BYTES) {
+            response.destroy();
+            finish(new Error("transporte"));
+            return;
+          }
+          chunks.push(buffer);
+        });
         response.on("end", () => finish(undefined, { status, body: Buffer.concat(chunks).toString("utf8") }));
         response.on("error", () => finish(new Error("transporte")));
       },

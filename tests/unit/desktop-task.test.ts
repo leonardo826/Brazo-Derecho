@@ -122,8 +122,10 @@ describe("contrato del computador en el chat", () => {
     const bodies: string[] = [];
     const fetchImpl = (async (_url: string, init?: RequestInit) => {
       bodies.push(String(init?.body ?? ""));
-      expect(JSON.stringify(init?.headers)).toContain("lease-de-esa-maquina");
-      expect(JSON.stringify(init?.headers)).not.toContain(SECRET);
+      const headers = JSON.stringify(init?.headers);
+      expect(headers).toContain("x-iabot-signature");
+      expect(headers).not.toContain("lease-de-esa-maquina");
+      expect(headers).not.toContain(SECRET);
       return new Response(
         JSON.stringify({
           status: "DONE",

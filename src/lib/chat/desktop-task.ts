@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { computerFeatureEnabled } from "@/lib/computer/flag";
 import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
+import { signRequest } from "@/lib/computer/request-sign";
 import { callMachine } from "@/lib/computer/transport";
 
 const TRIP = /\b(vuelos?|pasajes?|viajes?|trayectos?)\b/i;
@@ -217,20 +218,25 @@ export async function executeDesktopRequest(input: {
 
   const goal = plan.goal.split(lease.token).join("[redactado]");
   const taskId = `t_${randomBytes(9).toString("hex")}`;
-  const headers = { "content-type": "application/json", authorization: `Bearer ${lease.token}` };
+  const host = new URL(lease.baseUrl).hostname;
+  const signed = (path: string, body: string) => ({
+    "content-type": "application/json",
+    ...signRequest({ token: lease.token, method: "POST", path, body, host }),
+  });
   const taskAbort = new AbortController();
   let winner: "response" | "cancel" | "timeout" | null = null;
   let cancelSent = false;
   const sendCancel = () => {
     if (cancelSent) return;
     cancelSent = true;
+    const body = JSON.stringify({ machineId: lease.machineId, taskId, epoch: lease.epoch });
     void callMachine({
       origin: lease.baseUrl,
       pin: lease.pin,
       path: "/task/cancel",
       method: "POST",
-      headers,
-      body: JSON.stringify({ machineId: lease.machineId, taskId, epoch: lease.epoch }),
+      headers: signed("/task/cancel", body),
+      body,
       fetchImpl: input.fetchImpl,
       signal: AbortSignal.timeout(3_000),
     }).catch(() => undefined);
@@ -254,13 +260,14 @@ export async function executeDesktopRequest(input: {
       return finish("revocado", false, TRANSPORT);
     }
     timer = setTimeout(() => stop("timeout"), input.timeoutMs ?? 20_000);
+    const taskBody = JSON.stringify({ goal, machineId: lease.machineId, taskId, epoch: lease.epoch });
     const response = await callMachine({
       origin: lease.baseUrl,
       pin: lease.pin,
       path: "/task",
       method: "POST",
-      headers,
-      body: JSON.stringify({ goal, machineId: lease.machineId, taskId, epoch: lease.epoch }),
+      headers: signed("/task", taskBody),
+      body: taskBody,
       fetchImpl: input.fetchImpl,
       signal: taskAbort.signal,
     });

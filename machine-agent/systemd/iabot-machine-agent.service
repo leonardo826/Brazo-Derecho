@@ -9,12 +9,29 @@ User=iabot
 Group=iabot
 EnvironmentFile=/etc/iabot-machine-agent.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/iabot-machine-agent/browsers
-WorkingDirectory=/opt/iabot-machine-agent
+Environment=HOME=/var/lib/iabot-machine-agent
+WorkingDirectory=/var/lib/iabot-machine-agent
 ExecStart=/usr/bin/node /opt/iabot-machine-agent/src/server.mjs
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+ReadWritePaths=/var/lib/iabot-machine-agent
 
 [Install]
 WantedBy=multi-user.target

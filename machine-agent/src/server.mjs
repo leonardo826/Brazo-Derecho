@@ -1,13 +1,13 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { createServer as createHttps } from "node:https";
 import { pathToFileURL } from "node:url";
 import { browsePublic, navigationAllowed } from "./browser.mjs";
-import { handshakeProof } from "./protocol.mjs";
+import { handshakeProof, normalizeHost, proofsMatch, requestSignature } from "./protocol.mjs";
 
 const inflight = new Map();
 const cancelledEarly = new Set();
+const seenNonces = new Map();
 
 function json(status, body) {
   return {
@@ -26,13 +26,35 @@ function header(headers, name) {
   return "";
 }
 
-function authorized(headers, expected) {
-  if (!expected) return false;
-  const raw = header(headers, "authorization");
-  const got = raw.startsWith("Bearer ") ? raw.slice("Bearer ".length) : "";
-  const left = createHash("sha256").update(got).digest();
-  const right = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(left, right);
+function tokensOf(deps) {
+  return [deps.token, deps.previousToken].map((item) => String(item ?? "").trim()).filter((item) => item.length > 0);
+}
+
+function authorized(request, deps) {
+  const domain = normalizeHost(deps.domain || "");
+  if (!domain) return null;
+  const timestamp = header(request.headers, "x-iabot-timestamp");
+  const nonce = header(request.headers, "x-iabot-nonce");
+  const host = normalizeHost(header(request.headers, "x-iabot-host"));
+  const signature = header(request.headers, "x-iabot-signature");
+  if (!/^[0-9]{10}$/.test(timestamp) || !/^[A-Za-z0-9_-]{16,80}$/.test(nonce) || !signature) return null;
+  const now = deps.now ?? Math.floor(Date.now() / 1000);
+  if (Math.abs(now - Number(timestamp)) > 60) return null;
+  if (host !== domain) return null;
+  if (seenNonces.has(nonce)) return null;
+  const body = typeof request.rawBody === "string" ? request.rawBody : "";
+  const matched = tokensOf(deps).find((token) =>
+    proofsMatch(
+      requestSignature(token, { timestamp, nonce, method: request.method, path: request.path, body, host }),
+      signature,
+    ),
+  );
+  if (!matched) return null;
+  seenNonces.set(nonce, now);
+  for (const [key, at] of seenNonces) {
+    if (now - at > 120) seenNonces.delete(key);
+  }
+  return matched;
 }
 
 function taskIdOf(body) {
@@ -53,6 +75,7 @@ export function resetMachineTasks() {
   for (const job of inflight.values()) job.controller.abort();
   inflight.clear();
   cancelledEarly.clear();
+  seenNonces.clear();
 }
 
 function epochOk(body, leaseEpoch) {
@@ -67,15 +90,17 @@ export async function handleMachine(request, deps) {
   const path = request.path || "/";
   const token = String(deps.token || "").trim();
   const machineId = String(deps.machineId || "").trim();
+  const signer = authorized({ ...request, method, path }, deps);
+  if (!signer) return json(401, { ok: false, error: "token" });
   if (method === "POST" && path === "/handshake") {
     const record = request.body && typeof request.body === "object" ? request.body : {};
     const nonce = typeof record.nonce === "string" ? record.nonce : "";
     const claimed = typeof record.machineId === "string" ? record.machineId : "";
+    const host = normalizeHost(typeof record.host === "string" ? record.host : "");
     if (!/^[A-Za-z0-9_-]{16,80}$/.test(nonce)) return json(400, { ok: false, error: "datos" });
-    if (!token || !machineId || claimed !== machineId) return json(403, { ok: false, error: "maquina" });
-    return json(200, { machineId, nonce, proof: handshakeProof(token, nonce, machineId) });
+    if (!machineId || claimed !== machineId || host !== normalizeHost(deps.domain || "")) return json(403, { ok: false, error: "maquina" });
+    return json(200, { machineId, nonce, host, proof: handshakeProof(signer, nonce, machineId, host) });
   }
-  if (!authorized(request.headers, token)) return json(401, { ok: false, error: "token" });
   const claimedMachine = request.body && typeof request.body === "object" ? request.body.machineId : "";
   const bound = Boolean(machineId) && claimedMachine === machineId;
 
@@ -99,6 +124,7 @@ export async function handleMachine(request, deps) {
 
   if (method === "POST" && path === "/action") {
     if (!bound) return json(403, { ok: false, error: "maquina" });
+    if (!epochOk(request.body, deps.leaseEpoch)) return json(409, { ok: false, error: "epoca" });
     const taskId = taskIdOf(request.body);
     const job = taskId ? inflight.get(taskId) : undefined;
     if (!job || job.controller.signal.aborted) return json(403, { ok: false, error: "tarea" });
@@ -174,12 +200,14 @@ export async function handleMachine(request, deps) {
 
 export function listen(env = process.env) {
   const token = (env.AGENT_RUNTIME_TOKEN ?? "").trim();
+  const previousToken = (env.AGENT_RUNTIME_TOKEN_PREVIOUS ?? "").trim();
   const machineId = (env.MACHINE_ID ?? "").trim();
   const leaseEpoch = (env.LEASE_EPOCH ?? "").trim();
+  const domain = (env.MACHINE_AGENT_DOMAIN ?? "").trim();
   const port = Number(env.PORT || 8787);
   const bind = (env.BIND || "127.0.0.1").trim();
-  if (!token || !machineId || !leaseEpoch) {
-    process.stderr.write("faltan AGENT_RUNTIME_TOKEN, MACHINE_ID o LEASE_EPOCH\n");
+  if (!token || !machineId || !leaseEpoch || !domain) {
+    process.stderr.write("faltan AGENT_RUNTIME_TOKEN, MACHINE_ID, LEASE_EPOCH o MACHINE_AGENT_DOMAIN\n");
     process.exit(1);
   }
   const certFile = (env.TLS_CERT_FILE ?? "").trim();
@@ -189,7 +217,7 @@ export function listen(env = process.env) {
     process.stderr.write("un bind público exige TLS_CERT_FILE y TLS_KEY_FILE\n");
     process.exit(1);
   }
-  const deps = { token, machineId, leaseEpoch };
+  const deps = { token, previousToken, machineId, leaseEpoch, domain };
   const onRequest = async (req, res) => {
     const chunks = [];
     let size = 0;
@@ -215,7 +243,7 @@ export function listen(env = process.env) {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     try {
       const result = await handleMachine(
-        { method: req.method, path: url.pathname, body, headers: req.headers },
+        { method: req.method, path: url.pathname, body, rawBody: raw.toString("utf8"), headers: req.headers },
         deps,
       );
       res.writeHead(result.status, result.headers);

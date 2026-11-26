@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 function bare(address) {
   return address.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -14,6 +14,7 @@ function v4Private(parts) {
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a === 198 && b === 51 && c === 100) return true;
   if (a === 203 && b === 0 && c === 113) return true;
+  if (a === 192 && b === 88 && c === 99) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a >= 224) return true;
   return false;
@@ -73,6 +74,9 @@ function v6Private(groups) {
   if (g0 === 0x100 && g1 === 0 && g2 === 0 && g3 === 0) return true;
   if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0 || g5 === 0xffff)) return embeddedV4(g6, g7);
   if (g0 === 0x2002) return embeddedV4(g1, g2);
+  if (g0 === 0x2001 && g1 === 0x0db8) return true;
+  if (g0 === 0x2001 && g1 === 0) return true;
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true;
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return embeddedV4(g6, g7);
   return false;
 }
@@ -97,8 +101,24 @@ export function isPrivateAddress(address) {
   return false;
 }
 
-export function handshakeProof(token, nonce, machineId) {
-  return createHmac("sha256", token).update(`${nonce}\n${machineId}`).digest("base64url");
+export function normalizeHost(host) {
+  return String(host ?? "").trim().toLowerCase().replace(/\.$/, "").replace(/^\[|\]$/g, "");
+}
+
+export function bodyHash(body) {
+  return createHash("sha256").update(body ?? "").digest("hex");
+}
+
+export function canonicalRequest(input) {
+  return [input.timestamp, input.nonce, String(input.method).toUpperCase(), input.path, bodyHash(input.body), normalizeHost(input.host)].join("\n");
+}
+
+export function requestSignature(token, input) {
+  return createHmac("sha256", token).update(canonicalRequest(input)).digest("base64url");
+}
+
+export function handshakeProof(token, nonce, machineId, host) {
+  return createHmac("sha256", token).update(`${nonce}\n${machineId}\n${normalizeHost(host)}`).digest("base64url");
 }
 
 export function proofsMatch(expected, proof) {

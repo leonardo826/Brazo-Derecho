@@ -43,8 +43,9 @@ export async function callMachine(input: {
   }
   const loopback =
     input.allowLoopback === true && url.protocol === "http:" && url.hostname === "127.0.0.1" && input.pin === "127.0.0.1";
-  if (input.fetchImpl) {
-    const response = await input.fetchImpl(`${url.origin}${input.path}`, {
+  const fetchImpl = process.env.VITEST === "true" ? input.fetchImpl : undefined;
+  if (fetchImpl) {
+    const response = await fetchImpl(`${url.origin}${input.path}`, {
       method: input.method,
       headers: input.headers,
       body: input.body,

@@ -1,5 +1,6 @@
 import http from "node:http";
 import { describe, expect, test } from "vitest";
+import { MAX_RESPONSE_BYTES, pinnedRequest } from "@/lib/computer/pinned-fetch";
 import { callMachine } from "@/lib/computer/transport";
 
 function listen(server: http.Server) {
@@ -41,6 +42,23 @@ describe("transporte fijado", () => {
   });
 
   test("si el DNS ya no contiene la IP fijada no hay conexión", async () => {
+    const big = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("x".repeat(MAX_RESPONSE_BYTES + 20));
+    });
+    const bigPort = await listen(big);
+    await expect(
+      pinnedRequest({
+        origin: `http://127.0.0.1:${bigPort}`,
+        pin: "127.0.0.1",
+        path: "/",
+        method: "GET",
+        headers: {},
+        allowLoopbackPin: true,
+      }),
+    ).rejects.toThrow(/transporte/);
+    await new Promise<void>((resolve) => big.close(() => resolve()));
+
     await expect(
       callMachine({
         origin: "https://equipo.example",

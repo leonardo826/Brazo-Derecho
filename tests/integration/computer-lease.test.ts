@@ -78,9 +78,19 @@ describe("comando de operador, cableado local", () => {
           method: req.method ?? "GET",
           path: req.url ?? "/",
           body: raw ? (JSON.parse(raw) as object) : undefined,
-          headers: { authorization: req.headers.authorization },
+          rawBody: raw,
+          headers: req.headers,
         },
-        { env: { AGENT_RUNTIME_TOKEN: token, MACHINE_ID: machineId, XAI_MODE: "mock" }, desktop: desktop() },
+        {
+          env: {
+            AGENT_RUNTIME_TOKEN: token,
+            MACHINE_ID: machineId,
+            MACHINE_AGENT_DOMAIN: "127.0.0.1",
+            LEASE_EPOCH: "1",
+            XAI_MODE: "mock",
+          },
+          desktop: desktop(),
+        },
       );
       res.writeHead(response.status);
       res.end(response.body);
