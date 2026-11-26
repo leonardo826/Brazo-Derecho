@@ -59,6 +59,11 @@ jobs:
         run: npm run typecheck
       - name: Typecheck computador
         run: npx tsc -p agent-runtime --noEmit
+      - name: Agente de máquina
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iptables
+          node --test machine-agent/test/*.test.mjs
       - name: Lint
         run: npm run lint
       - name: Migrate

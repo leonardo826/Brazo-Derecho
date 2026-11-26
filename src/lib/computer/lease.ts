@@ -1,8 +1,12 @@
 import { lookup } from "node:dns/promises";
-import { Prisma } from "@/lib/prisma";
+import { roleMayManageMachine } from "@/lib/admin";
+import { acceptHandshake, handshakeNonce } from "@/lib/computer/handshake";
+import { signRequest } from "@/lib/computer/request-sign";
+import { isPrivateAddress } from "@/lib/computer/private-address";
+import { callMachine, revalidatePin, type LookupImpl } from "@/lib/computer/transport";
 import { decryptSecret, encryptSecret, readMasterKey, type VaultEnv } from "@/lib/credentials/crypto";
 import { usableLease, type LeaseState } from "@/lib/chat/desktop-task";
-import { pinnedRequest } from "@/lib/computer/pinned-fetch";
+import { Prisma } from "@/lib/prisma";
 import { prisma } from "@/lib/prisma";
 
 const AAD_VERSION = "v1";
@@ -16,13 +20,22 @@ export type LeaseInput = {
   endpoint: string;
   token: string;
   operatorId: string;
+  actorUserId: string;
+  expectedEpoch?: number;
 };
 
 type Options = {
   harness?: typeof LOCAL_HARNESS;
-  lookupImpl?: (hostname: string) => Promise<{ address: string; family: number }[]>;
+  rotate?: boolean;
+  lookupImpl?: LookupImpl;
   fetchImpl?: typeof fetch;
 };
+
+export function leaseGate(status: string): "running" | "closed" | "absent" {
+  if (status === "STOPPED" || status === "ERROR") return "closed";
+  if (status === "RUNNING") return "running";
+  return "absent";
+}
 
 function aad(organizationId: string, machineId: string) {
   return `${AAD_VERSION}\n${organizationId}\n${machineId}`;
@@ -37,25 +50,18 @@ function bareHost(hostname: string) {
 }
 
 export function privateAddress(address: string) {
-  const host = bareHost(address);
-  if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
-  const mapped = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  const v4 = mapped?.[1] ?? host;
-  if (v4.includes(":")) {
-    const head = (v4.split(":")[0] ?? "").toLowerCase();
-    return head === "" || head.startsWith("fc") || head.startsWith("fd") || head.startsWith("fe80");
-  }
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v4);
-  if (!match) return false;
-  const parts = match.slice(1).map(Number);
-  if (parts.some((part) => part > 255)) return true;
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
+  return isPrivateAddress(address);
+}
+
+function blockedHost(host: string) {
+  return (
+    !host ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local") ||
+    host === "metadata.google.internal"
+  );
 }
 
 export async function endpointAllowed(raw: string, options: Options = {}) {
@@ -67,55 +73,60 @@ export async function endpointAllowed(raw: string, options: Options = {}) {
   }
   if (url.username || url.password) return null;
   const host = bareHost(url.hostname);
-  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local")) {
-    return null;
-  }
+  if (blockedHost(host)) return null;
   if (host === "127.0.0.1") {
     if (options.harness !== LOCAL_HARNESS || url.protocol !== "http:") return null;
     return { origin: url.origin, pin: "127.0.0.1" };
   }
   if (url.protocol !== "https:") return null;
-  if (privateAddress(host)) return null;
+  if (isPrivateAddress(host)) return null;
   try {
-    const records = await (options.lookupImpl ?? ((hostname) => lookup(hostname, { all: true, verbatim: true })))(host);
-    if (records.length === 0 || records.some((record) => privateAddress(record.address))) return null;
+    const records = await (options.lookupImpl ?? ((hostname: string) => lookup(hostname, { all: true, verbatim: true })))(host);
+    if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) return null;
     const pin = records[0]?.address;
-    if (!pin) return null;
+    if (!pin || isPrivateAddress(pin)) return null;
     return { origin: url.origin, pin };
   } catch {
     return null;
   }
 }
 
-export async function revalidatePin(hostname: string, pin: string, lookupImpl?: Options["lookupImpl"]) {
-  if (privateAddress(pin)) return false;
-  const records = await (lookupImpl ?? ((host: string) => lookup(host, { all: true, verbatim: true })))(hostname);
-  if (records.some((record) => privateAddress(record.address))) return false;
-  return records.some((record) => record.address === pin);
+async function manager(organizationId: string, actorUserId: string) {
+  if (!actorUserId) return false;
+  const user = await prisma.user.findUnique({ where: { id: actorUserId }, select: { email: true } });
+  if (!user) return false;
+  if (roleMayManageMachine(null, user.email)) return true;
+  const membership = await prisma.membership.findUnique({
+    where: { userId_organizationId: { userId: actorUserId, organizationId } },
+    select: { role: true },
+  });
+  return roleMayManageMachine(membership?.role ?? null, user.email);
 }
 
-async function attest(origin: string, pin: string, token: string, machineId: string, fetchImpl?: typeof fetch) {
-  const response = fetchImpl
-    ? await fetchImpl(`${origin}/status`, {
-        headers: { authorization: `Bearer ${token}` },
-        redirect: "manual",
-        signal: AbortSignal.timeout(3_000),
-      })
-    : await pinnedRequest({
-        origin,
-        pin,
-        path: "/status",
-        method: "GET",
-        headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(3_000),
-      }).then((result) => ({ status: result.status, json: async () => JSON.parse(result.body || "null") as unknown }));
-  if ("status" in response && response.status !== 200) return false;
-  const data = (await response.json().catch(() => null)) as { ok?: unknown; machineId?: unknown } | null;
-  return Boolean(data && data.ok === true && data.machineId === machineId);
-}
-
-async function audit(input: { organizationId: string; machineId: string; operatorId: string; action: string; outcome: string; leaseEpoch: number }) {
-  await prisma.computerLeaseAudit.create({ data: input });
+async function attest(origin: string, pin: string, token: string, machineId: string, options: Options) {
+  const nonce = handshakeNonce();
+  const host = new URL(origin).hostname;
+  const body = JSON.stringify({ nonce, machineId, host });
+  const result = await callMachine({
+    origin,
+    pin,
+    path: "/handshake",
+    method: "POST",
+    headers: { "content-type": "application/json", ...signRequest({ token, method: "POST", path: "/handshake", body, host }) },
+    body,
+    signal: AbortSignal.timeout(3_000),
+    allowLoopback: options.harness === LOCAL_HARNESS,
+    lookupImpl: options.lookupImpl,
+    fetchImpl: options.fetchImpl,
+  });
+  if (result.status !== 200 || !result.body) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.body) as unknown;
+  } catch {
+    return false;
+  }
+  return acceptHandshake({ token, nonce, machineId, host, body: parsed });
 }
 
 async function organizationOpen(organizationId: string) {
@@ -127,18 +138,27 @@ async function organizationOpen(organizationId: string) {
   return true;
 }
 
+function uniqueConflict(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") return null;
+  const target = error.meta?.target;
+  const text = Array.isArray(target) ? target.join(" ") : String(target ?? "");
+  if (text.includes("machineId")) return "maquina" as const;
+  return "conflicto" as const;
+}
+
 export async function enrollComputerLease(input: LeaseInput, env: VaultEnv = process.env, options: Options = {}) {
   const token = input.token.trim();
   const machineId = input.machineId.trim();
   if (!operatorOk(input.operatorId)) return { ok: false as const, error: "operador" as const };
   if (token.length < 16 || token.length > 200) return { ok: false as const, error: "datos" as const };
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(machineId)) return { ok: false as const, error: "datos" as const };
+  if (!(await manager(input.organizationId, input.actorUserId))) return { ok: false as const, error: "permiso" as const };
   if (!(await organizationOpen(input.organizationId))) return { ok: false as const, error: "suspendida" as const };
   const target = await endpointAllowed(input.endpoint, options);
   if (!target) return { ok: false as const, error: "datos" as const };
   let attested = false;
   try {
-    attested = await attest(target.origin, target.pin, token, machineId, options.fetchImpl);
+    attested = await attest(target.origin, target.pin, token, machineId, options);
   } catch {
     attested = false;
   }
@@ -152,13 +172,14 @@ export async function enrollComputerLease(input: LeaseInput, env: VaultEnv = pro
   try {
     const saved = await prisma.$transaction(async (tx) => {
       const current = await tx.computer.findUnique({ where: { clientId: input.organizationId } });
+      if (options.rotate && !current) return "ausente" as const;
+      if (current && input.expectedEpoch !== current.leaseEpoch) return "conflicto" as const;
       const taken = await tx.computer.findFirst({
         where: { machineId, NOT: { clientId: input.organizationId } },
         select: { id: true },
       });
       if (taken) return "maquina" as const;
       const epoch = (current?.leaseEpoch ?? 0) + 1;
-      if (current && current.leaseEpoch !== epoch - 1) return "conflicto" as const;
       const data = {
         machineId,
         status: "RUNNING" as const,
@@ -179,104 +200,130 @@ export async function enrollComputerLease(input: LeaseInput, env: VaultEnv = pro
         if (updated.count !== 1) return "conflicto" as const;
       }
       await tx.computerLeaseAudit.create({
-        data: { organizationId: input.organizationId, machineId, operatorId: input.operatorId, action: "enroll", outcome: "ok", leaseEpoch: epoch },
+        data: {
+          organizationId: input.organizationId,
+          machineId,
+          operatorId: input.operatorId,
+          action: options.rotate ? "rotate" : "enroll",
+          outcome: "ok",
+          leaseEpoch: epoch,
+        },
       });
       return epoch;
     });
-    if (saved === "maquina" || saved === "conflicto") return { ok: false as const, error: saved };
+    if (saved === "maquina" || saved === "conflicto" || saved === "ausente") return { ok: false as const, error: saved };
     return { ok: true as const, machineId, configured: true as const, leaseEpoch: saved };
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { ok: false as const, error: "maquina" as const };
-    }
+    const conflict = uniqueConflict(error);
+    if (conflict) return { ok: false as const, error: conflict };
     throw error;
   }
 }
 
-export async function revokeComputerLease(organizationId: string, operatorId: string) {
-  if (!operatorOk(operatorId)) return { ok: false as const, error: "operador" as const };
-  const row = await prisma.computer.findUnique({ where: { clientId: organizationId } });
-  if (!row) return { ok: false as const, error: "ausente" as const };
-  const updated = await prisma.computer.updateMany({
-    where: { clientId: organizationId, leaseEpoch: row.leaseEpoch },
-    data: {
-      status: "STOPPED",
-      leaseEpoch: row.leaseEpoch + 1,
-      agentEndpoint: "",
-      agentPinnedAddress: "",
-      agentTokenCiphertext: "",
-      agentTokenIv: "",
-      agentTokenAuthTag: "",
-    },
+export async function revokeComputerLease(input: { organizationId: string; operatorId: string; actorUserId: string; expectedEpoch?: number }) {
+  if (!operatorOk(input.operatorId)) return { ok: false as const, error: "operador" as const };
+  if (input.expectedEpoch === undefined || !Number.isInteger(input.expectedEpoch) || input.expectedEpoch < 0) {
+    return { ok: false as const, error: "datos" as const };
+  }
+  if (!(await manager(input.organizationId, input.actorUserId))) return { ok: false as const, error: "permiso" as const };
+  const expectedEpoch = input.expectedEpoch;
+  const saved = await prisma.$transaction(async (tx) => {
+    const row = await tx.computer.findUnique({ where: { clientId: input.organizationId } });
+    if (!row) return "ausente" as const;
+    if (row.leaseEpoch !== expectedEpoch) return "conflicto" as const;
+    const nextEpoch = row.leaseEpoch + 1;
+    const updated = await tx.computer.updateMany({
+      where: { clientId: input.organizationId, leaseEpoch: row.leaseEpoch },
+      data: {
+        status: "STOPPED",
+        leaseEpoch: nextEpoch,
+        agentEndpoint: "",
+        agentPinnedAddress: "",
+        agentTokenCiphertext: "",
+        agentTokenIv: "",
+        agentTokenAuthTag: "",
+      },
+    });
+    if (updated.count !== 1) return "conflicto" as const;
+    await tx.computerLeaseAudit.create({
+      data: {
+        organizationId: input.organizationId,
+        machineId: row.machineId,
+        operatorId: input.operatorId,
+        action: "revoke",
+        outcome: "ok",
+        leaseEpoch: nextEpoch,
+      },
+    });
+    return nextEpoch;
   });
-  if (updated.count !== 1) return { ok: false as const, error: "conflicto" as const };
-  await audit({
-    organizationId,
-    machineId: row.machineId,
-    operatorId,
-    action: "revoke",
-    outcome: "ok",
-    leaseEpoch: row.leaseEpoch + 1,
-  });
-  return { ok: true as const, leaseEpoch: row.leaseEpoch + 1 };
+  if (typeof saved !== "number") return { ok: false as const, error: saved };
+  return { ok: true as const, leaseEpoch: saved };
 }
 
 export async function loadTenantLease(organizationId: string, env: VaultEnv = process.env, options: Options = {}): Promise<LeaseState> {
-  const organization = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { suspendedAt: true, isQa: true },
-  });
-  if (!organization || organization.suspendedAt || !organization.isQa) return { state: "ausente" };
-  const row = await prisma.computer.findUnique({ where: { clientId: organizationId } });
-  if (!row || row.status !== "RUNNING" || !row.machineId.trim() || !row.agentEndpoint.trim() || !row.agentPinnedAddress.trim()) {
-    return { state: "ausente" };
-  }
-  if (!row.agentTokenCiphertext || !row.agentTokenIv || !row.agentTokenAuthTag) return { state: "ausente" };
-  let origin: URL;
   try {
-    origin = new URL(row.agentEndpoint);
-  } catch {
-    return { state: "transporte" };
-  }
-  if (options.harness !== LOCAL_HARNESS && (origin.hostname === "127.0.0.1" || origin.protocol !== "https:")) {
-    return { state: "transporte" };
-  }
-  if (options.harness !== LOCAL_HARNESS) {
-    const still = await revalidatePin(origin.hostname, row.agentPinnedAddress, options.lookupImpl).catch(() => false);
-    if (!still) return { state: "transporte" };
-  }
-  let token = "";
-  try {
-    token = decryptSecret(
-      { ciphertext: row.agentTokenCiphertext, iv: row.agentTokenIv, authTag: row.agentTokenAuthTag },
-      readMasterKey(env),
-      aad(organizationId, row.machineId),
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { suspendedAt: true, isQa: true },
+    });
+    if (!organization || organization.suspendedAt || !organization.isQa) return { state: "ausente" };
+    const row = await prisma.computer.findUnique({ where: { clientId: organizationId } });
+    if (!row) return { state: "ausente" };
+    const gate = leaseGate(row.status);
+    if (gate === "closed") return { state: "detenido" };
+    if (gate !== "running" || !row.machineId.trim() || !row.agentEndpoint.trim() || !row.agentPinnedAddress.trim()) {
+      return { state: "ausente" };
+    }
+    if (!row.agentTokenCiphertext || !row.agentTokenIv || !row.agentTokenAuthTag) return { state: "ausente" };
+    let origin: URL;
+    try {
+      origin = new URL(row.agentEndpoint);
+    } catch {
+      return { state: "transporte" };
+    }
+    if (options.harness !== LOCAL_HARNESS && (origin.hostname === "127.0.0.1" || origin.protocol !== "https:")) {
+      return { state: "transporte" };
+    }
+    if (options.harness !== LOCAL_HARNESS) {
+      const still = await revalidatePin(origin.hostname, row.agentPinnedAddress, options.lookupImpl).catch(() => false);
+      if (!still) return { state: "transporte" };
+    }
+    let token = "";
+    try {
+      token = decryptSecret(
+        { ciphertext: row.agentTokenCiphertext, iv: row.agentTokenIv, authTag: row.agentTokenAuthTag },
+        readMasterKey(env),
+        aad(organizationId, row.machineId),
+      );
+    } catch {
+      return { state: "transporte" };
+    }
+    const usable = usableLease(
+      {
+        organizationId,
+        machineId: row.machineId,
+        baseUrl: row.agentEndpoint,
+        pin: row.agentPinnedAddress,
+        epoch: row.leaseEpoch,
+        token,
+      },
+      organizationId,
     );
+    if (!usable && options.harness !== LOCAL_HARNESS) return { state: "transporte" };
+    if (!usable && origin.hostname !== "127.0.0.1") return { state: "transporte" };
+    return {
+      state: "listo",
+      lease: usable ?? {
+        organizationId,
+        machineId: row.machineId,
+        baseUrl: origin.origin,
+        pin: "127.0.0.1",
+        epoch: row.leaseEpoch,
+        token,
+      },
+    };
   } catch {
     return { state: "transporte" };
   }
-  const usable = usableLease(
-    {
-      organizationId,
-      machineId: row.machineId,
-      baseUrl: row.agentEndpoint,
-      pin: row.agentPinnedAddress,
-      epoch: row.leaseEpoch,
-      token,
-    },
-    organizationId,
-  );
-  if (!usable && options.harness !== LOCAL_HARNESS) return { state: "transporte" };
-  if (!usable && origin.hostname !== "127.0.0.1") return { state: "transporte" };
-  return {
-    state: "listo",
-    lease: usable ?? {
-      organizationId,
-      machineId: row.machineId,
-      baseUrl: origin.origin,
-      pin: "127.0.0.1",
-      epoch: row.leaseEpoch,
-      token,
-    },
-  };
 }

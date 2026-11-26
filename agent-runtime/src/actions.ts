@@ -143,6 +143,22 @@ export function xdotoolArgs(action: Exclude<DesktopAction, { type: "goto" | "fil
   return ["click", "--repeat", String(Math.abs(action.dy)), button];
 }
 
+export function authorizeRuntimeAction(
+  action: DesktopAction,
+  policy: { allowFill: boolean; aborted: boolean },
+): { ok: true } | { ok: false; error: string } {
+  if (policy.aborted) return { ok: false, error: "cancelada" };
+  if (action.type === "fill") {
+    if (!policy.allowFill) return { ok: false, error: "sin_permiso" };
+    return { ok: true };
+  }
+  if (action.type === "goto" && !isPublicDestination(action.url)) return { ok: false, error: "destino" };
+  if (action.type === "click" || action.type === "type" || action.type === "key" || action.type === "scroll" || action.type === "goto") {
+    return { ok: true };
+  }
+  return { ok: false, error: "accion" };
+}
+
 export function describeAction(action: DesktopAction) {
   if (action.type === "goto") return `goto ${action.url}`;
   if (action.type === "click") return `click ${action.x},${action.y}`;

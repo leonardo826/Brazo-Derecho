@@ -76,10 +76,12 @@ test("recorrido de la demo: catálogo, alta, agentes, uso, cuenta y clave", asyn
   await clickHydrated(page, page.getByRole("button", { name: "Activar prueba de 7 días" }), async () => {
     await expect(page.getByText("Prueba activada por 7 días.")).toBeVisible({ timeout: 3_000 });
   });
-  await page.getByLabel("SKU").fill("TOR-E2E");
-  await page.getByLabel("Precio neto CLP").fill("1990");
-  await page.getByLabel("Nombre").fill("Tornillo de prueba");
-  await page.getByLabel("Unidad").fill("unidad");
+  const priceForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Agregar a la lista" }) });
+  await expect(priceForm).toHaveCount(1);
+  await priceForm.getByLabel("SKU").fill("TOR-E2E");
+  await priceForm.getByLabel("Precio neto CLP").fill("1990");
+  await priceForm.getByLabel("Nombre").fill("Tornillo de prueba");
+  await priceForm.getByLabel("Unidad").fill("unidad");
   await clickHydrated(page, page.getByRole("button", { name: "Agregar a la lista" }), async () => {
     await expect(page.getByText("Producto guardado")).toBeVisible({ timeout: 3_000 });
   });

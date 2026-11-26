@@ -1,5 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { parseAction } from "./actions.ts";
+import { randomBytes } from "node:crypto";
+import { authorizeRuntimeAction, parseAction } from "./actions.ts";
+import { handshakeProof, normalizeHost, requestSignature, signaturesMatch } from "./sign.ts";
 import { sanitizeCredentialMeta } from "./credentials.ts";
 import type { Desktop } from "./desktop.ts";
 import { runComputerTask, type FillMaterial } from "./loop.ts";
@@ -12,7 +13,10 @@ export type AgentEnv = {
   XAI_API_URL?: string;
   XAI_COMPUTER_MODEL?: string;
   AGENT_RUNTIME_TOKEN?: string;
+  AGENT_RUNTIME_TOKEN_PREVIOUS?: string;
   MACHINE_ID?: string;
+  MACHINE_AGENT_DOMAIN?: string;
+  LEASE_EPOCH?: string;
   VAULT_FILL_URL?: string;
   DISPLAY?: string;
   CHROME_PROFILE?: string;
@@ -22,7 +26,8 @@ export type AgentRequest = {
   method: string;
   path: string;
   body?: unknown;
-  headers?: Record<string, string | undefined>;
+  rawBody?: string;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 export type AgentResponse = {
@@ -49,28 +54,104 @@ function header(headers: AgentRequest["headers"], name: string) {
   if (!headers) return "";
   const wanted = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === wanted) return value ?? "";
+    if (key.toLowerCase() === wanted) return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
   }
   return "";
 }
 
-const inflight = new Map<string, AbortController>();
+const seenNonces = new Map<string, number>();
 
-function authorized(headers: AgentRequest["headers"], expected: string) {
-  if (!expected) return false;
-  const raw = header(headers, "authorization");
-  const got = raw.startsWith("Bearer ") ? raw.slice("Bearer ".length) : "";
-  const a = createHash("sha256").update(got).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
+function runtimeTokens(env: AgentEnv) {
+  return [env.AGENT_RUNTIME_TOKEN, env.AGENT_RUNTIME_TOKEN_PREVIOUS].map((item) => (item ?? "").trim()).filter((item) => item.length > 0);
+}
+
+function signedToken(request: AgentRequest, env: AgentEnv) {
+  const domain = normalizeHost(env.MACHINE_AGENT_DOMAIN ?? "");
+  if (!domain) return null;
+  const timestamp = header(request.headers, "x-iabot-timestamp");
+  const nonce = header(request.headers, "x-iabot-nonce");
+  const host = normalizeHost(header(request.headers, "x-iabot-host"));
+  const signature = header(request.headers, "x-iabot-signature");
+  if (!/^[0-9]{10}$/.test(timestamp) || !/^[A-Za-z0-9_-]{16,80}$/.test(nonce) || !signature) return null;
+  const now = Math.floor(Date.now() / 1000);
+  expireSeenNonces(now);
+  if (Math.abs(now - Number(timestamp)) > 60 || host !== domain || seenNonces.has(nonce)) return null;
+  const body = request.rawBody ?? "";
+  const matched = runtimeTokens(env).find((token) =>
+    signaturesMatch(requestSignature(token, { timestamp, nonce, method: request.method, path: request.path, body, host }), signature),
+  );
+  if (!matched) return null;
+  seenNonces.set(nonce, now);
+  return matched;
+}
+
+export function expireSeenNonces(now = Math.floor(Date.now() / 1000)) {
+  for (const [key, at] of seenNonces) {
+    if (now - at > 120) seenNonces.delete(key);
+  }
+}
+
+export function rememberSeenNonce(nonce: string, now: number) {
+  seenNonces.set(nonce, now);
+}
+
+export function nonceStillSeen(nonce: string, now: number) {
+  expireSeenNonces(now);
+  return seenNonces.has(nonce);
+}
+
+type Inflight = { controller: AbortController };
+const inflight = new Map<string, Inflight>();
+const cancelledEarly = new Set<string>();
+
+export function resetAgentTasks() {
+  for (const job of inflight.values()) job.controller.abort();
+  inflight.clear();
+  cancelledEarly.clear();
+  seenNonces.clear();
+}
+
+function rememberCancel(taskId: string) {
+  cancelledEarly.add(taskId);
+  while (cancelledEarly.size > 64) {
+    const first = cancelledEarly.values().next().value;
+    if (!first) break;
+    cancelledEarly.delete(first);
+  }
+}
+
+function taskIdOf(body: unknown) {
+  const value = body && typeof body === "object" ? (body as { taskId?: unknown }).taskId : "";
+  return typeof value === "string" && /^[A-Za-z0-9_-]{8,80}$/.test(value) ? value : "";
+}
+
+function epochAccepted(body: unknown, env: AgentEnv) {
+  const expected = (env.LEASE_EPOCH ?? "").trim();
+  if (!/^[0-9]+$/.test(expected)) return false;
+  const value = body && typeof body === "object" ? (body as { epoch?: unknown }).epoch : undefined;
+  return typeof value === "number" && Number.isInteger(value) && String(value) === expected;
+}
+
+function handshake(request: AgentRequest, deps: AgentDeps, signer: string): AgentResponse {
+  const machineId = (deps.env.MACHINE_ID ?? "").trim();
+  const record = request.body && typeof request.body === "object" ? (request.body as { nonce?: unknown; machineId?: unknown; host?: unknown }) : {};
+  const nonce = typeof record.nonce === "string" ? record.nonce : "";
+  const claimed = typeof record.machineId === "string" ? record.machineId : "";
+  const host = normalizeHost(typeof record.host === "string" ? record.host : "");
+  if (!/^[A-Za-z0-9_-]{16,80}$/.test(nonce)) return json(400, { ok: false, error: "datos" });
+  if (!machineId || claimed !== machineId || host !== normalizeHost(deps.env.MACHINE_AGENT_DOMAIN ?? "")) {
+    return json(403, { ok: false, error: "maquina" });
+  }
+  return json(200, { machineId, nonce, host, proof: handshakeProof(signer, nonce, machineId, host) });
 }
 
 export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promise<AgentResponse> {
   const method = request.method.toUpperCase();
   const path = request.path;
-  if (!authorized(request.headers, (deps.env.AGENT_RUNTIME_TOKEN ?? "").trim())) {
-    return json(401, { ok: false, error: "token" });
-  }
+  const signer = signedToken({ ...request, method, path }, deps.env);
+  if (!signer) return json(401, { ok: false, error: "token" });
+  if (method === "POST" && path === "/handshake") return handshake(request, deps, signer);
+  const runtimeToken = signer;
 
   if (method === "GET" && path === "/status") {
     const status = await deps.desktop.status();
@@ -110,10 +191,16 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
   }
 
   if (method === "POST" && path === "/action") {
+    if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
+    if (!epochAccepted(request.body, deps.env)) return json(409, { ok: false, error: "epoca" });
+    const taskId = taskIdOf(request.body);
+    const job = taskId ? inflight.get(taskId) : undefined;
+    if (!job || job.controller.signal.aborted) return json(403, { ok: false, error: "tarea" });
     const parsed = parseAction(request.body);
     if (!parsed.ok) return json(400, { ok: false, error: parsed.error });
-    if (parsed.action.type === "fill") {
-      return json(400, { ok: false, error: "El relleno de una clave no entra por esta ruta." });
+    const authz = authorizeRuntimeAction(parsed.action, { allowFill: false, aborted: job.controller.signal.aborted });
+    if (!authz.ok || parsed.action.type === "fill") {
+      return json(403, { ok: false, error: "El relleno de una clave no entra por esta ruta." });
     }
     try {
       await deps.desktop.perform(parsed.action);
@@ -125,21 +212,36 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
 
   if (method === "POST" && path === "/task/cancel") {
     if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
-    inflight.get(machineId)?.abort();
+    if (!epochAccepted(request.body, deps.env)) return json(409, { ok: false, error: "epoca" });
+    const taskId = taskIdOf(request.body);
+    const ids = taskId ? [taskId] : [...inflight.keys()];
+    for (const id of ids) {
+      const job = inflight.get(id);
+      job?.controller.abort();
+      if (job) inflight.delete(id);
+      if (taskId) rememberCancel(id);
+    }
     return json(200, { ok: true, status: "FAILED", result: "Cancelada. No hay resultado." });
   }
 
   if (method === "POST" && path === "/task") {
     if (!boundMachine(request.body)) return json(403, { ok: false, error: "maquina" });
+    if (!epochAccepted(request.body, deps.env)) return json(409, { ok: false, error: "epoca" });
     const record = request.body as { goal?: unknown; model?: unknown; credentials?: unknown; fillGrant?: unknown };
     const goal = typeof record.goal === "string" ? record.goal.trim() : "";
     if (!goal || goal.length > 2000) return json(400, { ok: false, error: "Escribe un objetivo de hasta 2000 caracteres." });
+    const taskId = taskIdOf(request.body) || `local_${randomBytes(9).toString("hex")}`;
+    const mode = resolveXaiMode(deps.env);
+    const modelName = computerModelName(typeof record.model === "string" ? record.model : deps.env.XAI_COMPUTER_MODEL);
+    if (cancelledEarly.has(taskId)) {
+      cancelledEarly.delete(taskId);
+      return json(200, { ok: false, status: "FAILED", result: "Cancelada. No hay resultado.", steps: [], xaiMode: mode, model: modelName });
+    }
+    if (inflight.has(taskId)) return json(409, { ok: false, error: "tarea" });
     const credentials = sanitizeCredentialMeta(record.credentials);
     const fillGrant = typeof record.fillGrant === "string" ? record.fillGrant : "";
     const controller = new AbortController();
-    inflight.set(machineId, controller);
-    const mode = resolveXaiMode(deps.env);
-    const modelName = computerModelName(typeof record.model === "string" ? record.model : deps.env.XAI_COMPUTER_MODEL);
+    inflight.set(taskId, { controller });
     const model =
       mode === "mock"
         ? createMockModel()
@@ -150,19 +252,26 @@ export async function handleAgent(request: AgentRequest, deps: AgentDeps): Promi
             fetchImpl: deps.fetchImpl,
           });
     const fillLogin = fillGrant ? (credentialId: string) => fillFromVault(deps, fillGrant, credentialId) : undefined;
-    // clientConfirmed no se acepta en el cuerpo: declarar y pagar siguen bloqueados en esta ruta.
-    const result = await runComputerTask({
-      goal,
-      desktop: deps.desktop,
-      model,
-      credentials,
-      fillLogin,
-      allowFill: Boolean(fillGrant),
-      signal: controller.signal,
-    });
-    if (inflight.get(machineId) === controller) inflight.delete(machineId);
-    console.log(JSON.stringify({ evento: "tarea", status: result.status, pasos: result.steps.length, modo: mode }));
-    return json(200, { ok: result.status === "DONE", ...result, xaiMode: mode, model: modelName });
+    try {
+      // clientConfirmed no se acepta en el cuerpo: declarar y pagar siguen bloqueados en esta ruta.
+      const result = await runComputerTask({
+        goal,
+        desktop: deps.desktop,
+        model,
+        credentials,
+        fillLogin,
+        allowFill: Boolean(fillGrant),
+        signal: controller.signal,
+        redactSecrets: runtimeToken ? [runtimeToken] : [],
+      });
+      console.log(JSON.stringify({ evento: "tarea", status: result.status, pasos: result.steps.length, modo: mode }));
+      if (controller.signal.aborted) {
+        return json(200, { ok: false, status: "FAILED", result: "Cancelada. No hay resultado.", steps: result.steps, xaiMode: mode, model: modelName });
+      }
+      return json(200, { ok: result.status === "DONE", ...result, xaiMode: mode, model: modelName });
+    } finally {
+      if (inflight.get(taskId)?.controller === controller) inflight.delete(taskId);
+    }
   }
 
   return json(404, { ok: false, error: "ruta" });

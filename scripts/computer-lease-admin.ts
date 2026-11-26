@@ -1,5 +1,6 @@
 import { LOCAL_HARNESS, enrollComputerLease, revokeComputerLease } from "../src/lib/computer/lease";
-import { pinnedRequest } from "../src/lib/computer/pinned-fetch";
+import { signRequest } from "../src/lib/computer/request-sign";
+import { callMachine } from "../src/lib/computer/transport";
 import { decryptSecret, readMasterKey } from "../src/lib/credentials/crypto";
 import { prisma } from "../src/lib/prisma";
 
@@ -40,6 +41,14 @@ function refuseTokenOnArgv(token: string) {
   return false;
 }
 
+function epochFlag() {
+  const raw = flag("--epoch");
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) return Number.NaN;
+  return value;
+}
+
 async function harnessRow(organizationId: string) {
   const row = await prisma.computer.findUnique({ where: { clientId: organizationId } });
   if (!row || row.status !== "RUNNING" || !row.agentEndpoint.startsWith("http://127.0.0.1")) return null;
@@ -63,19 +72,25 @@ async function main() {
   const operatorId = flag("--operator");
   const organizationId = flag("--client");
   const machineId = flag("--machine");
-  if (command === "harness-enroll") {
+  const actorUserId = flag("--actor");
+  if (command === "harness-enroll" || command === "enroll" || command === "rotate") {
     const token = await tokenFromOperator();
     if (refuseTokenOnArgv(token)) return 2;
     if (!process.argv.includes("--attest-ownership")) return fail("sin-attest");
     const endpoint = flag("--endpoint");
-    if (!endpoint.startsWith("http://127.0.0.1:")) return fail("no-harness");
+    const harness = command === "harness-enroll";
+    if (harness && !endpoint.startsWith("http://127.0.0.1:")) return fail("no-harness");
+    if (!harness && !endpoint.startsWith("https://")) return fail("datos");
+    const expectedEpoch = epochFlag();
+    if (Number.isNaN(expectedEpoch)) return fail("datos");
+    if (command === "rotate" && expectedEpoch === undefined) return fail("datos");
     const saved = await enrollComputerLease(
-      { organizationId, machineId, endpoint, token, operatorId },
+      { organizationId, machineId, endpoint, token, operatorId, actorUserId, expectedEpoch },
       process.env,
-      { harness: LOCAL_HARNESS },
+      { harness: harness ? LOCAL_HARNESS : undefined, rotate: command === "rotate" },
     );
     emit({
-      action: "enroll",
+      action: command === "rotate" ? "rotate" : "enroll",
       operatorId,
       organizationId,
       machineId: saved.ok ? saved.machineId : machineId,
@@ -91,27 +106,38 @@ async function main() {
     const method = command === "harness-status" ? "GET" : "POST";
     const body =
       command === "harness-dispatch"
-        ? JSON.stringify({ goal: flag("--goal") || "estado", machineId: current.row.machineId })
+        ? JSON.stringify({ goal: flag("--goal") || "estado", machineId: current.row.machineId, epoch: current.row.leaseEpoch })
         : command === "harness-cancel"
-          ? JSON.stringify({ machineId: current.row.machineId })
-          : undefined;
-    const response = await pinnedRequest({
+          ? JSON.stringify({ machineId: current.row.machineId, epoch: current.row.leaseEpoch })
+          : "";
+    const host = new URL(current.row.agentEndpoint).hostname;
+    const response = await callMachine({
       origin: current.row.agentEndpoint,
       pin: "127.0.0.1",
       path,
       method,
       headers: {
-        authorization: `Bearer ${current.token}`,
+        ...signRequest({ token: current.token, method, path, body, host }),
         ...(body ? { "content-type": "application/json" } : {}),
       },
-      body,
+      body: body || undefined,
+      allowLoopback: true,
     });
     const outcome = command === "harness-dispatch" ? "no-real" : response.status === 200 ? "ok" : "fallo";
-    emit({ action: command.replace("harness-", ""), operatorId, organizationId, machineId: current.row.machineId, outcome, leaseEpoch: current.row.leaseEpoch });
+    emit({
+      action: command.replace("harness-", ""),
+      operatorId,
+      organizationId,
+      machineId: current.row.machineId,
+      outcome,
+      leaseEpoch: current.row.leaseEpoch,
+    });
     return response.status === 200 ? 0 : 1;
   }
   if (command === "revoke") {
-    const saved = await revokeComputerLease(organizationId, operatorId);
+    const expectedEpoch = epochFlag();
+    if (expectedEpoch === undefined || Number.isNaN(expectedEpoch)) return fail("datos");
+    const saved = await revokeComputerLease({ organizationId, operatorId, actorUserId, expectedEpoch });
     emit({
       action: "revoke",
       operatorId,
@@ -122,7 +148,7 @@ async function main() {
     });
     return saved.ok ? 0 : 1;
   }
-  process.stderr.write("uso: harness-enroll | harness-status | harness-dispatch | harness-cancel | revoke\n");
+  process.stderr.write("uso: enroll | rotate | harness-enroll | harness-status | harness-dispatch | harness-cancel | revoke\n");
   return 2;
 }
 

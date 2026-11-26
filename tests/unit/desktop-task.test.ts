@@ -122,8 +122,10 @@ describe("contrato del computador en el chat", () => {
     const bodies: string[] = [];
     const fetchImpl = (async (_url: string, init?: RequestInit) => {
       bodies.push(String(init?.body ?? ""));
-      expect(JSON.stringify(init?.headers)).toContain("lease-de-esa-maquina");
-      expect(JSON.stringify(init?.headers)).not.toContain(SECRET);
+      const headers = JSON.stringify(init?.headers);
+      expect(headers).toContain("x-iabot-signature");
+      expect(headers).not.toContain("lease-de-esa-maquina");
+      expect(headers).not.toContain(SECRET);
       return new Response(
         JSON.stringify({
           status: "DONE",
@@ -140,7 +142,7 @@ describe("contrato del computador en el chat", () => {
     });
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.NOT_REAL });
     const sent = JSON.parse(bodies[0]) as Record<string, unknown>;
-    expect(Object.keys(sent).sort()).toEqual(["goal", "machineId"]);
+    expect(Object.keys(sent).sort()).toEqual(["epoch", "goal", "machineId", "taskId"]);
     expect(JSON.stringify(sent)).not.toContain(SECRET);
   });
 
@@ -190,5 +192,57 @@ describe("contrato del computador en el chat", () => {
     const result = await pending;
     expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.CANCELLED });
     expect(calls.some((url) => url.endsWith("/task/cancel"))).toBe(true);
+  });
+
+  test("si el tiempo se agota se cancela y no se usa el resultado que llega después", async () => {
+    const calls: string[] = [];
+    const result = await run("Usa el computador y abre https://example.com", {
+      timeoutMs: 30,
+      loadLease: async () => ready(),
+      fetchImpl: (async (url: string) => {
+        calls.push(String(url));
+        if (String(url).endsWith("/task/cancel")) return new Response("{}", { status: 200 });
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return new Response(
+          JSON.stringify({
+            status: "DONE",
+            xaiMode: "live",
+            result: "example.com lease-de-esa-maquina",
+            steps: [{ kind: "action", action: { type: "goto", url: "https://example.com/" } }],
+          }),
+          { status: 200 },
+        );
+      }) as typeof fetch,
+    });
+    expect(result).toEqual({ kind: "reply", text: DESKTOP_COPY.TIMEOUT });
+    expect(calls.some((url) => url.endsWith("/task/cancel"))).toBe(true);
+  });
+
+  test("un resultado real no repite el token ni lo deja en el registro", async () => {
+    const calls: string[] = [];
+    const logs: string[] = [];
+    const result = await run("Usa el computador y abre https://example.com", {
+      loadLease: async () => ready(),
+      log: (fields) => logs.push(JSON.stringify(fields)),
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        calls.push(String(url));
+        expect(String(init?.body)).not.toContain("lease-de-esa-maquina");
+        return new Response(
+          JSON.stringify({
+            status: "DONE",
+            xaiMode: "live",
+            result: "Título en example.com. token: lease-de-esa-maquina",
+            steps: [{ kind: "action", action: { type: "goto", url: "https://example.com/" } }],
+          }),
+          { status: 200 },
+        );
+      }) as typeof fetch,
+    });
+    expect(result.kind).toBe("reply");
+    if (result.kind !== "reply") return;
+    expect(result.text).toContain("example.com");
+    expect(result.text).not.toContain("lease-de-esa-maquina");
+    expect(logs.join("\n")).not.toContain("lease-de-esa-maquina");
+    expect(calls.some((url) => url.endsWith("/task/cancel"))).toBe(false);
   });
 });
