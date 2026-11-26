@@ -64,11 +64,15 @@ describe("comando de operador, cableado local", () => {
     const token = `lease-${randomBytes(18).toString("hex")}`;
     const machineId = `mach-${randomBytes(4).toString("hex")}`;
     const seen: string[] = [];
+    const bodies: string[] = [];
+    const authorizations: string[] = [];
     const server = http.createServer(async (req, res) => {
       seen.push(req.url ?? "");
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const raw = Buffer.concat(chunks).toString("utf8");
+      bodies.push(raw);
+      authorizations.push(req.headers.authorization ?? "");
       const response = await handleAgent(
         {
           method: req.method ?? "GET",
@@ -96,13 +100,36 @@ describe("comando de operador, cableado local", () => {
       data: { name: "QA", slug: `qa-${Date.now()}-${randomBytes(2).toString("hex")}`, isQa: true },
     });
     createdOrgs.push(organization.id);
+    const staff = await prisma.user.create({
+      data: {
+        email: `staff-${Date.now()}@test.local`,
+        name: "Staff",
+        passwordHash: user.passwordHash,
+      },
+    });
+    createdUsers.push(staff.id);
+    await prisma.membership.create({ data: { userId: user.id, organizationId: organization.id, role: "OWNER" } });
+    await prisma.membership.create({ data: { userId: staff.id, organizationId: organization.id, role: "STAFF" } });
     const env = { CREDENTIALS_MASTER_KEY: master, COMPUTER_LEASE_TOKEN: token };
     const common = ["--operator", "qa-operator", "--client", organization.id, "--machine", machineId];
-    const enrolled = await cli(["harness-enroll", ...common, "--attest-ownership", "--endpoint", `http://127.0.0.1:${port}`], env);
+    const denied = await cli(
+      ["harness-enroll", ...common, "--actor", staff.id, "--attest-ownership", "--endpoint", `http://127.0.0.1:${port}`],
+      env,
+    );
+    expect(denied.code).toBe(1);
+    expect(denied.stdout).toContain("\"outcome\":\"permiso\"");
+    expect(denied.stdout).not.toContain(token);
+    const enrolled = await cli(
+      ["harness-enroll", ...common, "--actor", user.id, "--attest-ownership", "--endpoint", `http://127.0.0.1:${port}`],
+      env,
+    );
     expect(enrolled.code).toBe(0);
     expect(enrolled.stdout).not.toContain(token);
     expect(enrolled.stderr).not.toContain(token);
     expect(enrolled.stdout).toContain("\"outcome\":\"ok\"");
+    expect(bodies.some((body) => body.includes(token))).toBe(false);
+    expect(authorizations[0] ?? "").toBe("");
+    expect(seen[0]).toBe("/handshake");
     expect((await loadTenantLease(organization.id)).state).toBe("transporte");
 
     const status = await cli(["harness-status", ...common], env);
@@ -121,8 +148,15 @@ describe("comando de operador, cableado local", () => {
     expect(cancelled.stdout).not.toContain(token);
     expect(seen).toContain("/task/cancel");
 
-    const revoked = await cli(["revoke", ...common], env);
+    const epoch = (JSON.parse(enrolled.stdout) as { leaseEpoch: number }).leaseEpoch;
+    const revoked = await cli(["revoke", ...common, "--actor", user.id, "--epoch", String(epoch)], env);
     expect(revoked.code).toBe(0);
+    const again = await cli(["revoke", ...common, "--actor", user.id, "--epoch", String(epoch)], env);
+    expect(again.code).toBe(1);
+    expect(again.stdout).toContain("\"outcome\":\"conflicto\"");
+    expect((await loadTenantLease(organization.id)).state).toBe("detenido");
+    await prisma.computer.update({ where: { clientId: organization.id }, data: { status: "ERROR" } });
+    expect((await loadTenantLease(organization.id)).state).toBe("detenido");
     const after = await cli(["harness-dispatch", ...common, "--goal", "estado del cable"], env);
     expect(after.code).toBe(1);
     expect(after.stdout).toContain("\"outcome\":\"rechazado\"");

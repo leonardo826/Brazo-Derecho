@@ -12,8 +12,8 @@ El chat y el arriendo no eligen proveedor. Un escritorio especializado entra si 
 
 ## Lo que el proveedor debe ofrecer
 
-HTTPS alcanzable desde la app. `GET /status` con `Authorization: Bearer` responde `ok: true` y el mismo `machineId`. `POST /task` recibe solo `goal` y `machineId`. `POST /task/cancel` aborta esa máquina. Sin token, 401. Con otra máquina, 403. El id que responde status no prueba por sí solo que la máquina es de esa empresa: el operador lo atestigua con `--attest-ownership`.
+HTTPS alcanzable desde la app. `POST /handshake` recibe `nonce` y `machineId` y responde la prueba HMAC, sin recibir el token. `GET /status` exige `Authorization: Bearer`. `POST /task` recibe `goal`, `machineId`, `taskId` y `epoch`. `POST /task/cancel` aborta esa tarea. `POST /action` solo si esa tarea sigue viva. Sin token, 401. Con otra máquina, 403. Una época distinta, 409. El id que responde status no prueba por sí solo que la máquina es de esa empresa: el alta exige la prueba HMAC y `--attest-ownership`, y solo un dueño o un admin de plataforma puede registrar o cambiar el origen.
 
 ## Lo que este paso no es
 
-No compra máquinas, no elige proveedor y no trata un simulador como navegación. La autorización por acción, el cancel si solo vence el tiempo, la intención durable, la evidencia de tarifa y la Bóveda quedan aparte.
+No compra máquinas, no elige proveedor y no trata un simulador como navegación. El servicio de referencia está en `machine-agent/` y se instala con `README-machine-agent.md`. La intención durable, la evidencia de tarifa y la Bóveda quedan aparte. `COMPUTER_FEATURE_ENABLED` sigue apagado salvo que valga exactamente `true`.

@@ -1,0 +1,20 @@
+[Unit]
+Description=IA Bot machine agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=iabot
+Group=iabot
+EnvironmentFile=/etc/iabot-machine-agent.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/iabot-machine-agent/browsers
+WorkingDirectory=/opt/iabot-machine-agent
+ExecStart=/usr/bin/node /opt/iabot-machine-agent/src/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

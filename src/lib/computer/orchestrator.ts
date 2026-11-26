@@ -95,12 +95,18 @@ export async function enqueueComputerTask(
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      redirect: "manual",
       signal: AbortSignal.timeout(input.timeoutMs ?? 120_000),
     });
+    if (response.status >= 300 && response.status < 400) {
+      return { ok: true, task: await deps.store.finish(task.id, "FAILED", "El computador no completó la tarea."), calledAgent: true };
+    }
     const data = (await response.json().catch(() => null)) as { status?: unknown; result?: unknown } | null;
     const status = asStatus(data?.status) ?? (response.ok ? "DONE" : "FAILED");
     let result = typeof data?.result === "string" ? data.result.slice(0, 2000) : response.ok ? "" : "El computador no completó la tarea.";
     if (payload?.fillGrant) result = result.split(payload.fillGrant).join("[redactado]");
+    const agentToken = input.agentToken?.trim();
+    if (agentToken) result = result.split(agentToken).join("[redactado]");
     return { ok: true, task: await deps.store.finish(task.id, status, result), calledAgent: true };
   } catch {
     return { ok: true, task: await deps.store.finish(task.id, "FAILED", "No pude hablar con el computador."), calledAgent: true };

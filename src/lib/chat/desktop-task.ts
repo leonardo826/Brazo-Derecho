@@ -1,4 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { computerFeatureEnabled } from "@/lib/computer/flag";
+import { isIpAddress, isPrivateAddress } from "@/lib/computer/private-address";
+import { callMachine } from "@/lib/computer/transport";
 
 const TRIP = /\b(vuelos?|pasajes?|viajes?|trayectos?)\b/i;
 const DELEGATE = /\b(computador|navegador|sitio web|p[aá]gina web)\b/i;
@@ -36,7 +39,11 @@ export type ComputerLease = {
   token: string;
 };
 
-export type LeaseState = { state: "ausente" } | { state: "transporte" } | { state: "listo"; lease: ComputerLease };
+export type LeaseState =
+  | { state: "ausente" }
+  | { state: "transporte" }
+  | { state: "detenido" }
+  | { state: "listo"; lease: ComputerLease };
 
 export type DesktopLog = {
   organizationId: string;
@@ -111,17 +118,7 @@ function loopback(url: URL) {
 export function usableLease(lease: ComputerLease | null, organizationId: string) {
   if (!lease || lease.organizationId !== organizationId) return null;
   if (!lease.token.trim() || !lease.machineId.trim() || lease.machineId.length > 80) return null;
-  const pinParts = lease.pin.split(".").map(Number);
-  const privatePin =
-    pinParts.length !== 4 ||
-    pinParts.some((part) => !Number.isInteger(part) || part < 0 || part > 255) ||
-    pinParts[0] === 10 ||
-    pinParts[0] === 127 ||
-    pinParts[0] === 0 ||
-    (pinParts[0] === 192 && pinParts[1] === 168) ||
-    (pinParts[0] === 169 && pinParts[1] === 254) ||
-    (pinParts[0] === 172 && pinParts[1] >= 16 && pinParts[1] <= 31);
-  if (privatePin) return null;
+  if (!isIpAddress(lease.pin) || isPrivateAddress(lease.pin)) return null;
   let url: URL;
   try {
     url = new URL(lease.baseUrl);
@@ -137,10 +134,19 @@ export function usableLease(lease: ComputerLease | null, organizationId: string)
   return { ...lease, token: lease.token.trim(), machineId: lease.machineId.trim(), baseUrl: url.origin };
 }
 
-function redactResult(text: string) {
-  return text
+function redactResult(text: string, secret = "") {
+  const hidden = secret ? text.split(secret).join("[redactado]") : text;
+  return hidden
     .replace(/\b(clave|contraseña|password|secret|token|cookie)\b\s*[:=]\s*\S+/gi, "$1: [redactado]")
     .slice(0, 2000);
+}
+
+async function readLease(load: (organizationId: string) => Promise<LeaseState>, organizationId: string): Promise<LeaseState> {
+  try {
+    return await load(organizationId);
+  } catch {
+    return { state: "transporte" };
+  }
 }
 
 function publicSource(data: AgentPayload) {
@@ -196,11 +202,11 @@ export async function executeDesktopRequest(input: {
   if (plan.kind === "confirm") return finish("confirm", false);
   if (input.signal?.aborted) return finish("cancel", false, CANCELLED);
 
-  const looked = await input.loadLease(input.organizationId);
+  const looked = await readLease(input.loadLease, input.organizationId);
   if (looked.state === "ausente") return finish("ausente", false, ABSENT);
   const lease = looked.state === "listo" ? usableLease(looked.lease, input.organizationId) : null;
-  if (!lease) return finish("transporte", false, TRANSPORT);
-  const again = await input.loadLease(input.organizationId);
+  if (!lease) return finish(looked.state === "detenido" ? "detenido" : "transporte", false, TRANSPORT);
+  const again = await readLease(input.loadLease, input.organizationId);
   if (again.state !== "listo" || again.lease.epoch !== lease.epoch || again.lease.machineId !== lease.machineId) {
     return finish("revocado", false, TRANSPORT);
   }
@@ -209,40 +215,89 @@ export async function executeDesktopRequest(input: {
   if (!slot?.ok) return finish("limite", false, LIMITE);
   reservationId = slot.reservationId ?? null;
 
+  const goal = plan.goal.split(lease.token).join("[redactado]");
+  const taskId = `t_${randomBytes(9).toString("hex")}`;
   const headers = { "content-type": "application/json", authorization: `Bearer ${lease.token}` };
-  const timeout = AbortSignal.timeout(input.timeoutMs ?? 20_000);
-  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
-  const cancel = () => {
-    void (input.fetchImpl ?? fetch)(`${lease.baseUrl}/task/cancel`, {
+  const taskAbort = new AbortController();
+  let winner: "response" | "cancel" | "timeout" | null = null;
+  let cancelSent = false;
+  const sendCancel = () => {
+    if (cancelSent) return;
+    cancelSent = true;
+    void callMachine({
+      origin: lease.baseUrl,
+      pin: lease.pin,
+      path: "/task/cancel",
       method: "POST",
       headers,
-      body: JSON.stringify({ machineId: lease.machineId }),
+      body: JSON.stringify({ machineId: lease.machineId, taskId, epoch: lease.epoch }),
+      fetchImpl: input.fetchImpl,
+      signal: AbortSignal.timeout(3_000),
     }).catch(() => undefined);
   };
-  input.signal?.addEventListener("abort", cancel, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = (kind: "cancel" | "timeout") => {
+    if (winner) return;
+    winner = kind;
+    if (timer) clearTimeout(timer);
+    taskAbort.abort();
+    sendCancel();
+  };
+  const onUserAbort = () => stop("cancel");
+  input.signal?.addEventListener("abort", onUserAbort, { once: true });
+  const stopped = () => finish(winner === "timeout" ? "timeout" : "cancel", cancelSent, winner === "timeout" ? TIMEOUT : CANCELLED);
   try {
-    const response = await (input.fetchImpl ?? fetch)(`${lease.baseUrl}/task`, {
+    if (input.signal?.aborted) return stopped();
+    const fresh = await readLease(input.loadLease, input.organizationId);
+    if (winner) return stopped();
+    if (fresh.state !== "listo" || fresh.lease.epoch !== lease.epoch || fresh.lease.machineId !== lease.machineId) {
+      return finish("revocado", false, TRANSPORT);
+    }
+    timer = setTimeout(() => stop("timeout"), input.timeoutMs ?? 20_000);
+    const response = await callMachine({
+      origin: lease.baseUrl,
+      pin: lease.pin,
+      path: "/task",
       method: "POST",
       headers,
-      body: JSON.stringify({ goal: plan.goal, machineId: lease.machineId }),
-      redirect: "manual",
-      signal,
+      body: JSON.stringify({ goal, machineId: lease.machineId, taskId, epoch: lease.epoch }),
+      fetchImpl: input.fetchImpl,
+      signal: taskAbort.signal,
     });
+    if (winner) return stopped();
+    winner = "response";
+    clearTimeout(timer);
     if (response.status >= 300 && response.status < 400) return finish("fallo", true, FAILED);
-    const data = (await response.json().catch(() => null)) as AgentPayload | null;
+    let data: AgentPayload | null = null;
+    try {
+      data = JSON.parse(response.body || "null") as AgentPayload;
+    } catch {
+      data = null;
+    }
+    const after = await readLease(input.loadLease, input.organizationId);
+    if (after.state !== "listo" || after.lease.epoch !== lease.epoch || after.lease.machineId !== lease.machineId) {
+      sendCancel();
+      return finish("revocado", true, TRANSPORT);
+    }
     const source = data ? publicSource(data) : null;
-    if (!response.ok || !source || !data || typeof data.result !== "string") {
-      return finish(response.ok ? "no-real" : "fallo", true, NOT_REAL);
+    const ok = response.status >= 200 && response.status < 300;
+    if (!ok || !source || !data || typeof data.result !== "string") {
+      return finish(ok ? "no-real" : "fallo", true, NOT_REAL);
     }
     reservationId = null;
-    return finish("real", true, redactResult(data.result));
+    return finish("real", true, redactResult(data.result, lease.token));
   } catch (error) {
-    if (input.signal?.aborted) return finish("cancel", true, CANCELLED);
     const name = error instanceof Error ? error.name : "";
-    if (name === "TimeoutError") return finish("timeout", true, TIMEOUT);
+    const aborted = name === "AbortError" || name === "TimeoutError" || taskAbort.signal.aborted || input.signal?.aborted === true;
+    if (aborted) {
+      if (!winner) stop(input.signal?.aborted ? "cancel" : "timeout");
+      return stopped();
+    }
+    sendCancel();
     return finish("fallo", true, FAILED);
   } finally {
-    input.signal?.removeEventListener("abort", cancel);
+    if (timer) clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onUserAbort);
   }
 }
 
